@@ -11,8 +11,8 @@
 // Database MySQL (opsional jika berbeda dari default config.php)
 // define('DB_HOST', 'localhost');
 // define('DB_PORT', '3306');
-// define('DB_NAME', 'uofruaju_learn_ilmuna');
-// define('DB_USER', 'uofruaju_Learn_Ilmuna');
+// define('DB_NAME', 'uofruaju_margo_one');
+// define('DB_USER', 'uofruaju_margo_one');
 // define('DB_PASS', 'ISI_PASSWORD_DB');
 
 // Google OAuth 2.0 Credentials (Strict Linked-Only Mode)

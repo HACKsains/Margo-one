@@ -1,9 +1,12 @@
 -- ==============================================================================
 -- MARGO ONE — ILMUNA SSO · MASTER DATABASE SCHEMA (MySQL InnoDB utf8mb4)
--- Target Database : uofruaju_learn_ilmuna (Shared Identity DB) atau DB SSO baru
+-- Target Database : uofruaju_margo_one (Database Resmi Margo One SSO)
 -- Kompatibilitas  : MySQL 5.7+ / MySQL 8.0+ / MariaDB 10.3+ (phpMyAdmin Ready)
 -- Timezone        : Asia/Jakarta (+07:00)
 -- ==============================================================================
+
+CREATE DATABASE IF NOT EXISTS `uofruaju_margo_one` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `uofruaju_margo_one`;
 
 SET NAMES utf8mb4;
 SET time_zone = '+07:00';

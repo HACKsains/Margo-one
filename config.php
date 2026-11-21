@@ -303,8 +303,8 @@ if (file_exists(__DIR__ . '/config.local.php')) {
 if (!defined('DB_TYPE'))    define('DB_TYPE', 'mysql');
 if (!defined('DB_HOST'))    define('DB_HOST', 'localhost');
 if (!defined('DB_PORT'))    define('DB_PORT', '3306');
-if (!defined('DB_NAME'))    define('DB_NAME', 'uofruaju_learn_ilmuna');
-if (!defined('DB_USER'))    define('DB_USER', 'uofruaju_Learn_Ilmuna');
+if (!defined('DB_NAME'))    define('DB_NAME', 'uofruaju_margo_one');
+if (!defined('DB_USER'))    define('DB_USER', 'uofruaju_margo_one');
 if (!defined('DB_PASS'))    define('DB_PASS', 'Ilmuna28@');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
@@ -406,6 +406,14 @@ function autoInitializeSsoDatabase(PDO $pdo) {
         require_once $secFile;
         if (function_exists('margo_sso_ensure_schema')) {
             try {
+                // Jika DB benar-benar baru (belum ada tabel users), jalankan seeder identitas otomatis
+                $hasUsers = (bool)$pdo->query("SHOW TABLES LIKE 'users'")->fetch();
+                if (!$hasUsers && file_exists(BASE_PATH . '/database.php')) {
+                    require_once BASE_PATH . '/database.php';
+                    if (function_exists('margo_sso_ensure_identity_tables')) {
+                        margo_sso_ensure_identity_tables($pdo);
+                    }
+                }
                 margo_sso_ensure_schema($pdo);
             } catch (Throwable $e) {
                 error_log('[MargoOne] Auto-schema warning: ' . $e->getMessage());

@@ -252,7 +252,7 @@ if ($isDirectBrowser) {
     $error   = '';
     $pdo     = null;
     $tableStats = [];
-    $activeDbName = defined('DB_NAME') ? DB_NAME : 'uofruaju_learn_ilmuna';
+    $activeDbName = defined('DB_NAME') ? DB_NAME : 'uofruaju_margo_one';
 
     try {
         $pdo = getDBConnection();
