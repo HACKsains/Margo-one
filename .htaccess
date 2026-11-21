@@ -1,0 +1,88 @@
+# ==============================================================================
+# MARGO ONE — ILMUNA SSO · PRODUCTION .HTACCESS (margo-one.ilmuna.my.id)
+# Lingkungan Server: LiteSpeed / Apache / cPanel (PHP ea-php74 s/d 8.3)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. GUARDIAN DOME WAF (Browser Pages) — /api/sso/ DIISOLASI DI api/sso/.htaccess
+# ------------------------------------------------------------------------------
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=()"
+</IfModule>
+
+<IfModule lsapi_module>
+    php_value auto_prepend_file "/home/uofruaju/guardian-dome/guardian-dome-waf.php"
+    php_flag log_errors On
+    php_flag display_errors Off
+    php_value memory_limit 256M
+</IfModule>
+
+<IfModule php7_module>
+    php_value auto_prepend_file "/home/uofruaju/guardian-dome/guardian-dome-waf.php"
+    php_flag log_errors On
+    php_flag display_errors Off
+    php_value memory_limit 256M
+</IfModule>
+
+# ------------------------------------------------------------------------------
+# 2. PROTEKSI FILE SENSITIF & DIRECTORY BROWSING
+# ------------------------------------------------------------------------------
+Options -Indexes
+
+<FilesMatch "^.*(\.env|\.sqlite|\.git|\.user\.ini|php\.ini|config\.local\.php|\.[hH][tT][aApP].*|((?:error_log|readme|license|changelog)\.(?:php|md|log|txt|htm|html)))$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<FilesMatch ^(?i:\.ht.*)$>
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# ------------------------------------------------------------------------------
+# 3. CACHE & PWA HEADERS
+# ------------------------------------------------------------------------------
+AddType application/manifest+json .webmanifest
+<FilesMatch "^(manifest\.json)$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </IfModule>
+</FilesMatch>
+
+# ------------------------------------------------------------------------------
+# 4. CLEAN URLS & AUTHORIZATION HEADER PASSTHROUGH
+# ------------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Passthrough Bearer Authorization header ke PHP (Apache/FastCGI/LiteSpeed)
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Jangan rewrite jika file atau folder fisik ada
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Alias /portal -> /gateway.php
+    RewriteRule ^portal/?$ gateway.php [L,QSA]
+
+    # Clean URL tanpa .php (/login, /authorize, /gateway, /profile, /logout, /dashboard/admin/*)
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+    RewriteRule ^(.+?)/?$ $1.php [L,QSA]
+
+    # Fallback ke index.php
+    RewriteRule ^index\.php$ - [L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . index.php [L]
+</IfModule>

@@ -1,0 +1,1611 @@
+/* ==============================================================================
+ * MARGO ONE — ILMUNA SSO · 3-COLUMN LUMINA GOLD & NUSANTARA SHELL
+ * ==============================================================================
+ * Arsitektur Shell 3-Kolom (Left Nav · Independent Scroll Main · Right Panel)
+ * Identitas Visual Eksklusif Margo One:
+ *   Navy (#1D3B5E) · Teal (#0D7A87) · Sky (#52B2DC) · Gold (#F59E0B)
+ *   Ornamen Batik Kawung & Gunungan Nusantara · Iconify Solar Icons (solar:*)
+ * 100% Vanilla CSS3 (Zero Tailwind CDN, Zero Bootstrap, Zero FontAwesome)
+ * Mobile Ultra-Responsive 360px+ (Zero Horizontal Overflow)
+ * ============================================================================== */
+
+:root {
+    --margo-navy: #1D3B5E;
+    --margo-navy-dark: #13273F;
+    --margo-teal: #0D7A87;
+    --margo-teal-dark: #095963;
+    --margo-sky: #52B2DC;
+    --margo-gold: #F59E0B;
+    --margo-amber: #D97706;
+    --margo-emerald: #10B981;
+    --margo-rose: #EF4444;
+    --margo-canvas: #F4F7FA;
+    --margo-surface: #FFFFFF;
+    --margo-border: #E2E8F0;
+    --margo-border-soft: #EEF2F6;
+    --margo-text: #334155;
+    --margo-title: #0F1D2F;
+    --margo-muted: #64748B;
+    --margo-left-w: 256px;
+    --margo-right-w: 304px;
+    --margo-grad-brand: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 62%, #198D9C 100%);
+    --margo-grad-pill: linear-gradient(95deg, #1D3B5E 0%, #0D7A87 100%);
+    --margo-grad-gold: linear-gradient(135deg, #D97706 0%, #F59E0B 100%);
+    --margo-kawung-svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%23FFFFFF' stroke-width='0.75' opacity='0.14'%3E%3Cellipse cx='10' cy='10' rx='6' ry='6'/%3E%3Cellipse cx='30' cy='10' rx='6' ry='6'/%3E%3Cellipse cx='10' cy='30' rx='6' ry='6'/%3E%3Cellipse cx='30' cy='30' rx='6' ry='6'/%3E%3C/g%3E%3C/svg%3E");
+    --margo-kawung-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%231D3B5E' stroke-width='0.5' opacity='0.045'%3E%3Cellipse cx='10' cy='10' rx='6' ry='6'/%3E%3Cellipse cx='30' cy='10' rx='6' ry='6'/%3E%3Cellipse cx='10' cy='30' rx='6' ry='6'/%3E%3Cellipse cx='30' cy='30' rx='6' ry='6'/%3E%3C/g%3E%3C/svg%3E");
+    --font-heading: 'Outfit', sans-serif;
+    --font-body: 'Plus Jakarta Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+iconify-icon {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+}
+
+html, body.margo-shell-body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: var(--font-body);
+    background-color: var(--margo-canvas);
+    color: var(--margo-text);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ==============================================================================
+ * 1. ENTRY SLIDE CURTAIN & OVERLAY
+ * ============================================================================== */
+.margo-entry-slide {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: var(--margo-grad-brand);
+    transform: translateX(0);
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.45s ease;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.margo-entry-slide::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: var(--margo-grad-gold);
+}
+.margo-entry-slide.is-done {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+.margo-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: rgba(15, 29, 47, 0.48);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.margo-sidebar-overlay.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ==============================================================================
+ * 2. 3-COLUMN WORKSPACE SHELL
+ * ============================================================================== */
+.margo-shell {
+    display: flex;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background-color: var(--margo-canvas);
+    background-image:
+        radial-gradient(at 0% 0%, rgba(82, 178, 220, 0.10) 0px, transparent 42%),
+        radial-gradient(at 100% 100%, rgba(245, 158, 11, 0.06) 0px, transparent 40%);
+}
+
+/* ==============================================================================
+ * 3. LEFT SIDEBAR (ASYMMETRIC LUMINA PILL NAVIGATION)
+ * ============================================================================== */
+.margo-sidebar-left {
+    width: var(--margo-left-w);
+    flex-shrink: 0;
+    height: 100%;
+    background: var(--margo-surface);
+    border-right: 1px solid var(--margo-border);
+    display: flex;
+    flex-direction: column;
+    z-index: 60;
+    transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.22s ease;
+    box-shadow: 4px 0 24px rgba(29, 59, 94, 0.04);
+    overflow: hidden;
+}
+
+.margo-sidebar-left.is-collapsed-desktop {
+    width: 0 !important;
+    border-right-width: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.margo-left-brand {
+    padding: 20px 18px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    border-bottom: 1px solid var(--margo-border-soft);
+    background: linear-gradient(180deg, rgba(29, 59, 94, 0.035) 0%, transparent 100%);
+}
+.margo-left-brand-link {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+}
+.margo-left-logo {
+    width: 96px;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 4px 10px rgba(29, 59, 94, 0.12));
+    transition: transform 0.25s ease;
+}
+.margo-left-brand-link:hover .margo-left-logo {
+    transform: scale(1.03);
+}
+.margo-left-brand-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(13, 122, 135, 0.09);
+    border: 1px solid rgba(13, 122, 135, 0.20);
+    color: var(--margo-navy);
+    font-family: var(--font-heading);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+.margo-left-brand-tag .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--margo-gold);
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+}
+
+.margo-left-nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 14px 0 18px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 122, 135, 0.22) transparent;
+}
+.margo-left-nav::-webkit-scrollbar { width: 5px; }
+.margo-left-nav::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.22); border-radius: 10px; }
+
+.margo-nav-group {
+    margin-bottom: 10px;
+}
+.margo-nav-group > summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    margin-right: 14px;
+    padding: 9px 14px 9px 18px;
+    border-radius: 0 999px 999px 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFFFFF;
+    background: var(--margo-grad-pill);
+    box-shadow: 0 6px 16px -6px rgba(29, 59, 94, 0.32);
+    transition: all 0.22s ease;
+}
+.margo-nav-group > summary::-webkit-details-marker { display: none; }
+.margo-nav-group > summary:hover {
+    filter: brightness(1.06);
+}
+.margo-nav-group.is-admin-group > summary {
+    background: linear-gradient(95deg, #1D3B5E 0%, #B45309 100%);
+    box-shadow: 0 6px 16px -6px rgba(180, 83, 9, 0.30);
+}
+.margo-nav-group-chevron {
+    margin-left: auto;
+    transition: transform 0.22s ease;
+    opacity: 0.88;
+}
+.margo-nav-group[open] .margo-nav-group-chevron {
+    transform: rotate(180deg);
+}
+
+.margo-nav-items {
+    margin: 7px 14px 4px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.margo-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    min-height: 41px;
+    border-radius: 0 999px 999px 0;
+    border-left: 3px solid transparent;
+    color: var(--margo-navy);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none !important;
+    transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+}
+.margo-nav-link iconify-icon {
+    font-size: 17px;
+    color: var(--margo-teal);
+    flex-shrink: 0;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+.margo-nav-link:hover {
+    background: rgba(13, 122, 135, 0.09);
+    border-left-color: var(--margo-gold);
+    color: var(--margo-teal);
+    padding-left: 17px;
+}
+.margo-nav-link:hover iconify-icon {
+    transform: scale(1.08);
+}
+.margo-nav-link.is-active {
+    background: var(--margo-grad-pill);
+    border-left-color: var(--margo-gold);
+    color: #FFFFFF !important;
+    font-weight: 700;
+    box-shadow: 0 8px 18px -6px rgba(13, 122, 135, 0.42);
+}
+.margo-nav-link.is-active iconify-icon {
+    color: #FDE68A;
+}
+
+.margo-nav-badge {
+    margin-left: auto;
+    font-family: var(--font-heading);
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    letter-spacing: 0.04em;
+    background: rgba(13, 122, 135, 0.12);
+    color: var(--margo-teal);
+}
+.margo-nav-badge--gold {
+    background: rgba(245, 158, 11, 0.16);
+    color: #B45309;
+}
+.margo-nav-link.is-active .margo-nav-badge {
+    background: rgba(255, 255, 255, 0.22);
+    color: #FFFFFF;
+}
+
+.margo-left-footer {
+    padding: 12px 14px;
+    border-top: 1px solid var(--margo-border-soft);
+    background: #FAFBFD;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.margo-left-logout-btn {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid #FECACA;
+    background: #FEF2F2;
+    color: #DC2626;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.margo-left-logout-btn:hover {
+    background: #FEE2E2;
+    transform: translateY(-1px);
+}
+.margo-left-status-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--margo-muted);
+    padding: 0 2px;
+}
+.margo-left-status-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 700;
+    color: #047857;
+}
+.margo-left-status-dot::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--margo-emerald);
+    box-shadow: 0 0 6px var(--margo-emerald);
+}
+
+/* ==============================================================================
+ * 4. CENTER MAIN CONTENT & MORPHING TOP HEADER
+ * ============================================================================== */
+.margo-main {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: clip;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(29, 59, 94, 0.22) transparent;
+}
+.margo-main::-webkit-scrollbar { width: 7px; }
+.margo-main::-webkit-scrollbar-thumb { background: rgba(29, 59, 94, 0.20); border-radius: 10px; }
+
+.margo-top-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 22px;
+    background: rgba(244, 247, 250, 0.86);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+    color: var(--margo-navy);
+    transition: all 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.margo-top-header.is-scrolled {
+    background: var(--margo-grad-brand);
+    color: #FFFFFF;
+    border-bottom-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 12px 28px -10px rgba(29, 59, 94, 0.38);
+    border-radius: 0 0 20px 20px;
+    margin: 0 12px;
+}
+
+.margo-header-left,
+.margo-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.margo-icon-btn {
+    appearance: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid var(--margo-border);
+    background: #FFFFFF;
+    color: var(--margo-navy);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+.margo-icon-btn:hover {
+    border-color: var(--margo-teal);
+    color: var(--margo-teal);
+    box-shadow: 0 4px 12px rgba(13, 122, 135, 0.14);
+}
+.margo-top-header.is-scrolled .margo-icon-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.24);
+    color: #FFFFFF;
+}
+.margo-top-header.is-scrolled .margo-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.margo-header-center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.margo-header-title {
+    font-family: var(--font-heading);
+    font-size: 15px;
+    font-weight: 800;
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.margo-header-role-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: var(--font-heading);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    background: rgba(245, 158, 11, 0.14);
+    color: #B45309;
+    border: 1px solid rgba(245, 158, 11, 0.30);
+    white-space: nowrap;
+}
+.margo-top-header.is-scrolled .margo-header-role-chip {
+    background: rgba(255, 255, 255, 0.18);
+    color: #FEF3C7;
+    border-color: rgba(255, 255, 255, 0.30);
+}
+
+.margo-header-avatar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px 4px 5px;
+    min-height: 40px;
+    border-radius: 999px;
+    border: 1px solid var(--margo-border);
+    background: #FFFFFF;
+    color: var(--margo-navy);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.margo-header-avatar-btn:hover {
+    border-color: var(--margo-teal);
+    box-shadow: 0 4px 12px rgba(13, 122, 135, 0.14);
+}
+.margo-top-header.is-scrolled .margo-header-avatar-btn {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #FFFFFF;
+}
+.margo-mini-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--margo-grad-brand);
+    color: #FFFFFF;
+    font-family: var(--font-heading);
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.margo-mini-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.margo-main-inner {
+    flex: 1;
+    padding: 20px 22px 44px;
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    min-width: 0;
+}
+
+/* ==============================================================================
+ * 5. RIGHT SIDEBAR (PROFILE CARD · AGENDA WIDGET · INFO EKOSISTEM)
+ * ============================================================================== */
+.margo-sidebar-right {
+    width: var(--margo-right-w);
+    flex-shrink: 0;
+    height: 100%;
+    background: var(--margo-surface);
+    border-left: 1px solid var(--margo-border);
+    display: flex;
+    flex-direction: column;
+    z-index: 60;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    gap: 18px;
+    transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                padding 0.28s ease,
+                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.22s ease;
+    box-shadow: -4px 0 24px rgba(29, 59, 94, 0.04);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 122, 135, 0.20) transparent;
+}
+.margo-sidebar-right::-webkit-scrollbar { width: 5px; }
+.margo-sidebar-right::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.20); border-radius: 10px; }
+
+.margo-sidebar-right.is-collapsed-desktop {
+    width: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    border-left-width: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* User Profile Card (Lumina Gold & Kawung) */
+.margo-profile-wrap {
+    position: relative;
+}
+.margo-profile-card {
+    background-image: var(--margo-kawung-svg), var(--margo-grad-brand);
+    background-size: 32px 32px, 100% 100%;
+    color: #FFFFFF;
+    border-radius: 20px;
+    padding: 14px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    cursor: pointer;
+    box-shadow: 0 12px 26px -10px rgba(29, 59, 94, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    width: 100%;
+    text-align: left;
+    font-family: inherit;
+}
+.margo-profile-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--margo-grad-gold);
+}
+.margo-profile-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px -10px rgba(13, 122, 135, 0.45);
+}
+
+.margo-profile-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.20);
+    border: 2px solid rgba(254, 243, 199, 0.75);
+    color: #FFFFFF;
+    font-family: var(--font-heading);
+    font-size: 16px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+.margo-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.margo-profile-online {
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--margo-emerald);
+    border: 2px solid #13273F;
+}
+
+.margo-profile-meta {
+    flex: 1;
+    min-width: 0;
+}
+.margo-profile-name {
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 800;
+    color: #FFFFFF;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.margo-profile-sub {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.80);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+.margo-profile-role-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(245, 158, 11, 0.24);
+    border: 1px solid rgba(254, 243, 199, 0.35);
+    color: #FEF3C7;
+}
+
+.margo-profile-caret {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.85);
+    transition: transform 0.22s ease;
+    flex-shrink: 0;
+}
+.margo-profile-wrap.is-open .margo-profile-caret {
+    transform: rotate(180deg);
+}
+
+.margo-profile-dropdown {
+    display: none;
+    margin-top: 8px;
+    background: #FFFFFF;
+    border: 1px solid var(--margo-border);
+    border-radius: 16px;
+    padding: 6px;
+    box-shadow: 0 16px 32px -10px rgba(29, 59, 94, 0.16);
+    animation: margoDropIn 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.margo-profile-wrap.is-open .margo-profile-dropdown {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+@keyframes margoDropIn {
+    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.margo-dd-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 11px;
+    border-radius: 11px;
+    color: var(--margo-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none !important;
+    border: none;
+    background: transparent;
+    width: 100%;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.18s ease;
+}
+.margo-dd-item iconify-icon { font-size: 16px; color: var(--margo-teal); }
+.margo-dd-item:hover { background: rgba(13, 122, 135, 0.08); color: var(--margo-teal); }
+.margo-dd-item.is-danger { color: #DC2626; }
+.margo-dd-item.is-danger iconify-icon { color: #DC2626; }
+.margo-dd-item.is-danger:hover { background: #FEF2F2; }
+.margo-dd-divider { height: 1px; background: var(--margo-border-soft); margin: 4px 6px; }
+
+/* Multi-Role Switcher in Right Sidebar */
+.margo-role-switch-box {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+}
+.margo-role-switch-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-decoration: none !important;
+    border: 1px solid var(--margo-border);
+    background: #F8FAFC;
+    color: var(--margo-muted);
+    transition: all 0.18s ease;
+}
+.margo-role-switch-pill:hover {
+    border-color: var(--margo-teal);
+    color: var(--margo-teal);
+}
+.margo-role-switch-pill.is-active {
+    background: var(--margo-grad-pill);
+    border-color: transparent;
+    color: #FFFFFF;
+}
+
+/* Right Sidebar Section Headings */
+.margo-rwidget-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.margo-rwidget-title {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--margo-navy);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.margo-rwidget-title iconify-icon { color: var(--margo-teal); font-size: 17px; }
+.margo-rwidget-link {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--margo-teal);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.margo-rwidget-link:hover { color: var(--margo-amber); }
+
+/* Horizontal Agenda Date Cards */
+.margo-agenda-strip {
+    display: flex;
+    gap: 9px;
+    overflow-x: auto;
+    padding: 2px 2px 10px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 122, 135, 0.25) transparent;
+}
+.margo-agenda-strip::-webkit-scrollbar { height: 5px; }
+.margo-agenda-strip::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.25); border-radius: 999px; }
+
+.margo-agenda-card {
+    flex: 0 0 88px;
+    padding: 10px 8px;
+    border-radius: 16px;
+    background: #F8FAFC;
+    border: 1px solid var(--margo-border);
+    text-align: center;
+    text-decoration: none !important;
+    color: var(--margo-navy);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    transition: all 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow: 0 2px 8px rgba(29, 59, 94, 0.04);
+}
+.margo-agenda-card:hover {
+    transform: translateY(-3px);
+    background: var(--margo-grad-brand);
+    border-color: transparent;
+    color: #FFFFFF;
+    box-shadow: 0 12px 20px -8px rgba(13, 122, 135, 0.45);
+}
+.margo-agenda-card.is-featured {
+    background: var(--margo-grad-brand);
+    border-color: transparent;
+    color: #FFFFFF;
+    box-shadow: 0 10px 20px -8px rgba(29, 59, 94, 0.40);
+    position: relative;
+}
+.margo-agenda-card.is-featured::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--margo-gold);
+}
+.margo-agenda-year {
+    font-size: 9.5px;
+    font-weight: 700;
+    opacity: 0.72;
+}
+.margo-agenda-month {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.9;
+}
+.margo-agenda-day {
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 900;
+    line-height: 1.08;
+    margin: 2px 0;
+}
+.margo-agenda-short {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    opacity: 0.88;
+}
+
+/* Info / Announcements List */
+.margo-news-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.margo-news-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 11px 12px;
+    border-radius: 14px;
+    background: #F8FAFC;
+    border: 1px solid var(--margo-border);
+    text-decoration: none !important;
+    color: var(--margo-title);
+    transition: all 0.22s ease;
+}
+.margo-news-card:hover {
+    background: #FFFFFF;
+    border-color: var(--margo-teal);
+    box-shadow: 0 8px 18px -6px rgba(13, 122, 135, 0.16);
+    transform: translateY(-1px);
+}
+.margo-news-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.margo-news-badge {
+    font-family: var(--font-heading);
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(13, 122, 135, 0.12);
+    color: var(--margo-teal);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.margo-news-badge--gold {
+    background: rgba(245, 158, 11, 0.15);
+    color: #B45309;
+}
+.margo-news-date {
+    font-size: 10.5px;
+    color: var(--margo-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.margo-news-title {
+    font-family: var(--font-heading);
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--margo-navy);
+    line-height: 1.35;
+}
+.margo-news-excerpt {
+    font-size: 11px;
+    color: var(--margo-muted);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.margo-load-more-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px dashed var(--margo-border);
+    background: transparent;
+    color: var(--margo-teal);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.margo-load-more-btn:hover {
+    background: rgba(13, 122, 135, 0.06);
+    border-color: var(--margo-teal);
+}
+
+/* ==============================================================================
+ * 6. PORTAL HERO BANNER, 3D APP CARDS, ACTIVITY FEED & SKELETONS
+ * ============================================================================== */
+@keyframes margoPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+.margo-skel {
+    background: #E2E8F0;
+    border-radius: 10px;
+    animation: margoPulse 1.4s ease-in-out infinite;
+}
+
+.margo-hero-banner {
+    position: relative;
+    border-radius: 26px;
+    padding: 24px 26px;
+    background-image: var(--margo-kawung-svg), linear-gradient(125deg, #1D3B5E 0%, #0D7A87 58%, #2589A8 100%);
+    background-size: 38px 38px, 100% 100%;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    overflow: hidden;
+    box-shadow: 0 18px 36px -14px rgba(29, 59, 94, 0.36);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    margin-bottom: 22px;
+}
+.margo-hero-banner::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #F59E0B 0%, #52B2DC 55%, #10B981 100%);
+}
+.margo-hero-gunungan {
+    position: absolute;
+    right: 12px;
+    bottom: -18px;
+    height: 185px;
+    width: auto;
+    opacity: 0.14;
+    pointer-events: none;
+    user-select: none;
+    filter: brightness(2);
+}
+.margo-hero-body {
+    position: relative;
+    z-index: 2;
+    max-width: 620px;
+}
+.margo-hero-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+}
+.margo-hero-eyebrow .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34D399;
+    box-shadow: 0 0 8px #34D399;
+}
+.margo-hero-title {
+    margin: 0 0 6px;
+    font-family: var(--font-heading);
+    font-size: 1.45rem;
+    font-weight: 800;
+    color: #FFFFFF;
+    line-height: 1.22;
+}
+.margo-hero-desc {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.88);
+    line-height: 1.55;
+}
+.margo-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+.margo-hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    min-height: 40px;
+    border-radius: 999px;
+    font-family: var(--font-heading);
+    font-size: 12.5px;
+    font-weight: 700;
+    text-decoration: none !important;
+    transition: all 0.22s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.margo-hero-btn--white {
+    background: #FFFFFF;
+    color: var(--margo-navy);
+    box-shadow: 0 6px 16px rgba(15, 29, 47, 0.18);
+}
+.margo-hero-btn--white:hover {
+    background: #FEF3C7;
+    transform: translateY(-2px);
+}
+.margo-hero-btn--glass {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #FFFFFF;
+}
+.margo-hero-btn--glass:hover {
+    background: rgba(255, 255, 255, 0.24);
+    transform: translateY(-2px);
+}
+.margo-hero-btn--gold {
+    background: var(--margo-grad-gold);
+    color: #FFFFFF;
+    box-shadow: 0 6px 18px rgba(245, 158, 11, 0.35);
+}
+.margo-hero-btn--gold:hover {
+    filter: brightness(1.07);
+    transform: translateY(-2px);
+}
+
+.margo-hero-aside {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 215px;
+    background: rgba(15, 29, 47, 0.28);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 18px;
+    padding: 14px 16px;
+}
+.margo-hero-stat {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.92);
+}
+.margo-hero-stat iconify-icon {
+    font-size: 17px;
+    color: #FCD34D;
+    flex-shrink: 0;
+}
+
+/* Section Headers & Search Bar */
+.margo-section-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.margo-section-h2 {
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--margo-navy);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.margo-section-h3 {
+    margin: 0 0 12px;
+    font-family: var(--font-heading);
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: var(--margo-teal);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.margo-section-h3.is-muted {
+    color: var(--margo-muted);
+}
+
+.margo-search-box {
+    position: relative;
+    width: 280px;
+    max-width: 100%;
+}
+.margo-search-box iconify-icon {
+    position: absolute;
+    left: 13px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--margo-muted);
+    font-size: 17px;
+    pointer-events: none;
+}
+.margo-search-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 14px 8px 39px;
+    border-radius: 12px;
+    border: 1.5px solid var(--margo-border);
+    background: #FFFFFF;
+    color: var(--margo-title);
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.2s ease;
+}
+.margo-search-input:focus {
+    outline: none;
+    border-color: var(--margo-teal);
+    box-shadow: 0 0 0 3px rgba(13, 122, 135, 0.14);
+}
+
+/* 3D Hover Application Cards Grid */
+.margo-apps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+    gap: 13px;
+    margin-bottom: 22px;
+}
+
+.margo-app-frame {
+    padding: 2px;
+    border-radius: 17px;
+    background: linear-gradient(135deg, rgba(29, 59, 94, 0.28) 0%, rgba(13, 122, 135, 0.50) 60%, rgba(82, 178, 220, 0.45) 100%);
+    text-decoration: none !important;
+    display: block;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
+    box-shadow: 0 4px 14px rgba(29, 59, 94, 0.06);
+}
+.margo-app-frame:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 18px 30px -10px rgba(13, 122, 135, 0.28);
+}
+.margo-app-frame.is-admin-app {
+    background: linear-gradient(135deg, #1D3B5E 0%, #D97706 60%, #F59E0B 100%);
+}
+.margo-app-frame.is-external {
+    background: linear-gradient(135deg, #CBD5E1 0%, #E2E8F0 100%);
+}
+.margo-app-frame.is-external:hover {
+    background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 100%);
+}
+
+.margo-app-card {
+    background: #FFFFFF;
+    border-radius: 15px;
+    padding: 14px 15px;
+    min-height: 92px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    position: relative;
+    overflow: hidden;
+}
+.margo-app-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: var(--margo-grad-brand);
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    box-shadow: 0 6px 14px -4px rgba(13, 122, 135, 0.35);
+    transition: transform 0.25s ease;
+}
+.margo-app-frame:hover .margo-app-icon {
+    transform: scale(1.08) rotate(-3deg);
+}
+.margo-app-frame.is-admin-app .margo-app-icon {
+    background: linear-gradient(135deg, #1D3B5E 0%, #D97706 100%);
+}
+.margo-app-frame.is-external .margo-app-icon {
+    background: #F1F5F9;
+    color: var(--margo-navy);
+    box-shadow: none;
+}
+.margo-app-frame.is-external:hover .margo-app-icon {
+    background: var(--margo-grad-brand);
+    color: #FFFFFF;
+}
+
+.margo-app-info {
+    flex: 1;
+    min-width: 0;
+}
+.margo-app-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+}
+.margo-app-name {
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--margo-title);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.margo-app-pill {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(13, 122, 135, 0.11);
+    color: var(--margo-teal);
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+.margo-app-frame.is-admin-app .margo-app-pill {
+    background: rgba(245, 158, 11, 0.16);
+    color: #B45309;
+}
+.margo-app-frame.is-external .margo-app-pill {
+    background: #F1F5F9;
+    color: var(--margo-muted);
+}
+.margo-app-desc {
+    font-size: 11.5px;
+    color: var(--margo-muted);
+    line-height: 1.38;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.margo-app-arrow {
+    color: #94A3B8;
+    font-size: 17px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+.margo-app-frame:hover .margo-app-arrow {
+    color: var(--margo-teal);
+    transform: translateX(3px);
+}
+
+/* Activity & Recent Login Panel */
+.margo-activity-panel {
+    background: #FFFFFF;
+    border: 1px solid var(--margo-border);
+    border-radius: 22px;
+    padding: 18px 20px;
+    box-shadow: 0 6px 20px rgba(29, 59, 94, 0.04);
+}
+.margo-login-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+.margo-login-card {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #F8FAFC;
+    border: 1px solid var(--margo-border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.margo-login-card-title {
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--margo-navy);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.margo-login-card-sub {
+    font-size: 11px;
+    color: var(--margo-muted);
+    margin-top: 3px;
+    word-break: break-word;
+}
+
+.margo-activity-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.margo-act-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 13px;
+    border-radius: 13px;
+    border: 1px solid var(--margo-border-soft);
+    background: #FAFBFD;
+    transition: background 0.18s ease;
+}
+.margo-act-row:hover {
+    background: #F1F5F9;
+}
+.margo-act-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.margo-act-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(13, 122, 135, 0.10);
+    color: var(--margo-teal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    flex-shrink: 0;
+}
+.margo-act-icon.is-err {
+    background: rgba(239, 68, 68, 0.10);
+    color: #DC2626;
+}
+.margo-act-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--margo-title);
+}
+.margo-act-meta {
+    font-size: 11px;
+    color: var(--margo-muted);
+}
+
+.margo-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--margo-border-soft);
+}
+.margo-page-btns {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+.margo-page-btn {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 4px 10px;
+    border-radius: 9px;
+    border: 1px solid var(--margo-border);
+    background: #FFFFFF;
+    color: var(--margo-navy);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s;
+}
+.margo-page-btn:hover:not(:disabled) {
+    border-color: var(--margo-teal);
+    color: var(--margo-teal);
+}
+.margo-page-btn.is-active {
+    background: var(--margo-grad-pill);
+    border-color: transparent;
+    color: #FFFFFF;
+}
+.margo-page-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ==============================================================================
+ * 7. FLOATING SCROLL-TOP & VERSION BADGE + TRANSITIONS
+ * ============================================================================== */
+.margo-scroll-top {
+    position: fixed;
+    bottom: 46px;
+    right: 18px;
+    z-index: 45;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: var(--margo-grad-brand);
+    color: #FFFFFF;
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 10px 24px rgba(29, 59, 94, 0.34);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+    transition: all 0.25s ease;
+}
+.margo-scroll-top.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+.margo-scroll-top:hover {
+    filter: brightness(1.08);
+    transform: translateY(-2px);
+}
+
+.margo-version-pill {
+    position: fixed;
+    bottom: 10px;
+    right: 14px;
+    z-index: 44;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--margo-border);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--margo-muted);
+    pointer-events: none;
+}
+
+/* Smooth In-Place DOM Transitions (Zero Page Reload Policy) */
+@keyframes rowSmoothIn {
+    0%   { opacity: 0; transform: translateY(-8px) scale(0.98); background-color: rgba(13, 122, 135, 0.14); }
+    100% { opacity: 1; transform: translateY(0) scale(1); background-color: transparent; }
+}
+@keyframes rowSmoothOut {
+    0%   { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.95); }
+}
+@keyframes rowFlash {
+    0%   { background-color: rgba(245, 158, 11, 0.25); }
+    100% { background-color: transparent; }
+}
+.row-smooth-in  { animation: rowSmoothIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.row-smooth-out { animation: rowSmoothOut 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards; pointer-events: none; }
+.row-flash      { animation: rowFlash 1.4s ease-out forwards; }
+
+/* ==============================================================================
+ * 8. RESPONSIVE BREAKPOINTS (MOBILE 360px+ & TABLET DRAWERS)
+ * ============================================================================== */
+@media (max-width: 1023px) {
+    .margo-sidebar-left {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: min(275px, 84vw);
+        transform: translateX(-105%);
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+    .margo-sidebar-left.is-open-mobile {
+        transform: translateX(0);
+    }
+
+    .margo-sidebar-right {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: min(315px, 88vw);
+        transform: translateX(105%);
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+    .margo-sidebar-right.is-open-mobile {
+        transform: translateX(0);
+    }
+
+    .margo-hero-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 18px;
+    }
+    .margo-hero-aside {
+        width: 100%;
+    }
+    .margo-version-pill {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .margo-top-header {
+        padding: 10px 12px;
+    }
+    .margo-top-header.is-scrolled {
+        margin: 0 6px;
+    }
+    .margo-header-role-chip,
+    .margo-header-avatar-name {
+        display: none;
+    }
+    .margo-header-avatar-btn {
+        padding: 4px;
+    }
+    .margo-main-inner {
+        padding: 14px 12px 36px;
+    }
+    .margo-hero-title {
+        font-size: 1.2rem;
+    }
+    .margo-login-cards {
+        grid-template-columns: 1fr;
+    }
+    .margo-search-box {
+        width: 100%;
+    }
+    .margo-apps-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 390px) {
+    .margo-header-title span {
+        max-width: 130px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}

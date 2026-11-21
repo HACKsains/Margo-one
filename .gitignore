@@ -1,0 +1,17 @@
+# Local Environment & Secrets Override
+config.local.php
+.env
+.env.*
+
+# Logs & Temporary Files
+error_log
+*.log
+*.tmp
+*.bak
+
+# Vendor & OS Junk
+/vendor/
+composer.phar
+.DS_Store
+Thumbs.db
+desktop.ini
