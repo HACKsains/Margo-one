@@ -35,12 +35,13 @@ require_once __DIR__ . '/sso-jwt.php';
 
 /**
  * Kunci master internal untuk enkripsi at-rest (Private Key klien & RSA Private Key IdP)
+ * Stabil lintas nama database (uofruaju_margo_one maupun uofruaju_learn_ilmuna)
  */
-function margo_sso_master_key()
+function margo_sso_master_key($dbSeedOverride = null)
 {
     $seedParts = [
         defined('DB_PASS') ? DB_PASS : 'margo_local_pass',
-        defined('DB_NAME') ? DB_NAME : 'uofruaju_learn_ilmuna',
+        $dbSeedOverride !== null ? (string)$dbSeedOverride : 'MARGO_ONE_UNIFIED_IDP_KEY',
         defined('APP_DOMAIN') ? APP_DOMAIN : 'margo-one.ilmuna.my.id',
         'MARGO_ONE_SSO_ENC_V1_SALT_2026',
     ];
@@ -67,7 +68,7 @@ function margo_sso_encrypt_secret($plaintext)
 }
 
 /**
- * Dekripsi AES-256-CBC + verifikasi HMAC-SHA256 constant-time
+ * Dekripsi AES-256-CBC + verifikasi HMAC-SHA256 constant-time (mendukung fallback seed lama)
  */
 function margo_sso_decrypt_secret($encoded)
 {
@@ -80,21 +81,31 @@ function margo_sso_decrypt_secret($encoded)
         return '';
     }
 
-    $masterKey = margo_sso_master_key();
-    $encKey = hash_hmac('sha256', 'sso-enc', $masterKey, true);
-    $macKey = hash_hmac('sha256', 'sso-mac', $masterKey, true);
-
     $iv     = substr($raw, 0, 16);
     $mac    = substr($raw, 16, 32);
     $cipher = substr($raw, 48);
 
-    $expectedMac = hash_hmac('sha256', $iv . $cipher, $macKey, true);
-    if (!hash_equals($expectedMac, $mac)) {
-        return '';
+    $candidateSeeds = [
+        null,
+        defined('DB_NAME') ? DB_NAME : 'uofruaju_margo_one',
+        'uofruaju_margo_one',
+        'uofruaju_learn_ilmuna',
+    ];
+
+    foreach ($candidateSeeds as $seed) {
+        $masterKey   = margo_sso_master_key($seed);
+        $encKey      = hash_hmac('sha256', 'sso-enc', $masterKey, true);
+        $macKey      = hash_hmac('sha256', 'sso-mac', $masterKey, true);
+        $expectedMac = hash_hmac('sha256', $iv . $cipher, $macKey, true);
+        if (hash_equals($expectedMac, $mac)) {
+            $plain = openssl_decrypt($cipher, 'aes-256-cbc', $encKey, OPENSSL_RAW_DATA, $iv);
+            if ($plain !== false) {
+                return $plain;
+            }
+        }
     }
 
-    $plain = openssl_decrypt($cipher, 'aes-256-cbc', $encKey, OPENSSL_RAW_DATA, $iv);
-    return ($plain === false) ? '' : $plain;
+    return '';
 }
 
 /**
@@ -351,36 +362,40 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
-    // Seed 2 klien default jika sso_clients masih kosong
+    // Seed 2 klien default jika sso_clients masih kosong (+ sinkronisasi kunci awal produksi & lokal)
+    $defaults = [
+        [
+            'client_name'        => 'Ilmuna Learn LMS',
+            'client_slug'        => 'ilmuna-learn',
+            'public_key'         => 'pk_sso_7d42b19f20e10e6a9b6c1e40dbb8582f',
+            'private_key'        => 'sk_sso_3a73a15e291c401208776c82ad5816752cf5eb9df802b28ec335a8c0dd232456',
+            'app_url'            => 'https://learn.ilmuna.my.id',
+            'app_icon'           => 'solar:square-academic-cap-2-bold',
+            'redirect_uris'      => "https://learn.ilmuna.my.id/sso-callback\nhttps://learn.ilmuna.my.id/sso-callback.php\nhttp://learn.ilmuna.my.id/sso-callback\nhttp://learn.ilmuna.my.id/sso-callback.php\nhttp://localhost/learn/sso-callback\nhttp://localhost/learn/sso-callback.php\nhttp://127.0.0.1/learn/sso-callback\nhttp://127.0.0.1/learn/sso-callback.php\nhttp://learn.test/sso-callback",
+            'logout_webhook_url' => 'https://learn.ilmuna.my.id/sso-logout-webhook.php',
+            'allowed_domains'    => 'learn.ilmuna.my.id,margo-one.ilmuna.my.id,learn.test,localhost,127.0.0.1',
+            'allowed_scopes'     => 'openid,profile,email,roles',
+            'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
+            'rate_limit_per_min' => 240,
+        ],
+        [
+            'client_name'        => 'Portal WordPress Ilmuna',
+            'client_slug'        => 'ilmuna-wp',
+            'public_key'         => 'pk_sso_670c3653054dc61659cd64e450396d7a',
+            'private_key'        => 'sk_sso_b966874701749abba5cd4c93b9d420690b2ae58cc612bf6baf9604a6edbbb64e',
+            'app_url'            => 'https://ilmuna.my.id',
+            'app_icon'           => 'solar:globe-bold',
+            'redirect_uris'      => "https://ilmuna.my.id/?margo_one_callback=1\nhttps://www.ilmuna.my.id/?margo_one_callback=1\nhttp://localhost/ilmuna/?margo_one_callback=1",
+            'logout_webhook_url' => 'https://ilmuna.my.id/?margo_one_slo=1',
+            'allowed_domains'    => 'ilmuna.my.id,www.ilmuna.my.id,margo-one.ilmuna.my.id,localhost,127.0.0.1',
+            'allowed_scopes'     => 'openid,profile,email,roles',
+            'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
+            'rate_limit_per_min' => 180,
+        ],
+    ];
+
     $clientCount = (int)$pdo->query("SELECT COUNT(*) FROM sso_clients")->fetchColumn();
     if ($clientCount === 0) {
-        $defaults = [
-            [
-                'client_name'        => 'Ilmuna Learn LMS',
-                'client_slug'        => 'ilmuna-learn',
-                'app_url'            => 'https://learn.ilmuna.my.id',
-                'app_icon'           => 'solar:square-academic-cap-2-bold',
-                'redirect_uris'      => "https://learn.ilmuna.my.id/sso-callback\nhttps://learn.ilmuna.my.id/sso-callback.php\nhttp://localhost/learn/sso-callback.php\nhttp://learn.test/sso-callback",
-                'logout_webhook_url' => 'https://learn.ilmuna.my.id/sso-logout-webhook.php',
-                'allowed_domains'    => 'learn.ilmuna.my.id,margo-one.ilmuna.my.id,learn.test',
-                'allowed_scopes'     => 'openid,profile,email,roles',
-                'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
-                'rate_limit_per_min' => 240,
-            ],
-            [
-                'client_name'        => 'Portal WordPress Ilmuna',
-                'client_slug'        => 'ilmuna-wp',
-                'app_url'            => 'https://ilmuna.my.id',
-                'app_icon'           => 'solar:globe-bold',
-                'redirect_uris'      => "https://ilmuna.my.id/?margo_one_callback=1\nhttps://www.ilmuna.my.id/?margo_one_callback=1\nhttp://localhost/ilmuna/?margo_one_callback=1",
-                'logout_webhook_url' => 'https://ilmuna.my.id/?margo_one_slo=1',
-                'allowed_domains'    => 'ilmuna.my.id,www.ilmuna.my.id,margo-one.ilmuna.my.id',
-                'allowed_scopes'     => 'openid,profile,email,roles',
-                'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
-                'rate_limit_per_min' => 180,
-            ],
-        ];
-
         $insClient = $pdo->prepare("
             INSERT INTO sso_clients
             (client_name, client_slug, public_key, private_key_enc, private_key_hash, sig_mode, app_url, app_icon, redirect_uris, logout_webhook_url, allowed_domains, allowed_ips, allowed_scopes, allowed_roles, rate_limit_per_min, is_active)
@@ -388,13 +403,12 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         ");
 
         foreach ($defaults as $d) {
-            $pair = margo_sso_generate_keypair();
             $insClient->execute([
                 $d['client_name'],
                 $d['client_slug'],
-                $pair['public_key'],
-                margo_sso_encrypt_secret($pair['private_key']),
-                hash('sha256', $pair['private_key']),
+                $d['public_key'],
+                margo_sso_encrypt_secret($d['private_key']),
+                hash('sha256', $d['private_key']),
                 $d['app_url'],
                 $d['app_icon'],
                 $d['redirect_uris'],
@@ -404,6 +418,37 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
                 $d['allowed_roles'],
                 $d['rate_limit_per_min'],
             ]);
+        }
+    } else {
+        // Sinkronisasi otomatis klien default yang belum pernah dirotasi manual oleh Admin agar public_key konsisten 100% antara lokal & produksi
+        $rotatedCount = 0;
+        try {
+            $rotatedCount = (int)$pdo->query("SELECT COUNT(*) FROM sso_audit_logs WHERE event_type = 'admin_client_keys_rotated'")->fetchColumn();
+        } catch (Throwable $eRot) {
+            $rotatedCount = 0;
+        }
+        $stChk = $pdo->prepare("SELECT id, public_key, private_key_enc FROM sso_clients WHERE client_slug = ? LIMIT 1");
+        $stSync = $pdo->prepare("
+            UPDATE sso_clients
+            SET public_key = ?, private_key_enc = ?, private_key_hash = ?, redirect_uris = ?, allowed_domains = ?
+            WHERE id = ?
+        ");
+        foreach ($defaults as $d) {
+            $stChk->execute([$d['client_slug']]);
+            $rowC = $stChk->fetch(PDO::FETCH_ASSOC);
+            if ($rowC) {
+                $dec = margo_sso_decrypt_secret($rowC['private_key_enc']);
+                if (($rotatedCount === 0 && $rowC['public_key'] !== $d['public_key']) || $dec === '') {
+                    $stSync->execute([
+                        $d['public_key'],
+                        margo_sso_encrypt_secret($d['private_key']),
+                        hash('sha256', $d['private_key']),
+                        $d['redirect_uris'],
+                        $d['allowed_domains'],
+                        (int)$rowC['id'],
+                    ]);
+                }
+            }
         }
     }
 
