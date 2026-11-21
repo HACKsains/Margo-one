@@ -55,22 +55,32 @@ function margo_authorize_render_error($httpCode, $errorCode, $title, $message)
     exit;
 }
 
-$pdo = getDBConnection();
-$isResume = isset($_GET['resume']) && $_GET['resume'] === '1';
+try {
+    $pdo = getDBConnection();
+    $isResume = isset($_GET['resume']) && $_GET['resume'] === '1';
 
-if ($isResume) {
-    $params = margo_get_pending_oauth();
-    if (!$params) {
-        header('Location: ' . BASE_URL . '/gateway');
-        exit;
+    if ($isResume) {
+        $params = margo_get_pending_oauth();
+        if (!$params) {
+            header('Location: ' . BASE_URL . '/gateway');
+            exit;
+        }
+        $params['prompt'] = '';
+    } else {
+        $params = $_GET;
     }
-    $params['prompt'] = '';
-} else {
-    $params = $_GET;
-}
 
-$loggedUser = isLoggedIn() ? getCurrentUser() : null;
-$outcome = margo_process_authorize_request($pdo, $params, $loggedUser);
+    $loggedUser = isLoggedIn() ? getCurrentUser() : null;
+    $outcome = margo_process_authorize_request($pdo, $params, $loggedUser);
+} catch (Throwable $e) {
+    error_log('[MargoOne] /authorize fatal error: ' . $e->getMessage());
+    margo_authorize_render_error(
+        503,
+        'SSO_BACKEND_ERROR',
+        'Layanan Otorisasi Sementara Tidak Tersedia',
+        'Server Margo One SSO gagal terhubung ke basis data atau layanan keamanan. Pastikan database telah aktif dan konfigurasi config.local.php sudah benar.'
+    );
+}
 
 if ($outcome['action'] === 'error_page') {
     margo_clear_pending_oauth();

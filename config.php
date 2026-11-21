@@ -346,7 +346,7 @@ function getDBConnection() {
         $pdoOptions[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci, time_zone = '+07:00'";
     }
 
-    // 1. Koneksi langsung dengan kredensial produksi/konfigurasi utama
+    // 1. Koneksi langsung dengan kredensial utama (DB_NAME / DB_USER / DB_PASS atau config.local.php)
     try {
         $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
         $pdo = new PDO($dsn, DB_USER, DB_PASS, $pdoOptions);
@@ -354,36 +354,54 @@ function getDBConnection() {
     } catch (PDOException $e1) {
         $errors[] = 'Primary MySQL: ' . $e1->getMessage();
 
-        // 2. Fallback lokal Laragon / XAMPP (127.0.0.1 root tanpa password)
-        try {
-            $dsnLocalNoDb = "mysql:host=127.0.0.1;port=" . DB_PORT . ";charset=" . DB_CHARSET;
-            $tmpPdo = new PDO($dsnLocalNoDb, 'root', '', [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_TIMEOUT => 3,
-            ]);
-            $tmpPdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        // 2. Fallback lokal Laragon / XAMPP (127.0.0.1 root tanpa password -> tetap memakai DB_NAME dedicated)
+        $hostNow = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+        $isLocalEnv = (php_sapi_name() === 'cli')
+            || strpos($hostNow, 'localhost') === 0
+            || strpos($hostNow, '127.0.0.1') === 0
+            || substr($hostNow, -5) === '.test';
 
-            $dsnLocal = "mysql:host=127.0.0.1;port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-            $pdo = new PDO($dsnLocal, 'root', '', $pdoOptions);
-            $pdo->exec("SET time_zone = '+07:00'");
-        } catch (PDOException $e2) {
-            $errors[] = 'Local Laragon MySQL: ' . $e2->getMessage();
-
-            // 3. Coba buat database dengan kredensial utama bila belum ada
+        if ($isLocalEnv) {
             try {
-                $dsnNoDb = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";charset=" . DB_CHARSET;
-                $tmpPdo2 = new PDO($dsnNoDb, DB_USER, DB_PASS, [
+                $dsnLocalNoDb = "mysql:host=127.0.0.1;port=" . DB_PORT . ";charset=" . DB_CHARSET;
+                $tmpPdo = new PDO($dsnLocalNoDb, 'root', '', [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_TIMEOUT => 3,
                 ]);
-                $tmpPdo2->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-                $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-                $pdo = new PDO($dsn, DB_USER, DB_PASS, $pdoOptions);
+                $tmpPdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+
+                $dsnLocal = "mysql:host=127.0.0.1;port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+                $pdo = new PDO($dsnLocal, 'root', '', $pdoOptions);
+                $pdo->exec("SET time_zone = '+07:00'");
+            } catch (PDOException $e2) {
+                $errors[] = 'Local Laragon MySQL: ' . $e2->getMessage();
+            }
+        }
+
+        // 3. Fallback cPanel: DB_NAME (uofruaju_margo_one) menggunakan user MySQL cPanel eksisting (uofruaju_Learn_Ilmuna)
+        if ($pdo === null) {
+            try {
+                $dsnCpDedicated = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+                $pdo = new PDO($dsnCpDedicated, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
                 $pdo->exec("SET time_zone = '+07:00'");
             } catch (PDOException $e3) {
-                $errors[] = 'Create DB Attempt: ' . $e3->getMessage();
-                throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO: ' . implode(' | ', $errors));
+                $errors[] = 'cPanel Dedicated DB: ' . $e3->getMessage();
             }
+        }
+
+        // 4. Fallback cPanel Shared Identity DB (uofruaju_learn_ilmuna) agar produksi langsung hidup tanpa HTTP 500
+        if ($pdo === null) {
+            try {
+                $dsnCpShared = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=uofruaju_learn_ilmuna;charset=" . DB_CHARSET;
+                $pdo = new PDO($dsnCpShared, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
+                $pdo->exec("SET time_zone = '+07:00'");
+            } catch (PDOException $e4) {
+                $errors[] = 'cPanel Shared DB: ' . $e4->getMessage();
+            }
+        }
+
+        if ($pdo === null) {
+            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO: ' . implode(' | ', $errors));
         }
     }
 
