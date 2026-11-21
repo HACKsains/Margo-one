@@ -194,7 +194,31 @@ function margo_process_authorize_request(PDO $pdo, array $params, array $loggedI
         ];
     }
 
-    // 7. Pastikan sesi SSO global valid, lalu terbitkan authorization_code sekali pakai (TTL 60s)
+    $pendingPayload = [
+        'client_db_id'          => (int)$client['id'],
+        'client_id'             => $clientKey,
+        'redirect_uri'          => $redirectUri,
+        'response_type'         => 'code',
+        'scope'                 => $finalScope,
+        'state'                 => $state,
+        'code_challenge'        => $codeChallenge,
+        'code_challenge_method' => 'S256',
+        'nonce'                 => $nonce,
+    ];
+
+    // 7. Layar Konfirmasi Akun ("Anda akan login sebagai: ... Lanjutkan / Login dengan akun lain")
+    $isConfirmedContinue = isset($params['continue']) && ((string)$params['continue'] === '1' || $params['continue'] === true);
+    if (!$isConfirmedContinue) {
+        return [
+            'action'      => 'confirm_account',
+            'http_status' => 200,
+            'client'      => $client,
+            'user'        => $loggedInUser,
+            'pending'     => $pendingPayload,
+        ];
+    }
+
+    // 8. Pastikan sesi SSO global valid, lalu terbitkan authorization_code sekali pakai (TTL 60s)
     $ssoSessionId = (int)($loggedInUser['sso_session_id'] ?? 0);
     if ($ssoSessionId <= 0) {
         $newSess = margo_create_sso_session($pdo, (int)$loggedInUser['id'], $loggedInUser['active_role'] ?? null, (string)($loggedInUser['login_method'] ?? 'password'));

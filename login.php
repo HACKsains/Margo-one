@@ -86,6 +86,8 @@ if (isset($_GET['msg'])) {
         $infoMsg = 'Anda telah berhasil keluar dari seluruh sesi Margo One SSO.';
     } elseif ($_GET['msg'] === 'auth_required') {
         $infoMsg = 'Silakan masuk terlebih dahulu menggunakan akun Ilmuna Anda.';
+    } elseif ($_GET['msg'] === 'switch_account') {
+        $infoMsg = 'Silakan masuk menggunakan akun Margo One lainnya.';
     }
 }
 
