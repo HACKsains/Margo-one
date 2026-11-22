@@ -451,6 +451,45 @@ add_action('init', function () {
 });
 
 /**
+ * Global Single Logout (SLO) saat pengguna logout dari WordPress:
+ * Otomatis mencabut sesi di Margo One SSO & seluruh aplikasi ekosistem lainnya.
+ */
+add_action('wp_logout', function ($wpUserId) {
+    $cfg = margo_wp_sso_get_settings();
+    if (empty($cfg['public_key']) || empty($cfg['private_key']) || empty($cfg['sso_url'])) {
+        return;
+    }
+    $ssoSub = (int)get_user_meta((int)$wpUserId, '_margo_one_sub', true);
+    $ssoSid = (int)get_user_meta((int)$wpUserId, '_margo_one_sid', true);
+    if ($ssoSub <= 0 && $ssoSid <= 0) {
+        return;
+    }
+
+    // 1. Panggil Back-Channel Logout ke Margo One SSO
+    @margo_wp_signed_post('/api/sso/logout-callback.php', [
+        'sid'        => $ssoSid,
+        'user_id'    => $ssoSub > 0 ? $ssoSub : null,
+        'revoke_all' => true,
+    ], $cfg);
+
+    // 2. Arahkan browser ke Front-Channel Global SLO Margo One (/logout)
+    $ts    = (string)time();
+    $canon = 'SLO|' . $cfg['public_key'] . '|' . $ssoSub . '|' . $ssoSid . '|' . $ts;
+    $sig   = hash_hmac('sha256', $canon, $cfg['private_key']);
+    $sloUrl = rtrim($cfg['sso_url'], '/') . '/logout?' . http_build_query([
+        'all'       => '1',
+        'client_id' => $cfg['public_key'],
+        'uid'       => (string)$ssoSub,
+        'sid'       => (string)$ssoSid,
+        'ts'        => $ts,
+        'sig'       => $sig,
+    ], '', '&', PHP_QUERY_RFC3986);
+
+    wp_redirect($sloUrl);
+    exit;
+}, 10, 1);
+
+/**
  * CSS Tema 100% Lumina Gold (WAJIB z-index: 60 !important; isolation: isolate !important;
  * solid opaque + Light & Dark Mode sesuai standar tema WordPress lumina-gold)
  */

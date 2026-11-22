@@ -1174,17 +1174,38 @@ function logoutUserLocalOnly()
 /**
  * Logout penuh (Global Single Logout: cabut DB + SLO webhooks + bersihkan sesi lokal)
  */
-function logoutUser($revokeAllDevices = false)
+function logoutUser($revokeAllDevices = true)
 {
     $sid = isset($_SESSION['sso_session_id']) ? (int)$_SESSION['sso_session_id'] : 0;
     $uid = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
 
     try {
         $pdo = getDBConnection();
+
+        // Fallback: bila session PHP sudah kosong tetapi cookie SSO global masih ada di browser
+        if ($uid <= 0 && $sid <= 0 && !empty($_COOKIE[SSO_SESSION_COOKIE])) {
+            $hash = hash('sha256', (string)$_COOKIE[SSO_SESSION_COOKIE]);
+            $stC  = $pdo->prepare("SELECT id, user_id FROM sso_sessions WHERE session_token_hash = ? LIMIT 1");
+            $stC->execute([$hash]);
+            $cRow = $stC->fetch(PDO::FETCH_ASSOC);
+            if ($cRow) {
+                $sid = (int)$cRow['id'];
+                $uid = (int)$cRow['user_id'];
+            }
+        }
+
+        if ($sid > 0 && $uid <= 0) {
+            $stU = $pdo->prepare("SELECT user_id FROM sso_sessions WHERE id = ? LIMIT 1");
+            $stU->execute([$sid]);
+            $uid = (int)$stU->fetchColumn();
+        }
+
         if ($revokeAllDevices && $uid > 0) {
             margo_revoke_all_user_sessions($pdo, $uid, 0, true);
         } elseif ($sid > 0) {
             margo_revoke_sso_session($pdo, $sid, $uid > 0 ? $uid : null, true);
+        } elseif ($uid > 0) {
+            margo_revoke_all_user_sessions($pdo, $uid, 0, true);
         }
     } catch (Throwable $e) {
         // Tetap bersihkan sesi lokal

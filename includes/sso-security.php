@@ -538,6 +538,18 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    // 10b. margo_slo_revocations (Pencabutan Sesi Global SLO)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS margo_slo_revocations (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            sso_session_id BIGINT NULL,
+            user_id INT NULL,
+            revoked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_slo_sid (sso_session_id),
+            INDEX idx_slo_uid (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     // 11. sso_external_apps (Layanan Ekosistem Non-SSO / Tautan Cepat)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS sso_external_apps (
@@ -1441,10 +1453,75 @@ function margo_sso_emit_json($httpStatus, array $payload, array $extraHeaders = 
 }
 
 /**
+ * Catat pencabutan sesi global (SLO) ke database Margo One & database sibling (uofruaju_learn_ilmuna)
+ * agar aplikasi di server MySQL yang sama langsung mendeteksi logout dalam <1ms walaupun webhook HTTP
+ * terhalang Cloudflare / firewall loopback.
+ */
+function margo_sso_record_cross_db_revocation(PDO $pdo, $userId, $ssoSessionId = null)
+{
+    $uid = (int)$userId > 0 ? (int)$userId : null;
+    $sid = (int)$ssoSessionId > 0 ? (int)$ssoSessionId : null;
+    if ($uid === null && $sid === null) {
+        return;
+    }
+
+    $createSql = "
+        CREATE TABLE IF NOT EXISTS margo_slo_revocations (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            sso_session_id BIGINT NULL,
+            user_id INT NULL,
+            revoked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_slo_sid (sso_session_id),
+            INDEX idx_slo_uid (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ";
+
+    // 1. Catat di DB aktif Margo One
+    try {
+        $pdo->exec($createSql);
+        $st = $pdo->prepare("INSERT INTO margo_slo_revocations (sso_session_id, user_id, revoked_at) VALUES (?, ?, NOW())");
+        $st->execute([$sid, $uid]);
+    } catch (Throwable $e) {
+        // Non-fatal
+    }
+
+    // 2. Catat langsung ke DB uofruaju_learn_ilmuna bila berada di server MySQL yang sama (Laragon / cPanel)
+    $siblingDbs = ['uofruaju_learn_ilmuna', 'uofruaju_margo_one'];
+    foreach ($siblingDbs as $dbName) {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `{$dbName}`.`margo_slo_revocations` (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    sso_session_id BIGINT NULL,
+                    user_id INT NULL,
+                    revoked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_slo_sid (sso_session_id),
+                    INDEX idx_slo_uid (user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $stSib = $pdo->prepare("INSERT INTO `{$dbName}`.`margo_slo_revocations` (sso_session_id, user_id, revoked_at) VALUES (?, ?, NOW())");
+            $stSib->execute([$sid, $uid]);
+
+            if ($uid !== null) {
+                $stSess = $pdo->prepare("UPDATE `{$dbName}`.`sso_sessions` SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL");
+                @$stSess->execute([$uid]);
+            } elseif ($sid !== null) {
+                $stSess = $pdo->prepare("UPDATE `{$dbName}`.`sso_sessions` SET revoked_at = NOW() WHERE id = ? AND revoked_at IS NULL");
+                @$stSess->execute([$sid]);
+            }
+        } catch (Throwable $eSib) {
+            // Abaikan bila user MySQL tidak memiliki grant lintas DB tersebut
+        }
+    }
+}
+
+/**
  * Kirim Back-Channel Single Logout (SLO) Webhook bertanda tangan ke semua klien aktif
  */
 function margo_sso_dispatch_slo_webhooks(PDO $pdo, $userId, $ssoSessionId = null)
 {
+    margo_sso_record_cross_db_revocation($pdo, $userId, $ssoSessionId);
+
     $results = [];
     try {
         $clients = $pdo->query("
