@@ -17,6 +17,23 @@ require_once __DIR__ . '/config.php';
 require_once BASE_PATH . '/includes/sso-security.php';
 
 /**
+ * Normalisasi URL foto profil / avatar (relatif -> BASE_URL penuh)
+ */
+if (!function_exists('margo_resolve_avatar_url')) {
+    function margo_resolve_avatar_url($raw)
+    {
+        $s = trim((string)$raw);
+        if ($s === '') {
+            return null;
+        }
+        if (preg_match('#^https?://#i', $s) || strpos($s, 'data:image/') === 0) {
+            return $s;
+        }
+        return rtrim(BASE_URL, '/') . '/' . ltrim($s, '/');
+    }
+}
+
+/**
  * Helper normalisasi nomor HP Indonesia (08... / 628...)
  */
 if (!function_exists('margo_norm_phone_id')) {
@@ -339,8 +356,8 @@ function getCurrentUser()
         'full_name'      => (string)($_SESSION['user_name'] ?? ''),
         'email'          => (string)($_SESSION['user_email'] ?? ''),
         'email_google'   => $_SESSION['user_email_google'] ?? null,
-        'avatar'         => $_SESSION['user_avatar'] ?? null,
-        'foto_profil'    => $_SESSION['user_avatar'] ?? null,
+        'avatar'         => margo_resolve_avatar_url($_SESSION['user_avatar'] ?? ''),
+        'foto_profil'    => margo_resolve_avatar_url($_SESSION['user_avatar'] ?? ''),
         'roles'          => $_SESSION['user_roles'] ?? [],
         'roles_detail'   => $_SESSION['user_roles_detail'] ?? [],
         'active_role'    => $_SESSION['active_role'] ?? null,
@@ -653,6 +670,14 @@ function margo_resolve_user_identity(PDO $pdo, $userId, $activeRoleOverride = nu
     $email = !empty($user['email']) ? (string)$user['email'] : (string)($user['email_google'] ?? '');
     $googleLinked = !empty($user['email_google']) && trim((string)$user['email_google']) !== '';
 
+    $rawPic = !empty($user['foto_profil'])
+        ? (string)$user['foto_profil']
+        : (!empty($user['avatar'])
+            ? (string)$user['avatar']
+            : (!empty($guruInfo['guru']['foto'])
+                ? (string)$guruInfo['guru']['foto']
+                : (!empty($siswaInfo['siswa']['foto']) ? (string)$siswaInfo['siswa']['foto'] : '')));
+
     return [
         'sub'                 => (string)$user['id'],
         'user_id'             => (int)$user['id'],
@@ -662,7 +687,7 @@ function margo_resolve_user_identity(PDO $pdo, $userId, $activeRoleOverride = nu
         'email'               => $email,
         'email_verified'      => $googleLinked,
         'google_linked'       => $googleLinked,
-        'picture'             => !empty($user['foto_profil']) ? (string)$user['foto_profil'] : null,
+        'picture'             => margo_resolve_avatar_url($rawPic),
         'roles'               => $roleCodes,
         'primary_role'        => $primaryRole,
         'active_role'         => $activeRole,
@@ -702,7 +727,7 @@ function margo_hydrate_php_session(PDO $pdo, array $user, $ssoSessionId, $rawTok
     $_SESSION['user_name']         = $fullName;
     $_SESSION['user_email']        = (string)($user['email'] ?? $user['email_google'] ?? '');
     $_SESSION['user_email_google'] = $user['email_google'] ?? null;
-    $_SESSION['user_avatar']       = $user['foto_profil'] ?? $user['avatar'] ?? null;
+    $_SESSION['user_avatar']       = margo_resolve_avatar_url($user['foto_profil'] ?? $user['avatar'] ?? '');
     $_SESSION['user_roles']        = $roleCodes;
     $_SESSION['user_roles_detail'] = $rolesDetail;
     $_SESSION['primary_role']      = $primaryRole;
