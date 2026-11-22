@@ -955,6 +955,10 @@ body.margo-shell-body {
 }
 
 .margo-agenda-card {
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: inherit;
+    cursor: pointer;
     flex: 0 0 88px;
     padding: 10px 8px;
     border-radius: 16px;
@@ -1436,37 +1440,54 @@ body.margo-shell-body {
 }
 
 .margo-app-icon {
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     border-radius: 14px;
-    background: var(--margo-grad-brand);
-    color: #FFFFFF;
+    background: #FFFFFF !important;
+    border: 1.5px solid #E2E8F0;
+    color: var(--margo-teal);
+    padding: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 25px;
     flex-shrink: 0;
-    box-shadow: 0 6px 14px -4px rgba(13, 122, 135, 0.35);
-    transition: transform 0.25s ease;
+    box-shadow: 0 4px 12px rgba(29, 59, 94, 0.08);
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    overflow: hidden;
+}
+
+.margo-app-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    border-radius: 8px;
 }
 
 .margo-app-frame:hover .margo-app-icon {
-    transform: scale(1.08) rotate(-3deg);
+    transform: scale(1.06);
+    border-color: var(--margo-teal);
+    box-shadow: 0 8px 18px -4px rgba(13, 122, 135, 0.22);
 }
 
 .margo-app-frame.is-admin-app .margo-app-icon {
-    background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 100%);
+    background: #FFFFFF !important;
+    border-color: rgba(13, 122, 135, 0.28);
+    color: var(--margo-navy);
 }
 
 .margo-app-frame.is-external .margo-app-icon {
-    background: #F1F5F9;
+    background: #FFFFFF !important;
+    border-color: #E2E8F0;
     color: var(--margo-navy);
-    box-shadow: none;
+    box-shadow: 0 3px 10px rgba(29, 59, 94, 0.06);
 }
 
 .margo-app-frame.is-external:hover .margo-app-icon {
-    background: var(--margo-grad-brand);
-    color: #FFFFFF;
+    background: #FFFFFF !important;
+    border-color: var(--margo-teal);
+    color: var(--margo-teal);
 }
 
 .margo-app-info {

@@ -37,8 +37,11 @@ require_once __DIR__ . '/sso-jwt.php';
  * Normalisasi URL Foto/Logo/Icon Aplikasi (mendukung file upload relatif, URL penuh, atau data URI)
  */
 if (!function_exists('margo_resolve_app_logo_url')) {
-    function margo_resolve_app_logo_url($rawLogo, $rawIcon = '')
+    function margo_resolve_app_logo_url($rawLogo, $rawIcon = '', $slugHint = '')
     {
+        $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
+        $root = defined('BASE_PATH') ? rtrim(str_replace('\\', '/', BASE_PATH), '/') : '';
+
         foreach ([$rawLogo, $rawIcon] as $cand) {
             $s = trim((string)$cand);
             if ($s === '' || stripos($s, 'solar:') === 0) {
@@ -47,8 +50,32 @@ if (!function_exists('margo_resolve_app_logo_url')) {
             if (preg_match('#^https?://#i', $s) || strpos($s, 'data:image/') === 0) {
                 return $s;
             }
-            $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
-            return $base . '/' . ltrim($s, '/');
+            $rel = ltrim(str_replace('\\', '/', $s), '/');
+            $abs = $root !== '' ? ($root . '/' . $rel) : '';
+            if ($abs !== '' && file_exists($abs)) {
+                $ver = @filemtime($abs);
+                return $base . '/' . $rel . ($ver ? ('?v=' . $ver) : '');
+            }
+            return $base . '/' . $rel;
+        }
+
+        // Default logo resmi bawaan untuk aplikasi inti ekosistem bila admin belum mengunggah logo kustom
+        $hint = strtolower(trim((string)$slugHint));
+        $builtinMap = [
+            'margo-admin'            => 'assets/images/logo-margo-one.png',
+            'ilmuna-learn'           => 'assets/images/logo-learn.png',
+            'ilmuna-wp'              => 'assets/images/logo.png',
+            'ilmuna website resmi'   => 'assets/images/logo.png',
+            'portal wordpress ilmuna'=> 'assets/images/logo.png',
+            'ilmuna learn lms'       => 'assets/images/logo-learn.png',
+        ];
+        if ($hint !== '' && isset($builtinMap[$hint])) {
+            $relDef = $builtinMap[$hint];
+            $absDef = $root !== '' ? ($root . '/' . $relDef) : '';
+            if ($absDef === '' || file_exists($absDef)) {
+                $ver = ($absDef !== '' && file_exists($absDef)) ? @filemtime($absDef) : '';
+                return $base . '/' . $relDef . ($ver ? ('?v=' . $ver) : '');
+            }
         }
         return null;
     }

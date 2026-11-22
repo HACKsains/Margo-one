@@ -74,6 +74,32 @@ try {
         <?php require_once BASE_PATH . '/includes/right-sidebar.php'; ?>
     </div><!-- /.margo-shell -->
 
+    <!-- GLOBAL LAZY-LOAD MODAL: DETAIL AGENDA MENDATANG (ZERO PAGE RELOAD DARI RIGHT SIDEBAR) -->
+    <div class="ilm-modal-backdrop" id="margoRightAgendaModal">
+        <div class="ilm-modal-dialog" style="max-width:540px;">
+            <div class="ilm-modal-header">
+                <div class="ilm-modal-header__brand">
+                    <div class="ilm-modal-header__icon" id="mraIcon"><iconify-icon icon="solar:calendar-mark-bold"></iconify-icon></div>
+                    <div>
+                        <h3 class="ilm-modal-header__title" id="mraTitle">Memuat Agenda...</h3>
+                        <p class="ilm-modal-header__subtitle" id="mraDate">Mengambil rincian agenda secara lazy-load</p>
+                    </div>
+                </div>
+                <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('margoRightAgendaModal')">
+                    <iconify-icon icon="solar:close-circle-bold"></iconify-icon>
+                </button>
+            </div>
+            <div class="ilm-modal-body" id="mraBody">
+                <div class="margo-skel" style="height:24px;width:55%;margin-bottom:12px;"></div>
+                <div class="margo-skel" style="height:16px;width:95%;margin-bottom:8px;"></div>
+                <div class="margo-skel" style="height:16px;width:80%;"></div>
+            </div>
+            <div class="ilm-modal-footer" id="mraFooter">
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('margoRightAgendaModal')">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <script src="<?= htmlspecialchars(BASE_URL . '/assets/js/lumina-lms.js', ENT_QUOTES, 'UTF-8') ?>"></script>
     <script src="<?= htmlspecialchars(BASE_URL . '/assets/js/alert.js', ENT_QUOTES, 'UTF-8') ?>"></script>
     <?php require_once BASE_PATH . '/includes/alert.php'; ilmuna_render_alerts(); ?>
@@ -225,6 +251,7 @@ try {
             });
         }
 
+        var rightAgendaCache = {};
         function renderRightAgenda(items) {
             var strip = document.getElementById('margoRightAgendaStrip');
             if (!strip) return;
@@ -235,14 +262,57 @@ try {
             strip.innerHTML = items.map(function (ag, idx) {
                 var cls = idx === 0 ? 'margo-agenda-card is-featured' : 'margo-agenda-card';
                 var accent = (ag.color_hex && /^#[0-9A-Fa-f]{6}$/.test(ag.color_hex)) ? ag.color_hex : '';
-                var stAttr = (idx > 0 && accent) ? (' style="border-top:3px solid ' + accent + ';"') : '';
-                return '<a class="' + cls + '"' + stAttr + ' href="' + escHtml(BASE_URL + '/agenda?id=' + ag.id) + '" title="' + escHtml(ag.title) + '">'
+                var stAttr = (idx > 0 && accent) ? (' style="border-top:3.5px solid ' + accent + ';"') : '';
+                return '<button type="button" class="' + cls + '"' + stAttr + ' onclick="MargoShell.openRightAgenda(' + Number(ag.id) + ')" title="' + escHtml(ag.title) + '">'
                     + '<span class="margo-agenda-year">' + escHtml(ag.year) + '</span>'
                     + '<span class="margo-agenda-month">' + escHtml(ag.month_short) + '</span>'
                     + '<span class="margo-agenda-day">' + escHtml(ag.day_num) + '</span>'
                     + '<span class="margo-agenda-short">' + escHtml(ag.title) + '</span>'
-                    + '</a>';
+                    + '</button>';
             }).join('');
+        }
+
+        function renderRightAgendaModalContent(ag) {
+            var hex = (ag.color_hex && /^#[0-9A-Fa-f]{6}$/.test(ag.color_hex)) ? ag.color_hex : '#0D7A87';
+            var isKaldik = (ag.source === 'kaldik' || Number(ag.is_locked) === 1);
+            var iconEl = document.getElementById('mraIcon');
+            if (iconEl) {
+                iconEl.style.background = hex;
+                iconEl.style.color = '#FFFFFF';
+                iconEl.innerHTML = isKaldik
+                    ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon>'
+                    : '<iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>';
+            }
+            document.getElementById('mraTitle').textContent = ag.title || 'Detail Agenda';
+            document.getElementById('mraDate').textContent = (ag.start_date || '-')
+                + (ag.end_date && ag.end_date !== ag.start_date ? ' s/d ' + ag.end_date : '')
+                + (ag.start_time ? ' · ' + ag.start_time + ' WIB' : '');
+
+            var bodyHtml = '';
+            if (isKaldik) {
+                bodyHtml += '<div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:11px;background:rgba(29,59,94,0.06);border:1px solid rgba(29,59,94,0.18);color:#1D3B5E;font-size:12px;line-height:1.45;margin-bottom:12px;">'
+                    + '<iconify-icon icon="solar:lock-keyhole-bold" width="18" style="color:' + hex + ';flex-shrink:0;margin-top:1px;"></iconify-icon>'
+                    + '<div><strong>Kalender Pendidikan Resmi (Kaldik · Read-Only)</strong><br>Tersinkron otomatis dari Ilmuna Learn dan tidak dapat diubah.</div></div>';
+            }
+            var catLabel = ag.status_hari || (ag.category ? (ag.category.charAt(0).toUpperCase() + ag.category.slice(1)) : 'Agenda');
+            bodyHtml += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">'
+                + '<span class="ilmuna-badge" style="background:' + hex + '22;color:' + hex + ';border:1px solid ' + hex + '55;">'
+                + '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + hex + ';margin-right:4px;"></span>' + escHtml(catLabel) + '</span>'
+                + '<span class="ilmuna-badge ilmuna-badge--navy">' + escHtml(ag.visibility_label || 'Semua Orang') + '</span>'
+                + (ag.location ? '<span class="ilmuna-badge ilmuna-badge--teal"><iconify-icon icon="solar:map-point-bold"></iconify-icon> ' + escHtml(ag.location) + '</span>' : '')
+                + '</div>'
+                + '<p style="margin:0 0 10px;font-size:13.5px;line-height:1.65;color:#334155;white-space:pre-line;">' + escHtml(ag.description || 'Tidak ada catatan tambahan.') + '</p>'
+                + (ag.created_by_name ? '<div style="font-size:12px;color:#64748B;">Dibuat oleh: <strong style="color:#1D3B5E;">' + escHtml(ag.created_by_name) + '</strong></div>' : '');
+
+            document.getElementById('mraBody').innerHTML = bodyHtml;
+
+            var foot = '<button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal(\'margoRightAgendaModal\')">Tutup</button>';
+            if (ag.link_url) {
+                var isExt = /^https?:\/\//i.test(ag.link_url) && ag.link_url.indexOf(window.location.origin) !== 0;
+                foot += '<a href="' + escHtml(ag.link_url) + '" class="ilm-modal-btn ilm-modal-btn--ghost"' + (isExt ? ' target="_blank" rel="noopener noreferrer"' : '') + '><iconify-icon icon="solar:arrow-right-up-bold"></iconify-icon><span>Buka Tautan</span></a>';
+            }
+            foot += '<a href="' + escHtml(BASE_URL + '/agenda?id=' + ag.id) + '" class="ilm-modal-btn ilm-modal-btn--primary"><iconify-icon icon="solar:calendar-mark-bold"></iconify-icon><span>Lihat di Kalender</span></a>';
+            document.getElementById('mraFooter').innerHTML = foot;
         }
 
         var allNewsItems = [];
@@ -290,7 +360,52 @@ try {
         }
 
         window.MargoShell = {
+            openRightAgenda: function (id) {
+                id = Number(id || 0);
+                if (!id) return;
+                // Jika sedang di halaman /agenda, langsung fokus & buka detail modal tanpa reload!
+                if (window.MARGO_AGENDA && typeof window.MARGO_AGENDA.focusAgenda === 'function') {
+                    window.MARGO_AGENDA.focusAgenda(id);
+                    return;
+                }
+                if (typeof openIlmunaModal === 'function') {
+                    openIlmunaModal('margoRightAgendaModal');
+                }
+                if (rightAgendaCache[id]) {
+                    renderRightAgendaModalContent(rightAgendaCache[id]);
+                    return;
+                }
+                document.getElementById('mraTitle').textContent = 'Memuat Detail Agenda...';
+                document.getElementById('mraDate').textContent = 'Mengambil data terbaru...';
+                document.getElementById('mraBody').innerHTML =
+                    '<div class="margo-skel" style="height:24px;width:55%;margin-bottom:12px;"></div>'
+                    + '<div class="margo-skel" style="height:16px;width:95%;margin-bottom:8px;"></div>'
+                    + '<div class="margo-skel" style="height:16px;width:78%;"></div>';
+                document.getElementById('mraFooter').innerHTML =
+                    '<button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal(\'margoRightAgendaModal\')">Tutup</button>';
+
+                fetch(BASE_URL + '/portal-data.php?resource=agenda_detail&id=' + encodeURIComponent(id), {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res && res.success && res.data) {
+                        rightAgendaCache[id] = res.data;
+                        renderRightAgendaModalContent(res.data);
+                    } else {
+                        document.getElementById('mraTitle').textContent = 'Agenda Tidak Tersedia';
+                        document.getElementById('mraDate').textContent = '-';
+                        document.getElementById('mraBody').innerHTML = '<div style="font-size:13px;color:#64748B;">' + escHtml((res && res.message) || 'Agenda tidak ditemukan.') + '</div>';
+                    }
+                })
+                .catch(function () {
+                    document.getElementById('mraTitle').textContent = 'Gagal Memuat';
+                    document.getElementById('mraBody').innerHTML = '<div style="font-size:13px;color:#64748B;">Periksa koneksi lalu coba lagi.</div>';
+                });
+            },
             refreshRightWidgets: function () {
+                rightAgendaCache = {};
                 var ajaxOpts = {
                     credentials: 'same-origin',
                     headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }

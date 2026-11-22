@@ -60,6 +60,7 @@ if (hasRole('admin')) {
         'description' => 'Kelola klien OAuth2, Public/Private Key, sesi global, agenda & audit log',
         'url'         => BASE_URL . '/dashboard/admin/',
         'icon'        => 'solar:shield-keyhole-bold',
+        'logo'        => margo_resolve_app_logo_url('', '', 'margo-admin'),
         'badge'       => 'ADMIN',
         'is_admin'    => true,
         'external'    => false,
@@ -99,14 +100,18 @@ try {
                 ? ($rawAppUrl . (strpos($rawAppUrl, '?') === false ? '?' : '&') . 'sso_login=1')
                 : $rawAppUrl;
         }
+        $appIconClean = !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold';
+        if ($appIconClean === 'solar:globe-bold') {
+            $appIconClean = 'solar:global-bold';
+        }
         $initialIntegratedApps[] = [
             'id'          => (int)$c['id'],
             'slug'        => (string)$c['client_slug'],
             'name'        => (string)$c['client_name'],
             'description' => 'Masuk otomatis ke ' . $hostLbl . ' dengan sesi Margo One SSO',
             'url'         => $launchUrl,
-            'icon'        => !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold',
-            'logo'        => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
+            'icon'        => $appIconClean,
+            'logo'        => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? '', (string)$c['client_slug']),
             'badge'       => 'SSO AKTIF',
             'is_admin'    => false,
             'external'    => true,
@@ -123,13 +128,17 @@ try {
         $exUrl = trim((string)$ex['app_url']);
         $isExtUrl = (bool)preg_match('#^https?://#i', $exUrl);
         $resolvedUrl = $isExtUrl ? $exUrl : (rtrim(BASE_URL, '/') . '/' . ltrim($exUrl, '/'));
+        $exIconClean = !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold';
+        if ($exIconClean === 'solar:globe-bold') {
+            $exIconClean = 'solar:global-bold';
+        }
         $initialOtherApps[] = [
             'id'          => (int)$ex['id'],
             'name'        => (string)$ex['app_name'],
             'description' => (string)($ex['description'] ?? ''),
             'url'         => $resolvedUrl,
-            'icon'        => !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold',
-            'logo'        => margo_resolve_app_logo_url($ex['app_logo'] ?? '', $ex['app_icon'] ?? ''),
+            'icon'        => $exIconClean,
+            'logo'        => margo_resolve_app_logo_url($ex['app_logo'] ?? '', $ex['app_icon'] ?? '', (string)$ex['app_name']),
             'badge'       => (string)($ex['badge_label'] ?: 'EKOSISTEM'),
             'external'    => $isExtUrl,
         ];
@@ -226,10 +235,12 @@ require_once BASE_PATH . '/includes/header.php';
                     <a href="<?= htmlspecialchars((string)$app['url'], ENT_QUOTES, 'UTF-8') ?>" class="<?= $frameCls ?>"<?= $targetAt ?>>
                         <div class="margo-app-card">
                             <div class="margo-app-icon">
+                                <?php $fbIcon1 = htmlspecialchars((string)($app['icon'] ?: 'solar:widget-5-bold'), ENT_QUOTES, 'UTF-8'); ?>
                                 <?php if (!empty($app['logo'])): ?>
-                                    <img src="<?= htmlspecialchars((string)$app['logo'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$app['name'], ENT_QUOTES, 'UTF-8') ?>" style="width:100%;height:100%;object-fit:contain;border-radius:11px;">
+                                    <img src="<?= htmlspecialchars((string)$app['logo'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$app['name'], ENT_QUOTES, 'UTF-8') ?>" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';">
+                                    <iconify-icon icon="<?= $fbIcon1 ?>" style="display:none;"></iconify-icon>
                                 <?php else: ?>
-                                    <iconify-icon icon="<?= htmlspecialchars((string)($app['icon'] ?: 'solar:widget-5-bold'), ENT_QUOTES, 'UTF-8') ?>"></iconify-icon>
+                                    <iconify-icon icon="<?= $fbIcon1 ?>"></iconify-icon>
                                 <?php endif; ?>
                             </div>
                             <div class="margo-app-info">
@@ -259,10 +270,12 @@ require_once BASE_PATH . '/includes/header.php';
                     <a href="<?= htmlspecialchars((string)$app['url'], ENT_QUOTES, 'UTF-8') ?>" class="margo-app-frame is-external"<?= $targetAt ?>>
                         <div class="margo-app-card">
                             <div class="margo-app-icon">
+                                <?php $fbIcon2 = htmlspecialchars((string)($app['icon'] ?: 'solar:widget-4-bold'), ENT_QUOTES, 'UTF-8'); ?>
                                 <?php if (!empty($app['logo'])): ?>
-                                    <img src="<?= htmlspecialchars((string)$app['logo'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$app['name'], ENT_QUOTES, 'UTF-8') ?>" style="width:100%;height:100%;object-fit:contain;border-radius:11px;">
+                                    <img src="<?= htmlspecialchars((string)$app['logo'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars((string)$app['name'], ENT_QUOTES, 'UTF-8') ?>" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block';">
+                                    <iconify-icon icon="<?= $fbIcon2 ?>" style="display:none;"></iconify-icon>
                                 <?php else: ?>
-                                    <iconify-icon icon="<?= htmlspecialchars((string)($app['icon'] ?: 'solar:widget-4-bold'), ENT_QUOTES, 'UTF-8') ?>"></iconify-icon>
+                                    <iconify-icon icon="<?= $fbIcon2 ?>"></iconify-icon>
                                 <?php endif; ?>
                             </div>
                             <div class="margo-app-info">
@@ -352,9 +365,10 @@ require_once BASE_PATH . '/includes/header.php';
         var frameCls = 'margo-app-frame' + (app.is_admin ? ' is-admin-app' : (isExternalGroup ? ' is-external' : ''));
         var targetAttrs = app.external ? ' target="_blank" rel="noopener noreferrer"' : '';
         var arrowIcon = app.external ? 'solar:arrow-right-up-bold' : 'solar:arrow-right-bold';
+        var fbIc = (app.icon === 'solar:globe-bold') ? 'solar:global-bold' : (app.icon || 'solar:widget-5-bold');
         var iconHtml = app.logo
-            ? '<img src="' + esc(app.logo) + '" alt="' + esc(app.name) + '" style="width:100%;height:100%;object-fit:contain;border-radius:11px;">'
-            : '<iconify-icon icon="' + esc(app.icon || 'solar:widget-5-bold') + '"></iconify-icon>';
+            ? '<img src="' + esc(app.logo) + '" alt="' + esc(app.name) + '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-block\';"><iconify-icon icon="' + esc(fbIc) + '" style="display:none;"></iconify-icon>'
+            : '<iconify-icon icon="' + esc(fbIc) + '"></iconify-icon>';
         return '<a href="' + esc(app.url) + '" class="' + frameCls + '"' + targetAttrs + '>'
             + '<div class="margo-app-card">'
             + '<div class="margo-app-icon">' + iconHtml + '</div>'

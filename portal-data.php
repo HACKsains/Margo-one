@@ -142,6 +142,21 @@ try {
     }
 
     // ------------------------------------------------------------------
+    // 1B. DETAIL 1 AGENDA (LAZY LOAD UNTUK MODAL RIGHT SIDEBAR — ZERO RELOAD)
+    // ------------------------------------------------------------------
+    if ($resource === 'agenda_detail') {
+        $agId = (int)($_GET['id'] ?? 0);
+        $item = margo_agenda_fetch_by_id($pdo, $currentUser, $agId);
+        if (!$item) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'Agenda tidak ditemukan atau Anda tidak memiliki akses.']);
+            exit;
+        }
+        echo json_encode(['success' => true, 'data' => $item], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    // ------------------------------------------------------------------
     // 2. BERITA & PENGUMUMAN EKOSISTEM
     // ------------------------------------------------------------------
     if ($resource === 'announcements') {
@@ -184,6 +199,7 @@ try {
                 'description' => 'Kelola klien OAuth2, Public/Private Key, sesi global, agenda & audit log',
                 'url'         => BASE_URL . '/dashboard/admin/',
                 'icon'        => 'solar:shield-keyhole-bold',
+                'logo'        => margo_resolve_app_logo_url('', '', 'margo-admin'),
                 'badge'       => 'ADMIN',
                 'is_admin'    => true,
                 'external'    => false,
@@ -218,14 +234,18 @@ try {
                     ? ($rawAppUrl . (strpos($rawAppUrl, '?') === false ? '?' : '&') . 'sso_login=1')
                     : $rawAppUrl;
             }
+            $cIconClean = !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold';
+            if ($cIconClean === 'solar:globe-bold') {
+                $cIconClean = 'solar:global-bold';
+            }
             $integrated[] = [
                 'id'          => (int)$c['id'],
                 'slug'        => (string)$c['client_slug'],
                 'name'        => (string)$c['client_name'],
                 'description' => 'Masuk otomatis ke ' . $hostLbl . ' dengan sesi Margo One SSO',
                 'url'         => $launchUrl,
-                'icon'        => !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold',
-                'logo'        => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
+                'icon'        => $cIconClean,
+                'logo'        => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? '', (string)$c['client_slug']),
                 'badge'       => 'SSO AKTIF',
                 'is_admin'    => false,
                 'external'    => true,
@@ -242,13 +262,17 @@ try {
         foreach ($extRows as $ex) {
             $resolved = margo_portal_resolve_url($ex['app_url']);
             $isExtUrl = (bool)preg_match('#^https?://#i', (string)$ex['app_url']);
+            $exIconClean = !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold';
+            if ($exIconClean === 'solar:globe-bold') {
+                $exIconClean = 'solar:global-bold';
+            }
             $others[] = [
                 'id'          => (int)$ex['id'],
                 'name'        => (string)$ex['app_name'],
                 'description' => (string)($ex['description'] ?? ''),
                 'url'         => $resolved,
-                'icon'        => !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold',
-                'logo'        => margo_resolve_app_logo_url($ex['app_logo'] ?? '', $ex['app_icon'] ?? ''),
+                'icon'        => $exIconClean,
+                'logo'        => margo_resolve_app_logo_url($ex['app_logo'] ?? '', $ex['app_icon'] ?? '', (string)$ex['app_name']),
                 'badge'       => (string)($ex['badge_label'] ?: 'EKOSISTEM'),
                 'external'    => $isExtUrl,
             ];

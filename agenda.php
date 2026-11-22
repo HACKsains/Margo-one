@@ -220,6 +220,7 @@ $extraHead = '<style>
 .mag-swatch-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .mag-swatch--akademik{color:#0B5D67;background:#ECFEFF;border-color:#99F6E4}
 .mag-swatch--rapat{color:#3730A3;background:#EEF2FF;border-color:#C7D2FE}
+.mag-swatch--ujian{color:#92400E;background:#FFFBEB;border-color:#FDE68A}
 .mag-swatch--kegiatan{color:#9A3412;background:#FFF7ED;border-color:#FED7AA}
 .mag-swatch--sistem{color:#1D3B5E;background:#F1F5F9;border-color:#CBD5E1}
 .mag-swatch--pengumuman{color:#075985;background:#F0F9FF;border-color:#BAE6FD}
@@ -411,6 +412,9 @@ require_once BASE_PATH . '/includes/header.php';
             <button type="button" class="mag-swatch-btn mag-swatch--rapat" data-cat="rapat" data-color="#4F46E5" onclick="MARGO_AGENDA.pickBrushCat('rapat', '#4F46E5', this)">
                 <span class="mag-swatch-dot" style="background:#4F46E5;"></span> Rapat
             </button>
+            <button type="button" class="mag-swatch-btn mag-swatch--ujian" data-cat="ujian" data-color="#F59E0B" onclick="MARGO_AGENDA.pickBrushCat('ujian', '#F59E0B', this)">
+                <span class="mag-swatch-dot" style="background:#F59E0B;"></span> Ujian
+            </button>
             <button type="button" class="mag-swatch-btn mag-swatch--kegiatan" data-cat="kegiatan" data-color="#EA580C" onclick="MARGO_AGENDA.pickBrushCat('kegiatan', '#EA580C', this)">
                 <span class="mag-swatch-dot" style="background:#EA580C;"></span> Kegiatan
             </button>
@@ -480,16 +484,18 @@ require_once BASE_PATH . '/includes/header.php';
         <div class="mag-legend-row">
             <div class="mag-legend-grp">
                 <span class="mag-legend-title"><iconify-icon icon="solar:lock-keyhole-bold" style="vertical-align:middle;"></iconify-icon> Kaldik:</span>
-                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#10B981;"></span> Efektif KBM</span>
-                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EF4444;"></span> Libur Nasional</span>
-                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#64748B;"></span> Libur Semester</span>
-                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#F59E0B;"></span> Kegiatan/Ujian</span>
-                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#8B5CF6;"></span> Keagamaan</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#10B981;"></span> KBM Efektif (Hijau)</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EF4444;"></span> Libur Nasional (Merah)</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#64748B;"></span> Libur Semester/Pekan (Abu)</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#F59E0B;"></span> Ujian/Asesmen (Kuning)</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EA580C;"></span> Kegiatan Sekolah (Oranye)</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#8B5CF6;"></span> Keagamaan (Ungu)</span>
             </div>
             <div class="mag-legend-grp">
                 <span class="mag-legend-title">Agenda:</span>
                 <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#0D7A87;"></span> Akademik</span>
                 <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#4F46E5;"></span> Rapat</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#F59E0B;"></span> Ujian</span>
                 <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EA580C;"></span> Kegiatan</span>
                 <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#1D3B5E;"></span> Sistem</span>
                 <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#0284C7;"></span> Pengumuman/Kelas</span>
@@ -521,6 +527,7 @@ require_once BASE_PATH . '/includes/header.php';
     <div class="mag-drag-cat-group" id="magDragCatGroup">
         <button type="button" class="mag-drag-cat-pill is-active" data-cat="akademik" data-color="#0D7A87" style="background:#0D7A87;" onclick="MARGO_AGENDA.pickDragCat('akademik','#0D7A87',this)">Akademik</button>
         <button type="button" class="mag-drag-cat-pill" data-cat="rapat" data-color="#4F46E5" style="background:#4F46E5;" onclick="MARGO_AGENDA.pickDragCat('rapat','#4F46E5',this)">Rapat</button>
+        <button type="button" class="mag-drag-cat-pill" data-cat="ujian" data-color="#F59E0B" style="background:#F59E0B;" onclick="MARGO_AGENDA.pickDragCat('ujian','#F59E0B',this)">Ujian</button>
         <button type="button" class="mag-drag-cat-pill" data-cat="kegiatan" data-color="#EA580C" style="background:#EA580C;" onclick="MARGO_AGENDA.pickDragCat('kegiatan','#EA580C',this)">Kegiatan</button>
         <button type="button" class="mag-drag-cat-pill" data-cat="pengumuman" data-color="#0284C7" style="background:#0284C7;" onclick="MARGO_AGENDA.pickDragCat('pengumuman','#0284C7',this)">Info</button>
         <button type="button" class="mag-drag-cat-pill" data-cat="pribadi" data-color="#DB2777" style="background:#DB2777;" onclick="MARGO_AGENDA.pickDragCat('pribadi','#DB2777',this)">Pribadi</button>
@@ -678,12 +685,13 @@ require_once BASE_PATH . '/includes/header.php';
                     <div class="mag-field">
                         <label for="agCategory">Kategori Kegiatan</label>
                         <select id="agCategory" class="mag-input" onchange="MARGO_AGENDA.onModalCatChange()">
-                            <option value="akademik">Akademik</option>
-                            <option value="rapat">Rapat / Koordinasi</option>
-                            <option value="kegiatan">Kegiatan</option>
-                            <option value="sistem">Sistem SSO</option>
-                            <option value="pengumuman">Pengumuman</option>
-                            <option value="pribadi">Pribadi / Pengingat</option>
+                            <option value="akademik">Akademik (Teal)</option>
+                            <option value="rapat">Rapat / Koordinasi (Indigo)</option>
+                            <option value="ujian">Ujian / Asesmen (Kuning Emas)</option>
+                            <option value="kegiatan">Kegiatan Sekolah (Oranye)</option>
+                            <option value="sistem">Sistem SSO (Navy)</option>
+                            <option value="pengumuman">Pengumuman (Biru)</option>
+                            <option value="pribadi">Pribadi / Pengingat (Magenta)</option>
                         </select>
                     </div>
                     <div class="mag-field">
@@ -695,8 +703,8 @@ require_once BASE_PATH . '/includes/header.php';
                             <button type="button" class="mag-color-dot-btn" data-hex="#1D3B5E" style="background:#1D3B5E;" title="Navy (Sistem)" onclick="MARGO_AGENDA.pickModalColor('#1D3B5E')"></button>
                             <button type="button" class="mag-color-dot-btn" data-hex="#0284C7" style="background:#0284C7;" title="Sky Blue (Pengumuman / Kelas)" onclick="MARGO_AGENDA.pickModalColor('#0284C7')"></button>
                             <button type="button" class="mag-color-dot-btn" data-hex="#DB2777" style="background:#DB2777;" title="Magenta (Pribadi)" onclick="MARGO_AGENDA.pickModalColor('#DB2777')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#F59E0B" style="background:#F59E0B;" title="Kuning Emas (Ujian)" onclick="MARGO_AGENDA.pickModalColor('#F59E0B')"></button>
                             <button type="button" class="mag-color-dot-btn" data-hex="#059669" style="background:#059669;" title="Hijau Zamrud" onclick="MARGO_AGENDA.pickModalColor('#059669')"></button>
-                            <button type="button" class="mag-color-dot-btn" data-hex="#D97706" style="background:#D97706;" title="Kuning Emas" onclick="MARGO_AGENDA.pickModalColor('#D97706')"></button>
                         </div>
                     </div>
                     <div class="mag-field">
@@ -742,6 +750,7 @@ require_once BASE_PATH . '/includes/header.php';
     var CAT_COLORS = {
         akademik:   '#0D7A87',
         rapat:      '#4F46E5',
+        ujian:      '#F59E0B',
         kegiatan:   '#EA580C',
         sistem:     '#1D3B5E',
         pengumuman: '#0284C7',
@@ -750,6 +759,7 @@ require_once BASE_PATH . '/includes/header.php';
     var CAT_LABELS = {
         akademik:       'Akademik',
         rapat:          'Rapat',
+        ujian:          'Ujian / Asesmen',
         kegiatan:       'Kegiatan',
         sistem:         'Sistem SSO',
         pengumuman:     'Pengumuman',
@@ -764,7 +774,7 @@ require_once BASE_PATH . '/includes/header.php';
         'Efektif KBM':            '#10B981',
         'Libur Nasional':         '#EF4444',
         'Libur Semester':         '#64748B',
-        'Kegiatan Sekolah/Ujian': '#F59E0B',
+        'Kegiatan Sekolah/Ujian': '#EA580C',
         'Libur Khusus Keagamaan': '#8B5CF6'
     };
 
@@ -979,10 +989,20 @@ require_once BASE_PATH . '/includes/header.php';
             if (STATE.selectedDates.indexOf(dStr) !== -1) cls += ' is-selecting';
 
             var dayEvs = dateIdx[dStr] || [];
+            var cellBgStyle = '';
+            if (!isOther && dayEvs.length) {
+                var priEv = dayEvs.find(function (ev) { return ev.source === 'kaldik' && ev.category !== 'kbm'; }) || dayEvs[0];
+                if (priEv) {
+                    var pHex = getEventColor(priEv);
+                    var pRgb = hexToRgb(pHex);
+                    var alpha = (priEv.category === 'kbm') ? 0.045 : (priEv.category === 'libur_semester' ? 0.04 : 0.085);
+                    cellBgStyle = ' style="background:rgba(' + pRgb.r + ',' + pRgb.g + ',' + pRgb.b + ',' + alpha + ');"';
+                }
+            }
             var chipsHtml = '';
             var shown = dayEvs.slice(0, 3);
             shown.forEach(function (ag) {
-                chipsHtml += '<div class="mag-chip" style="' + chipInlineStyle(ag) + '" data-agenda-id="' + ag.id + '" title="' + esc(ag.title + ' · ' + (ag.status_hari || CAT_LABELS[ag.category] || ag.category) + ' (' + (ag.visibility_label || '') + ')') + '">'
+                chipsHtml += '<div class="mag-chip" style="' + chipInlineStyle(ag) + '" data-agenda-id="' + ag.id + '" title="' + esc(ag.title + ' · ' + (CAT_LABELS[ag.category] || ag.status_hari || ag.category) + ' (' + (ag.visibility_label || '') + ')') + '">'
                     + chipIcon(ag)
                     + '<span class="mag-chip-title">' + esc(ag.title) + '</span>'
                     + '</div>';
@@ -991,7 +1011,7 @@ require_once BASE_PATH . '/includes/header.php';
                 chipsHtml += '<span class="mag-chip-more" data-more-date="' + dStr + '">+' + (dayEvs.length - 3) + ' agenda lagi</span>';
             }
 
-            html += '<td class="' + cls + '" data-date="' + dStr + '">'
+            html += '<td class="' + cls + '" data-date="' + dStr + '"' + cellBgStyle + '>'
                 + '<div class="mag-cell-top">'
                 + '<span class="mag-masehi-num">' + cellDt.getDate() + '</span>'
                 + '<span class="mag-hijri-num">' + esc(getHijriShort(cellDt)) + '</span>'
@@ -1404,6 +1424,30 @@ require_once BASE_PATH . '/includes/header.php';
                 category: STATE.brushCat,
                 color_hex: STATE.brushColor
             });
+        },
+        focusAgenda: function (id) {
+            var found = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });
+            if (found) {
+                STATE.cursor = parseYmd(found.start_date);
+                renderAll();
+                MARGO_AGENDA.openDetail(found.id);
+                return;
+            }
+            // Fallback lazy-fetch jika item belum ada di daftar lokal
+            fetch(API_URL + '&api_action=list', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            }).then(function (r) { return r.json(); }).then(function (res) {
+                if (res && res.success && Array.isArray(res.data)) {
+                    STATE.items = res.data;
+                    var f2 = STATE.items.find(function (x) { return Number(x.id) === Number(id); });
+                    if (f2) {
+                        STATE.cursor = parseYmd(f2.start_date);
+                        renderAll();
+                        MARGO_AGENDA.openDetail(f2.id);
+                    }
+                }
+            }).catch(function () {});
         },
         openDetail: function (id) {
             var ag = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });

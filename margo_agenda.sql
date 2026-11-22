@@ -99,6 +99,7 @@ BEGIN
         NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
         CASE
             WHEN NEW.status_hari = 'Efektif KBM' THEN 'kbm'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND (LOWER(COALESCE(NEW.keterangan, '')) REGEXP 'ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|ulangan|uts|uas') THEN 'ujian'
             WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan'
             WHEN NEW.status_hari = 'Libur Nasional' THEN 'libur_nasional'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN 'keagamaan'
@@ -109,7 +110,8 @@ BEGIN
             WHEN NEW.status_hari = 'Efektif KBM' THEN '#10B981'
             WHEN NEW.status_hari = 'Libur Nasional' THEN '#EF4444'
             WHEN NEW.status_hari = 'Libur Semester' THEN '#64748B'
-            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND (LOWER(COALESCE(NEW.keterangan, '')) REGEXP 'ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|ulangan|uts|uas') THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#EA580C'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN '#8B5CF6'
             ELSE '#10B981'
         END,
@@ -144,6 +146,7 @@ BEGIN
         NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
         CASE
             WHEN NEW.status_hari = 'Efektif KBM' THEN 'kbm'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND (LOWER(COALESCE(NEW.keterangan, '')) REGEXP 'ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|ulangan|uts|uas') THEN 'ujian'
             WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan'
             WHEN NEW.status_hari = 'Libur Nasional' THEN 'libur_nasional'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN 'keagamaan'
@@ -154,7 +157,8 @@ BEGIN
             WHEN NEW.status_hari = 'Efektif KBM' THEN '#10B981'
             WHEN NEW.status_hari = 'Libur Nasional' THEN '#EF4444'
             WHEN NEW.status_hari = 'Libur Semester' THEN '#64748B'
-            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND (LOWER(COALESCE(NEW.keterangan, '')) REGEXP 'ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|ulangan|uts|uas') THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#EA580C'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN '#8B5CF6'
             ELSE '#10B981'
         END,

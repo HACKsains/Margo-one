@@ -169,7 +169,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
             'app_url'            => (string)$c['app_url'],
             'app_icon'           => (string)$c['app_icon'],
             'app_logo'           => (string)($c['app_logo'] ?? ''),
-            'app_logo_url'       => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
+            'app_logo_url'       => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? '', (string)$c['client_slug']),
             'redirect_uris'      => (string)$c['redirect_uris'],
             'logout_webhook_url' => (string)($c['logout_webhook_url'] ?? ''),
             'allowed_domains'    => (string)$c['allowed_domains'],
@@ -300,7 +300,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
     ")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($portalExternalApps as &$pea) {
         $pea['app_logo']     = (string)($pea['app_logo'] ?? '');
-        $pea['app_logo_url'] = margo_resolve_app_logo_url($pea['app_logo'], $pea['app_icon'] ?? '');
+        $pea['app_logo_url'] = margo_resolve_app_logo_url($pea['app_logo'], $pea['app_icon'] ?? '', (string)($pea['app_name'] ?? ''));
     }
     unset($pea);
 
@@ -1354,7 +1354,7 @@ require_once BASE_PATH . '/includes/header.php';
                         <input type="hidden" id="edRemoveAppLogo" value="0">
                         <input type="file" id="edAppLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" style="display:none;" onchange="SSOADM.previewEditClientLogo(this)">
                         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                            <div id="edAppLogoPreview" style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#FFFFFF;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1px solid #E2E8F0;">
+                            <div id="edAppLogoPreview" style="width:44px;height:44px;border-radius:11px;background:#FFFFFF;color:#0D7A87;padding:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1.5px solid #E2E8F0;">
                                 <iconify-icon icon="solar:widget-5-bold" width="20"></iconify-icon>
                             </div>
                             <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="document.getElementById('edAppLogoFile').click()">
@@ -1639,7 +1639,8 @@ require_once BASE_PATH . '/includes/header.php';
                         <select id="pAgCat" class="ssoadm-input">
                             <option value="akademik">Akademik (Teal #0D7A87)</option>
                             <option value="rapat">Rapat / Koordinasi (Indigo #4F46E5)</option>
-                            <option value="kegiatan">Kegiatan (Oranye #EA580C)</option>
+                            <option value="ujian">Ujian / Asesmen (Kuning Emas #F59E0B)</option>
+                            <option value="kegiatan">Kegiatan Sekolah (Oranye #EA580C)</option>
                             <option value="sistem">Sistem SSO (Navy #1D3B5E)</option>
                             <option value="pengumuman">Pengumuman (Biru #0284C7)</option>
                             <option value="pribadi">Pribadi / Pengingat (Magenta #DB2777)</option>
@@ -1893,7 +1894,7 @@ require_once BASE_PATH . '/includes/header.php';
                     return '<tr id="adm-client-' + c.id + '">'
                         + '<td data-label="Aplikasi Klien">'
                         + '<div style="display:flex;align-items:center;gap:10px;">'
-                        + '<div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1px solid #E2E8F0;">' + iconBoxInner + '</div>'
+                        + '<div style="width:40px;height:40px;border-radius:10px;background:#FFFFFF;color:#0D7A87;padding:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1.5px solid #E2E8F0;">' + iconBoxInner + '</div>'
                         + '<div><strong>' + esc(c.client_name) + '</strong> <span class="ssoadm-badge ssoadm-badge--navy">' + esc(c.client_slug) + '</span>'
                         + '<div style="font-size:11.5px;color:#64748B;">' + esc(c.app_url) + '</div>'
                         + (rolePills ? '<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">' + rolePills + '</div>' : '')

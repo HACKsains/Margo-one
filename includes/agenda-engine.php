@@ -290,21 +290,36 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
 }
 
 /**
- * Warna default konsisten untuk setiap status Kaldik (paritas curriculum.php)
- * dan setiap kategori agenda (Akademik, Rapat, Kegiatan, Sistem SSO, Pengumuman, Pribadi)
+ * Deteksi apakah teks Kaldik merupakan Ujian / Asesmen (dibedakan warnanya dari Kegiatan Sekolah biasa)
  */
-function margo_agenda_default_color($source, $statusHari = '', $category = 'akademik', $scope = 'all')
+function margo_agenda_is_exam_text($text)
+{
+    $s = strtolower(trim((string)$text));
+    if ($s === '') {
+        return false;
+    }
+    return (bool)preg_match('/\b(ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|try\s*out|ulangan|evaluasi|uts|uas)\b/i', $s);
+}
+
+/**
+ * Warna default konsisten & kontras jelas untuk setiap status Kaldik
+ * (Libur Merah, KBM Hijau, Ujian Kuning Emas, Kegiatan Oranye, Keagamaan Ungu, Libur Semester Abu)
+ * dan setiap kategori agenda (Akademik, Rapat, Ujian, Kegiatan, Sistem SSO, Pengumuman, Pribadi)
+ */
+function margo_agenda_default_color($source, $statusHari = '', $category = 'akademik', $scope = 'all', $titleText = '')
 {
     if ((string)$source === 'kaldik') {
         switch ((string)$statusHari) {
             case 'Efektif KBM':
-                return '#10B981'; // Emerald Hijau (KBM Efektif)
+                return '#10B981'; // Hijau Zamrud (KBM Efektif)
             case 'Libur Nasional':
                 return '#EF4444'; // Merah (Libur Nasional)
             case 'Libur Semester':
-                return '#64748B'; // Slate Abu (Libur Semester / Akhir Pekan)
+                return '#64748B'; // Abu Slate (Libur Semester / Akhir Pekan)
             case 'Kegiatan Sekolah/Ujian':
-                return '#F59E0B'; // Kuning Amber (Kegiatan / Ujian)
+                return margo_agenda_is_exam_text($titleText)
+                    ? '#F59E0B'   // Kuning Amber (Ujian / Asesmen)
+                    : '#EA580C';  // Oranye (Kegiatan Sekolah / P5 / Class Meeting)
             case 'Libur Khusus Keagamaan':
                 return '#8B5CF6'; // Ungu (Hari Besar / Libur Keagamaan)
             default:
@@ -315,6 +330,7 @@ function margo_agenda_default_color($source, $statusHari = '', $category = 'akad
     $catMap = [
         'akademik'   => '#0D7A87', // Teal Ilmuna
         'rapat'      => '#4F46E5', // Indigo (Rapat / Koordinasi)
+        'ujian'      => '#F59E0B', // Kuning Amber (Ujian / Asesmen)
         'kegiatan'   => '#EA580C', // Oranye (Kegiatan)
         'sistem'     => '#1D3B5E', // Navy (Sistem SSO)
         'pengumuman' => '#0284C7', // Sky Blue (Pengumuman)
@@ -430,8 +446,11 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
             ELSE LEFT(TRIM(NEW.keterangan), 200)
         END";
 
+        $isExamSql = "(LOWER(COALESCE(NEW.keterangan, '')) REGEXP 'ujian|asesmen|pts|pas|sas|pat|sumatif|cbt|tryout|ulangan|uts|uas')";
+
         $catExpr = "CASE
             WHEN NEW.status_hari = 'Efektif KBM' THEN 'kbm'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND {$isExamSql} THEN 'ujian'
             WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan'
             WHEN NEW.status_hari = 'Libur Nasional' THEN 'libur_nasional'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN 'keagamaan'
@@ -443,7 +462,8 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
             WHEN NEW.status_hari = 'Efektif KBM' THEN '#10B981'
             WHEN NEW.status_hari = 'Libur Nasional' THEN '#EF4444'
             WHEN NEW.status_hari = 'Libur Semester' THEN '#64748B'
-            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' AND {$isExamSql} THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#EA580C'
             WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN '#8B5CF6'
             ELSE '#10B981'
         END";
@@ -456,7 +476,7 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
             AFTER INSERT ON `kalender_pendidikan`
             FOR EACH ROW
             BEGIN
-                /* v2_sync_all_kaldik */
+                /* v3_distinct_colors */
                 SET @margo_kaldik_sync_bypass = 1;
                 INSERT INTO `{$agendaDb}`.`agendas`
                     (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `color_hex`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
@@ -485,7 +505,7 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
             AFTER UPDATE ON `kalender_pendidikan`
             FOR EACH ROW
             BEGIN
-                /* v2_sync_all_kaldik */
+                /* v3_distinct_colors */
                 SET @margo_kaldik_sync_bypass = 1;
                 INSERT INTO `{$agendaDb}`.`agendas`
                     (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `color_hex`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
@@ -514,7 +534,7 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
             AFTER DELETE ON `kalender_pendidikan`
             FOR EACH ROW
             BEGIN
-                /* v2_sync_all_kaldik */
+                /* v3_distinct_colors */
                 SET @margo_kaldik_sync_bypass = 1;
                 DELETE FROM `{$agendaDb}`.`agendas`
                 WHERE `source` = 'kaldik' AND `source_ref_id` = OLD.id;
@@ -546,8 +566,8 @@ function margo_agenda_has_kaldik_triggers(PDO $ssoPdo = null)
             $byName[(string)$r['Trigger']] = (string)($r['Statement'] ?? '');
         }
         return isset($byName['trg_kaldik_to_agenda_ai'], $byName['trg_kaldik_to_agenda_au'], $byName['trg_kaldik_to_agenda_ad'])
-            && strpos($byName['trg_kaldik_to_agenda_ai'], 'v2_sync_all_kaldik') !== false
-            && strpos($byName['trg_kaldik_to_agenda_au'], 'v2_sync_all_kaldik') !== false;
+            && strpos($byName['trg_kaldik_to_agenda_ai'], 'v3_distinct_colors') !== false
+            && strpos($byName['trg_kaldik_to_agenda_au'], 'v3_distinct_colors') !== false;
     } catch (Throwable $e) {
         return false;
     }
@@ -611,15 +631,18 @@ function margo_agenda_backfill_from_kaldik(PDO $ssoPdo = null)
             } else {
                 $title = ($ketTrim === '' || $ketTrim === 'KBM Reguler') ? $status : margo_mb_substr($ketTrim, 0, 200);
             }
-            $catMap = [
-                'Efektif KBM'            => 'kbm',
-                'Kegiatan Sekolah/Ujian' => 'kegiatan',
-                'Libur Nasional'         => 'libur_nasional',
-                'Libur Khusus Keagamaan' => 'keagamaan',
-                'Libur Semester'         => 'libur_semester',
-            ];
-            $cat   = isset($catMap[$status]) ? $catMap[$status] : 'kaldik';
-            $color = margo_agenda_default_color('kaldik', $status, $cat, 'all');
+            if ($status === 'Kegiatan Sekolah/Ujian') {
+                $cat = margo_agenda_is_exam_text($ketTrim) ? 'ujian' : 'kegiatan';
+            } else {
+                $catMap = [
+                    'Efektif KBM'            => 'kbm',
+                    'Libur Nasional'         => 'libur_nasional',
+                    'Libur Khusus Keagamaan' => 'keagamaan',
+                    'Libur Semester'         => 'libur_semester',
+                ];
+                $cat = isset($catMap[$status]) ? $catMap[$status] : 'kaldik';
+            }
+            $color = margo_agenda_default_color('kaldik', $status, $cat, 'all', $ketTrim);
             $desc  = 'Agenda resmi Kalender Pendidikan (Kaldik) · TA ' . ($r['tahun_pelajaran'] ?: '-')
                    . ' Semester ' . ($r['semester'] ?: '-')
                    . ' · Status: ' . $status
@@ -682,7 +705,7 @@ function margo_agenda_bootstrap(PDO $ssoPdo = null, $force = false)
     $done = true;
 
     $agInfo = margo_agenda_ensure_schema($ssoPdo);
-    $flagFile = sys_get_temp_dir() . '/margo_agenda_kaldik_trg_v2_all_' . md5($agInfo['db_name']) . '.flag';
+    $flagFile = sys_get_temp_dir() . '/margo_agenda_kaldik_trg_v3_colors_' . md5($agInfo['db_name']) . '.flag';
 
     if ($force || !file_exists($flagFile)) {
         $trgRes = margo_agenda_install_kaldik_triggers($ssoPdo);
@@ -940,7 +963,7 @@ function margo_agenda_format_row(array $r, array $ctx)
         ? 'Kaldik · Semua Orang'
         : (isset($scopeLabelMap[$scope]) ? $scopeLabelMap[$scope] : 'Semua Orang');
 
-    $defaultColor = margo_agenda_default_color($source, (string)($r['status_hari'] ?? ''), (string)($r['category'] ?? 'akademik'), $scope);
+    $defaultColor = margo_agenda_default_color($source, (string)($r['status_hari'] ?? ''), (string)($r['category'] ?? 'akademik'), $scope, (string)($r['title'] ?? ''));
     $colorHex     = margo_agenda_normalize_color($r['color_hex'] ?? '', $defaultColor);
 
     return [
@@ -1149,7 +1172,7 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
         $startDate = $endDate;
         $endDate = $tmp;
     }
-    if (!in_array($category, ['akademik', 'sistem', 'rapat', 'kegiatan', 'pengumuman', 'pribadi'], true)) {
+    if (!in_array($category, ['akademik', 'sistem', 'rapat', 'ujian', 'kegiatan', 'pengumuman', 'pribadi'], true)) {
         $category = 'akademik';
     }
 
@@ -1342,6 +1365,53 @@ function margo_agenda_delete(PDO $ssoPdo, array $userSession, $id)
         ->execute([$id]);
 
     return ['success' => true, 'message' => 'Agenda "' . $row['title'] . '" berhasil dihapus.'];
+}
+
+/**
+ * Ambil 1 detail agenda berdasarkan ID dengan verifikasi hak akses role (untuk Lazy-Load Modal Right Sidebar)
+ */
+function margo_agenda_fetch_by_id(PDO $ssoPdo, array $userSession, $id)
+{
+    margo_agenda_bootstrap($ssoPdo, false);
+    $id = (int)$id;
+    if ($id <= 0) {
+        return null;
+    }
+    $agInfo = margo_get_agenda_db($ssoPdo);
+    /** @var PDO $apdo */
+    $apdo = $agInfo['pdo'];
+    $ctx  = margo_agenda_build_user_context($ssoPdo, $userSession);
+
+    $st = $apdo->prepare("SELECT * FROM `agendas` WHERE `id` = ? LIMIT 1");
+    $st->execute([$id]);
+    $r = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$r) {
+        return null;
+    }
+    if ((int)($r['is_active'] ?? 1) !== 1 && !$ctx['is_admin']) {
+        return null;
+    }
+
+    $source = (string)($r['source'] ?? 'admin');
+    $scope  = (string)($r['visibility_scope'] ?? 'all');
+    $creatorId = (int)($r['created_by'] ?? 0);
+
+    $allowed = false;
+    if ($source === 'kaldik' || $scope === 'all') {
+        $allowed = true;
+    } elseif ($ctx['user_id'] > 0 && $creatorId === $ctx['user_id']) {
+        $allowed = true;
+    } elseif ($ctx['is_admin'] && in_array($scope, ['guru', 'siswa'], true)) {
+        $allowed = true;
+    } elseif ($scope === 'guru' && $ctx['is_guru']) {
+        $allowed = true;
+    } elseif ($scope === 'siswa' && $ctx['is_siswa']) {
+        $allowed = true;
+    } elseif ($scope === 'kelas' && !empty($ctx['siswa_kelas_id']) && (int)($r['target_kelas_id'] ?? 0) === (int)$ctx['siswa_kelas_id']) {
+        $allowed = true;
+    }
+
+    return $allowed ? margo_agenda_format_row($r, $ctx) : null;
 }
 
 /**
