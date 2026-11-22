@@ -37,8 +37,8 @@ function margo_authorize_render_error($httpCode, $errorCode, $title, $message)
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background: #F8FAFC; color: #334155; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .card { width: 100%; max-width: 480px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 28px 0 20px 0; padding: 28px 26px; box-shadow: 0 20px 45px -14px rgba(29, 59, 94, 0.16); text-align: center; }
-        .icon-box { width: 60px; height: 60px; margin: 0 auto 14px; border-radius: 16px; background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.25); color: #DC2626; display: flex; align-items: center; justify-content: center; }
-        .code-pill { display: inline-block; margin-bottom: 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; font-weight: 700; background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; padding: 3px 10px; border-radius: 999px; }
+        .icon-box { width: 60px; height: 60px; margin: 0 auto 14px; border-radius: 16px; background: rgba(29, 59, 94, 0.10); border: 1px solid rgba(29, 59, 94, 0.25); color: #1D3B5E; display: flex; align-items: center; justify-content: center; }
+        .code-pill { display: inline-block; margin-bottom: 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11px; font-weight: 700; background: rgba(13, 122, 135, 0.10); color: #0D7A87; border: 1px solid rgba(13, 122, 135, 0.25); padding: 3px 10px; border-radius: 999px; }
         h1 { font-family: 'Outfit', sans-serif; font-size: 1.3rem; color: #1D3B5E; margin-bottom: 8px; }
         p { font-size: 0.9rem; color: #64748B; line-height: 1.6; margin-bottom: 20px; }
         .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 12px; background: linear-gradient(135deg, #1D3B5E, #0D7A87); color: #FFFFFF; text-decoration: none; font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 0.9rem; }
@@ -128,11 +128,11 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
             --navy: #1D3B5E;
-            --navy-dark: #152C47;
+            --navy-dark: #1D3B5E;
             --teal: #0D7A87;
             --sky: #52B2DC;
-            --gold: #F59E0B;
-            --emerald: #10B981;
+            --gold: #52B2DC;
+            --emerald: #0D7A87;
             --font-h: 'Outfit', sans-serif;
             --font-b: 'Plus Jakarta Sans', sans-serif;
         }

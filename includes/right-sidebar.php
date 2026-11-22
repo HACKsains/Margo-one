@@ -73,7 +73,7 @@ $rRoleIcon  = function_exists('margo_role_icon') ? margo_role_icon($rActiveRole)
             <?php if (hasRole('admin')): ?>
                 <div class="margo-dd-divider"></div>
                 <a href="<?= htmlspecialchars(BASE_URL . '/dashboard/admin/', ENT_QUOTES, 'UTF-8') ?>" class="margo-dd-item" role="menuitem">
-                    <iconify-icon icon="solar:shield-keyhole-bold" style="color:#D97706;"></iconify-icon>
+                    <iconify-icon icon="solar:shield-keyhole-bold" style="color:#0D7A87;"></iconify-icon>
                     <span>Panel Kontrol Admin</span>
                 </a>
             <?php endif; ?>

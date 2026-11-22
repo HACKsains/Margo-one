@@ -13,8 +13,8 @@
     --primary-teal-rgb: 13, 122, 135;
     --primary-sky: #52B2DC;
     --primary-sky-rgb: 82, 178, 220;
-    --primary-gold: #F59E0B;
-    --primary-gold-rgb: 245, 158, 11;
+    --primary-gold: #52B2DC;
+    --primary-gold-rgb: 82, 178, 220;
 
     --bg-dark: #0F1D2F;
     --bg-dark-card: #FFFFFF;
@@ -132,14 +132,14 @@ a:hover {
 }
 
 .btn-gold {
-    background: linear-gradient(135deg, #d97706, #f59e0b);
+    background: linear-gradient(135deg, #0D7A87, #52B2DC);
     color: #ffffff !important;
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35);
+    box-shadow: 0 4px 15px rgba(82, 178, 220, 0.35);
 }
 
 .btn-gold:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.45);
+    box-shadow: 0 8px 20px rgba(82, 178, 220, 0.45);
 }
 
 .btn-sm {
@@ -149,12 +149,12 @@ a:hover {
 }
 
 .btn-danger {
-    background: #ef4444;
+    background: #1D3B5E;
     color: #ffffff !important;
 }
 
 .btn-danger:hover {
-    background: #dc2626;
+    background: #0D7A87;
     transform: translateY(-2px);
 }
 
@@ -184,20 +184,20 @@ a:hover {
 
 .badge-sky {
     background: rgba(82, 178, 220, 0.15);
-    color: #0284c7;
+    color: #0D7A87;
     border: 1px solid rgba(82, 178, 220, 0.35);
 }
 
 .badge-gold {
-    background: rgba(245, 158, 11, 0.15);
-    color: #b45309;
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: rgba(82, 178, 220, 0.16);
+    color: #1D3B5E;
+    border: 1px solid rgba(82, 178, 220, 0.35);
 }
 
 .badge-success {
-    background: rgba(16, 185, 129, 0.12);
-    color: #059669;
-    border: 1px solid rgba(16, 185, 129, 0.25);
+    background: rgba(13, 122, 135, 0.12);
+    color: #0D7A87;
+    border: 1px solid rgba(13, 122, 135, 0.28);
 }
 
 /* ==============================================================================

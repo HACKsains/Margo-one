@@ -13,21 +13,21 @@
  * ============================================================================== */
 
 :root {
-    /* Official README.md Section 3.1 Tokens */
+    /* Official 3-Color Palette Tokens: Navy (#1D3B5E), Teal (#0D7A87), Sky Blue (#52B2DC) */
     --lumina-navy: #1D3B5E;
-    --lumina-navy-dark: #13273F;
+    --lumina-navy-dark: #1D3B5E;
     --lumina-teal: #0D7A87;
-    --lumina-teal-dark: #095963;
+    --lumina-teal-dark: #0D7A87;
     --lumina-sky: #52B2DC;
-    --lumina-gold: #F59E0B;
-    --lumina-emerald: #10B981;
-    --lumina-amber: #D97706;
-    --lumina-rose: #EF4444;
+    --lumina-gold: #52B2DC;
+    --lumina-emerald: #0D7A87;
+    --lumina-amber: #0D7A87;
+    --lumina-rose: #1D3B5E;
     --lumina-bg-canvas: #F8FAFC;
     --lumina-bg-card: #FFFFFF;
     --lumina-border: #E2E8F0;
-    --lumina-text-title: #0F1D2F;
-    --lumina-text-body: #334155;
+    --lumina-text-title: #1D3B5E;
+    --lumina-text-body: #1D3B5E;
     --lumina-text-muted: #64748B;
 
     --font-heading: 'Outfit', sans-serif;
@@ -91,7 +91,7 @@ body {
  * 2. SMOOTH IN-PLACE DOM TRANSITIONS (README.md Section 4.4)
  * ============================================================================== */
 @keyframes rowFlash {
-    0%   { background-color: rgba(245, 158, 11, 0.28); }
+    0%   { background-color: rgba(82, 178, 220, 0.25); }
     100% { background-color: transparent; }
 }
 
@@ -128,24 +128,24 @@ body {
     white-space: nowrap;
 }
 .ilmuna-badge--success {
-    background: rgba(16, 185, 129, 0.12);
-    color: #047857;
-    border: 1px solid rgba(16, 185, 129, 0.28);
+    background: rgba(13, 122, 135, 0.12);
+    color: #0D7A87;
+    border: 1px solid rgba(13, 122, 135, 0.28);
 }
 .ilmuna-badge--warning {
-    background: rgba(245, 158, 11, 0.14);
-    color: #B45309;
-    border: 1px solid rgba(245, 158, 11, 0.32);
+    background: rgba(82, 178, 220, 0.16);
+    color: #1D3B5E;
+    border: 1px solid rgba(82, 178, 220, 0.35);
 }
 .ilmuna-badge--danger {
-    background: rgba(239, 68, 68, 0.12);
-    color: #B91C1C;
-    border: 1px solid rgba(239, 68, 68, 0.28);
+    background: rgba(29, 59, 94, 0.10);
+    color: #1D3B5E;
+    border: 1px solid rgba(29, 59, 94, 0.25);
 }
 .ilmuna-badge--info {
-    background: rgba(82, 178, 220, 0.15);
-    color: #0369A1;
-    border: 1px solid rgba(82, 178, 220, 0.32);
+    background: rgba(82, 178, 220, 0.16);
+    color: #0D7A87;
+    border: 1px solid rgba(82, 178, 220, 0.35);
 }
 .ilmuna-badge--teal {
     background: rgba(13, 122, 135, 0.12);
@@ -153,14 +153,14 @@ body {
     border: 1px solid rgba(13, 122, 135, 0.28);
 }
 .ilmuna-badge--navy {
-    background: rgba(29, 59, 94, 0.1);
+    background: rgba(29, 59, 94, 0.10);
     color: #1D3B5E;
     border: 1px solid rgba(29, 59, 94, 0.22);
 }
 .ilmuna-badge--gold {
-    background: #FEF3C7;
-    color: #B45309;
-    border: 1px solid #FDE68A;
+    background: rgba(82, 178, 220, 0.16);
+    color: #1D3B5E;
+    border: 1px solid rgba(82, 178, 220, 0.35);
 }
 
 /* ==============================================================================

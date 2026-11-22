@@ -293,13 +293,13 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
 
         :root {
             --navy: #1D3B5E;
-            --navy-dark: #152C47;
+            --navy-dark: #1D3B5E;
             --teal: #0D7A87;
-            --teal-dark: #096470;
+            --teal-dark: #0D7A87;
             --sky: #52B2DC;
-            --gold: #F59E0B;
-            --mint: #14B8A6;
-            --emerald: #10B981;
+            --gold: #52B2DC;
+            --mint: #0D7A87;
+            --emerald: #0D7A87;
             --font-h: 'Outfit', sans-serif;
             --font-b: 'Plus Jakarta Sans', sans-serif;
         }
@@ -582,8 +582,8 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             font-size: 0.78rem; line-height: 1.4;
             animation: alertSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
-        .alert-error { background: #FEF2F2; border: 1px solid #FECACA; border-left: 4px solid #EF4444; color: #991B1B; }
-        .alert-info  { background: #F0F9FF; border: 1px solid #BAE6FD; border-left: 4px solid #0D7A87; color: #0C4A6E; }
+        .alert-error { background: rgba(29, 59, 94, 0.08); border: 1px solid rgba(29, 59, 94, 0.25); border-left: 4px solid #1D3B5E; color: #1D3B5E; }
+        .alert-info  { background: rgba(82, 178, 220, 0.14); border: 1px solid rgba(82, 178, 220, 0.35); border-left: 4px solid #0D7A87; color: #1D3B5E; }
         @keyframes alertSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         .alert-close { background: none; border: none; color: inherit; cursor: pointer; margin-left: auto; padding: 0; display: inline-flex; }
 

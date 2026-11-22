@@ -42,11 +42,11 @@ $extraHead = '<style>
 .mag-day{position:relative;aspect-ratio:1/1;min-height:38px;border-radius:11px;border:1px solid transparent;background:#F8FAFC;color:#1D3B5E;font-size:12.5px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:all .18s;font-family:inherit}
 .mag-day:hover{border-color:#0D7A87;background:#fff}
 .mag-day.is-other{opacity:.35;background:transparent}
-.mag-day.is-today{border-color:#F59E0B;background:#FFFBEB;color:#B45309}
+.mag-day.is-today{border-color:#52B2DC;background:rgba(82,178,220,0.14);color:#1D3B5E}
 .mag-day.is-selected{background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff !important;border-color:transparent;box-shadow:0 6px 14px -4px rgba(13,122,135,.4)}
 .mag-day-dots{display:flex;gap:3px;margin-top:2px}
 .mag-day-dot{width:5px;height:5px;border-radius:50%;background:#0D7A87}
-.mag-day.is-selected .mag-day-dot{background:#FDE68A}
+.mag-day.is-selected .mag-day-dot{background:#52B2DC}
 
 .mag-list{display:flex;flex-direction:column;gap:11px}
 .mag-item{display:flex;align-items:stretch;gap:14px;padding:14px;border-radius:16px;background:#fff;border:1px solid #E2E8F0;transition:all .22s ease;cursor:pointer}
@@ -65,7 +65,7 @@ $extraHead = '<style>
 .mag-admin-btns{display:flex;gap:6px;margin-left:auto}
 .mag-mini-btn{appearance:none;border:1px solid #CBD5E1;background:#F8FAFC;color:#1D3B5E;border-radius:9px;padding:5px 9px;min-height:32px;font-size:11.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-family:inherit}
 .mag-mini-btn:hover{border-color:#0D7A87;color:#0D7A87;background:#fff}
-.mag-mini-btn.is-danger{color:#DC2626;border-color:#FECACA;background:#FEF2F2}
+.mag-mini-btn.is-danger{color:#1D3B5E;border-color:rgba(29,59,94,0.25);background:rgba(29,59,94,0.06)}
 .mag-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
 .mag-field label{font-size:12px;font-weight:700;color:#334155}
 .mag-input,.mag-textarea{width:100%;padding:9px 11px;min-height:42px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;font-family:inherit;color:#0F172A;background:#fff}

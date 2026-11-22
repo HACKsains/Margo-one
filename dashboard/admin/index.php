@@ -828,20 +828,20 @@ $extraHead = '<style>
 .ssoadm-key-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ssoadm-code{font-family:var(--font-mono);font-size:12px;background:#0F172A;color:#E2E8F0;padding:8px 10px;border-radius:9px;word-break:break-all;flex:1;min-width:160px}
 .ssoadm-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
-.ssoadm-badge--ok{background:#DCFCE7;color:#15803D}
-.ssoadm-badge--warn{background:#FEF3C7;color:#B45309}
-.ssoadm-badge--err{background:#FEE2E2;color:#B91C1C}
-.ssoadm-badge--teal{background:#CCFBF1;color:#0F766E}
-.ssoadm-badge--navy{background:#E0E7FF;color:#1D3B5E}
+.ssoadm-badge--ok{background:rgba(13,122,135,0.12);color:#0D7A87}
+.ssoadm-badge--warn{background:rgba(82,178,220,0.16);color:#1D3B5E}
+.ssoadm-badge--err{background:rgba(29,59,94,0.10);color:#1D3B5E}
+.ssoadm-badge--teal{background:rgba(13,122,135,0.12);color:#0D7A87}
+.ssoadm-badge--navy{background:rgba(29,59,94,0.12);color:#1D3B5E}
 .ssoadm-btn{appearance:none;border:1px solid transparent;border-radius:10px;padding:8px 13px;min-height:40px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .18s;text-decoration:none;font-family:inherit}
 .ssoadm-btn--sm{padding:6px 10px;min-height:36px;font-size:12px}
 .ssoadm-btn--primary{background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff}
 .ssoadm-btn--primary:hover{opacity:.93}
-.ssoadm-btn--gold{background:linear-gradient(135deg,#D97706,#F59E0B);color:#fff}
+.ssoadm-btn--gold{background:linear-gradient(135deg,#0D7A87,#52B2DC);color:#fff}
 .ssoadm-btn--ghost{background:#F8FAFC;color:#1D3B5E;border-color:#CBD5E1}
 .ssoadm-btn--ghost:hover{background:#F1F5F9}
-.ssoadm-btn--danger{background:#FEF2F2;color:#B91C1C;border-color:#FECACA}
-.ssoadm-btn--danger:hover{background:#FEE2E2}
+.ssoadm-btn--danger{background:rgba(29,59,94,0.08);color:#1D3B5E;border-color:rgba(29,59,94,0.24)}
+.ssoadm-btn--danger:hover{background:#1D3B5E;color:#fff}
 .ssoadm-field{display:flex;flex-direction:column;gap:4px}
 .ssoadm-field label{font-size:12px;font-weight:700;color:#334155}
 .ssoadm-input,.ssoadm-textarea{width:100%;padding:9px 11px;min-height:42px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13.5px;background:#fff;color:#0F172A;font-family:inherit}
@@ -966,7 +966,7 @@ require_once BASE_PATH . '/includes/header.php';
                 </div>
                 <div class="ilmuna-filter-actions">
                     <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" id="btnHealOrphan" onclick="SSOADM.healOrphanGuru()">
-                        <iconify-icon icon="solar:health-bold" width="16" style="color:#D97706;"></iconify-icon>
+                        <iconify-icon icon="solar:health-bold" width="16" style="color:#0D7A87;"></iconify-icon>
                         <span id="lblOrphanGuru">Cek Orphan Guru</span>
                     </button>
                 </div>
@@ -1227,9 +1227,9 @@ require_once BASE_PATH . '/includes/header.php';
                     </div>
                 </div>
 
-                <div id="rsaOnceBox" style="display:none;background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:13px;margin-bottom:12px;">
+                <div id="rsaOnceBox" style="display:none;background:rgba(82,178,220,0.10);border:1px solid rgba(82,178,220,0.35);border-radius:12px;padding:13px;margin-bottom:12px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                        <strong style="color:#92400E;font-size:12.5px;">
+                        <strong style="color:#1D3B5E;font-size:12.5px;">
                             <iconify-icon icon="solar:danger-triangle-bold"></iconify-icon>
                             RSA-2048 Private Key PEM (Ditampilkan SATU KALI — Salin ke Aplikasi Klien sekarang!)
                         </strong>
@@ -1237,7 +1237,7 @@ require_once BASE_PATH . '/includes/header.php';
                             <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin PEM
                         </button>
                     </div>
-                    <textarea id="rsaPemOut" class="ssoadm-textarea" rows="5" readonly style="background:#0F172A;color:#FDE68A;"></textarea>
+                    <textarea id="rsaPemOut" class="ssoadm-textarea" rows="5" readonly style="background:#1D3B5E;color:#52B2DC;"></textarea>
                 </div>
 
                 <div class="ssoadm-grid-2" style="margin-bottom:12px;">
@@ -2009,10 +2009,10 @@ require_once BASE_PATH . '/includes/header.php';
             if (b) {
                 b.style.display = 'block';
                 if (res.success) {
-                    b.style.background = '#F0FDF4'; b.style.border = '1px solid #BBF7D0'; b.style.color = '#166534';
+                    b.style.background = 'rgba(13,122,135,0.10)'; b.style.border = '1px solid rgba(13,122,135,0.30)'; b.style.color = '#0D7A87';
                     b.textContent = res.message;
                 } else {
-                    b.style.background = '#FEF2F2'; b.style.border = '1px solid #FECACA'; b.style.color = '#991B1B';
+                    b.style.background = 'rgba(29,59,94,0.08)'; b.style.border = '1px solid rgba(29,59,94,0.25)'; b.style.color = '#1D3B5E';
                     b.textContent = res.message || 'Uji koneksi gagal.';
                 }
             }

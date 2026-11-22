@@ -110,13 +110,13 @@
         return "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M45,15 C20,20 10,50 20,75 C30,95 70,95 85,75 C95,50 85,15 55,10 C25,5 5,40 15,70 C25,95 85,90 90,60 C95,35 60,5 35,20 C15,35 25,80 50,85 C75,90 90,60 80,35 C70,10 30,20 20,45' fill='none' stroke='%23" + hex + "' stroke-width='4' stroke-linecap='round' opacity='0.3'/%3E%3C/svg%3E\")";
     }
 
-    // Definisi tema: [warna utama, warna hover tombol]
+    // Definisi tema resmi 3 Warna Ilmuna: Navy (#1D3B5E), Teal (#0D7A87), Sky Blue (#52B2DC)
     var themes = {
-        success: ['0D7A87', '0a626c'], // Teal
-        info: ['52B2DC', '3d9bc4'],    // Sky Blue
-        warning: ['F59E0B', 'D97706'], // Amber
-        error: ['E63946', 'C1121F'],   // Crimson Red
-        logout: ['DC2626', 'B91C1C']   // Slate — netral & tegas, tidak "menakutkan" seperti error
+        success: ['0D7A87', '1D3B5E'], // Teal -> Navy
+        info: ['52B2DC', '0D7A87'],    // Sky Blue -> Teal
+        warning: ['0D7A87', '1D3B5E'], // Teal -> Navy
+        error: ['1D3B5E', '0D7A87'],   // Navy -> Teal
+        logout: ['1D3B5E', '0D7A87']   // Navy -> Teal
     };
 
     function buildThemeCss() {

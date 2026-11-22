@@ -346,12 +346,12 @@ if ($isDirectBrowser) {
     <style>
         :root {
             --navy: #1D3B5E;
-            --navy-dark: #152C47;
+            --navy-dark: #1D3B5E;
             --teal: #0D7A87;
             --sky: #52B2DC;
-            --green: #10B981;
-            --amber: #F59E0B;
-            --red: #EF4444;
+            --green: #0D7A87;
+            --amber: #52B2DC;
+            --red: #1D3B5E;
             --bg: #F4F7FB;
             --card-bg: #FFFFFF;
             --border: rgba(226, 232, 240, 0.95);
@@ -365,11 +365,11 @@ if ($isDirectBrowser) {
             padding: 32px 16px 48px;
             background-image:
                 radial-gradient(at 0% 0%, rgba(13, 122, 135, 0.09) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(245, 158, 11, 0.07) 0px, transparent 48%);
+                radial-gradient(at 100% 100%, rgba(82, 178, 220, 0.09) 0px, transparent 48%);
         }
         .container { max-width: 1080px; margin: 0 auto; }
         .header-card {
-            background: linear-gradient(135deg, var(--navy) 0%, #152C47 50%, var(--teal) 100%);
+            background: linear-gradient(135deg, var(--navy) 0%, var(--teal) 60%, var(--sky) 100%);
             border-radius: 26px;
             padding: 30px 32px;
             color: #FFF;
@@ -382,7 +382,7 @@ if ($isDirectBrowser) {
             content: '';
             position: absolute;
             bottom: 0; left: 0; right: 0; height: 4px;
-            background: linear-gradient(90deg, #F59E0B 0%, #52B2DC 55%, #10B981 100%);
+            background: linear-gradient(90deg, #1D3B5E 0%, #0D7A87 50%, #52B2DC 100%);
         }
         .brand-title {
             font-family: 'Outfit', sans-serif;
@@ -421,9 +421,9 @@ if ($isDirectBrowser) {
             gap: 7px;
         }
         .stat-badge.gold {
-            background: rgba(245, 158, 11, 0.24);
-            border-color: rgba(254, 243, 199, 0.45);
-            color: #FEF3C7;
+            background: rgba(82, 178, 220, 0.24);
+            border-color: rgba(82, 178, 220, 0.45);
+            color: #FFFFFF;
         }
         .alert-box {
             padding: 15px 18px;
@@ -435,8 +435,8 @@ if ($isDirectBrowser) {
             align-items: center;
             gap: 11px;
         }
-        .alert-success { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
-        .alert-error   { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+        .alert-success { background: rgba(13, 122, 135, 0.10); border: 1px solid rgba(13, 122, 135, 0.30); color: #0D7A87; }
+        .alert-error   { background: rgba(29, 59, 94, 0.08); border: 1px solid rgba(29, 59, 94, 0.25); color: #1D3B5E; }
         .action-card {
             background: #FFFFFF;
             border: 1px solid var(--border);
@@ -468,10 +468,10 @@ if ($isDirectBrowser) {
         }
         .btn-link:hover { background: #E2E8F0; }
         .btn-gold {
-            background: linear-gradient(135deg, #D97706, #F59E0B);
+            background: linear-gradient(135deg, #0D7A87, #52B2DC);
             color: #FFFFFF; border-color: transparent;
         }
-        .btn-gold:hover { filter: brightness(1.06); background: linear-gradient(135deg, #D97706, #F59E0B); }
+        .btn-gold:hover { filter: brightness(1.06); background: linear-gradient(135deg, #0D7A87, #52B2DC); }
         .cluster-box {
             background: #FFFFFF;
             border: 1px solid var(--border);
@@ -506,7 +506,7 @@ if ($isDirectBrowser) {
             font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 20px; white-space: nowrap;
         }
         .table-count.zero { background: #F1F5F9; color: #64748B; }
-        .table-count.missing { background: #FEE2E2; color: #DC2626; }
+        .table-count.missing { background: rgba(29, 59, 94, 0.12); color: #1D3B5E; }
         @media (max-width: 600px) {
             .header-card { padding: 22px 18px; }
             .brand-title { font-size: 19px; }

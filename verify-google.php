@@ -142,12 +142,12 @@ $ornamentDivider = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'
     <style>
         :root {
             --navy: #1D3B5E;
-            --navy-dark: #152C47;
+            --navy-dark: #1D3B5E;
             --teal: #0D7A87;
             --sky: #52B2DC;
-            --green: #10B981;
-            --amber: #F59E0B;
-            --red: #EF4444;
+            --green: #0D7A87;
+            --amber: #52B2DC;
+            --red: #1D3B5E;
             --bg: #F4F7FB;
             --card-bg: #FFFFFF;
             --border: rgba(226, 232, 240, 0.95);
@@ -213,10 +213,10 @@ $ornamentDivider = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'
             display: flex; align-items: center; justify-content: center; font-size: 40px;
             box-shadow: 0 10px 25px -8px rgba(0,0,0,0.12);
         }
-        .icon-success { background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); color: var(--green); border: 2px solid #A7F3D0; }
-        .icon-already { background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%); color: var(--teal); border: 2px solid #BAE6FD; }
-        .icon-expired { background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); color: var(--amber); border: 2px solid #FDE68A; }
-        .icon-error { background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%); color: var(--red); border: 2px solid #FECACA; }
+        .icon-success { background: linear-gradient(135deg, rgba(13,122,135,0.10) 0%, rgba(82,178,220,0.18) 100%); color: var(--teal); border: 2px solid rgba(13,122,135,0.32); }
+        .icon-already { background: linear-gradient(135deg, rgba(82,178,220,0.12) 0%, rgba(82,178,220,0.22) 100%); color: var(--teal); border: 2px solid rgba(82,178,220,0.40); }
+        .icon-expired { background: linear-gradient(135deg, rgba(82,178,220,0.10) 0%, rgba(29,59,94,0.14) 100%); color: var(--navy); border: 2px solid rgba(82,178,220,0.35); }
+        .icon-error { background: linear-gradient(135deg, rgba(29,59,94,0.08) 0%, rgba(29,59,94,0.16) 100%); color: var(--navy); border: 2px solid rgba(29,59,94,0.28); }
         .google-pill {
             display: inline-flex; align-items: center; gap: 8px;
             background: #FFFFFF; border: 1.5px solid #CBD5E1; padding: 7px 18px; border-radius: 30px;
