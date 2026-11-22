@@ -611,15 +611,18 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         // ---- AUTO-HEAL ORPHAN GURU.ID_USER ----
         if ($act === 'heal_orphan_guru') {
             $healed = 0;
-            $uRows = $pdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($uRows as $uRow) {
-                $rCodes = array_column(margo_fetch_user_roles($pdo, (int)$uRow['id']), 'code');
-                if (in_array('guru', $rCodes, true) || in_array('admin', $rCodes, true)) {
-                    $before = $pdo->query("SELECT COUNT(*) FROM guru WHERE id_user IS NULL")->fetchColumn();
-                    margo_resolve_logged_guru($pdo, $uRow);
-                    $after  = $pdo->query("SELECT COUNT(*) FROM guru WHERE id_user IS NULL")->fetchColumn();
-                    if ((int)$after < (int)$before) {
-                        $healed += ((int)$before - (int)$after);
+            $hasGuruTbl = (bool)$pdo->query("SHOW TABLES LIKE 'guru'")->fetch();
+            if ($hasGuruTbl) {
+                $uRows = $pdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($uRows as $uRow) {
+                    $rCodes = array_column(margo_fetch_user_roles($pdo, (int)$uRow['id']), 'code');
+                    if (in_array('guru', $rCodes, true) || in_array('admin', $rCodes, true)) {
+                        $before = $pdo->query("SELECT COUNT(*) FROM guru WHERE id_user IS NULL")->fetchColumn();
+                        margo_resolve_logged_guru($pdo, $uRow);
+                        $after  = $pdo->query("SELECT COUNT(*) FROM guru WHERE id_user IS NULL")->fetchColumn();
+                        if ((int)$after < (int)$before) {
+                            $healed += ((int)$before - (int)$after);
+                        }
                     }
                 }
             }

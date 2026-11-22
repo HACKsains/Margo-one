@@ -56,6 +56,44 @@ CREATE TABLE IF NOT EXISTS `user_roles` (
     INDEX `idx_ur_role` (`role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `kelas` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `nama_kelas` VARCHAR(100) NOT NULL,
+    `tingkat` VARCHAR(20) DEFAULT 'X',
+    `tahun_pelajaran` VARCHAR(30) DEFAULT '2026/2027',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `guru` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `id_user` INT NULL,
+    `nip` VARCHAR(60) NULL,
+    `nama_guru` VARCHAR(150) NOT NULL,
+    `email` VARCHAR(150) NULL,
+    `no_hp` VARCHAR(30) NULL,
+    `jenis_kelamin` VARCHAR(20) NULL,
+    `status_aktif` VARCHAR(20) DEFAULT 'Aktif',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_guru_user` (`id_user`),
+    INDEX `idx_guru_email` (`email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `siswa` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `id_kelas` INT NULL,
+    `nisn` VARCHAR(40) NULL,
+    `nis` VARCHAR(40) NULL,
+    `nama_lengkap` VARCHAR(150) NOT NULL,
+    `jenis_kelamin` VARCHAR(20) NULL,
+    `gmail` VARCHAR(150) NULL,
+    `no_hp` VARCHAR(30) NULL,
+    `status_siswa` VARCHAR(20) DEFAULT 'Aktif',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_siswa_kelas` (`id_kelas`),
+    INDEX `idx_siswa_nisn` (`nisn`),
+    INDEX `idx_siswa_gmail` (`gmail`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ------------------------------------------------------------------------------
 -- 2. TABEL INTI MARGO ONE SSO & KEAMANAN ZERO-TRUST (8 TABEL)
 -- ------------------------------------------------------------------------------
