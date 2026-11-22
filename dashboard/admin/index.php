@@ -858,12 +858,20 @@ require_once BASE_PATH . '/includes/header.php';
 
 <div class="ssoadm-app">
     <!-- ======================================================================= -->
-    <!-- HALAMAN 1: APLIKASI KLIEN (sso_clients)                                 -->
+    <!-- HALAMAN 1: APLIKASI KLIEN (sso_clients — TABEL BARIS + MODAL DETAIL)    -->
     <!-- ======================================================================= -->
     <section class="ssoadm-pane <?= $initialTab === 'clients' ? 'is-active' : '' ?>" id="ssoPane_clients">
         <div class="ilmuna-filter-box">
             <div class="ilmuna-filter-topline">
-                <div class="ssoadm-client-tabs" id="clientSelectorBar"></div>
+                <div class="ilmuna-pill-group" id="clientFilterPills">
+                    <button type="button" class="ilmuna-pill-btn is-active" data-cfilter="all">Semua</button>
+                    <button type="button" class="ilmuna-pill-btn" data-cfilter="active">Aktif</button>
+                    <button type="button" class="ilmuna-pill-btn" data-cfilter="inactive">Nonaktif</button>
+                </div>
+                <div class="ilmuna-search-wrap">
+                    <iconify-icon icon="solar:magnifer-linear"></iconify-icon>
+                    <input type="text" id="clientSearchInput" class="ilmuna-search-input" placeholder="Cari aplikasi klien, slug, domain, public key...">
+                </div>
                 <div class="ilmuna-filter-actions" style="margin-left:auto;">
                     <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--primary" onclick="SSOADM.openNewClientModal()">
                         <iconify-icon icon="solar:add-circle-bold" width="17"></iconify-icon>
@@ -873,146 +881,24 @@ require_once BASE_PATH . '/includes/header.php';
             </div>
         </div>
 
-        <div class="ssoadm-card" id="clientCredentialsCard">
-            <div class="ssoadm-card-head">
-                <h3 class="ssoadm-card-title">
-                    <iconify-icon icon="solar:key-minimalistic-square-2-bold" style="color:#0D7A87;font-size:20px;"></iconify-icon>
-                    <span id="activeClientHeading">Kredensial Klien SSO</span>
-                </h3>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost" onclick="SSOADM.testSigned()">
-                        <iconify-icon icon="solar:shield-check-bold" width="16"></iconify-icon>
-                        <span>Uji Koneksi Signed Token</span>
-                    </button>
-                    <button type="button" class="ssoadm-btn ssoadm-btn--gold" onclick="SSOADM.generateRsa()">
-                        <iconify-icon icon="solar:lock-keyhole-bold" width="16"></iconify-icon>
-                        <span>Generate RSA-2048 PEM</span>
-                    </button>
-                    <button type="button" class="ssoadm-btn ssoadm-btn--danger" onclick="SSOADM.rotateClientKeys()">
-                        <iconify-icon icon="solar:refresh-circle-bold" width="16"></iconify-icon>
-                        <span>Rotasi Kunci</span>
-                    </button>
-                </div>
+        <div class="ssoadm-card" style="padding:0;overflow:hidden;">
+            <div class="table-responsive">
+                <table class="lms-table ilmuna-table-stack">
+                    <thead>
+                        <tr>
+                            <th>Aplikasi Klien</th>
+                            <th>Public Key (client_id)</th>
+                            <th>Mode &amp; Rate Limit</th>
+                            <th>Trafik &amp; Pemakaian</th>
+                            <th>Status</th>
+                            <th style="text-align:right;">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clientsTableBody">
+                        <tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Memuat daftar aplikasi klien...</td></tr>
+                    </tbody>
+                </table>
             </div>
-
-            <div id="ssoTestBanner" class="ssoadm-test-banner"></div>
-
-            <div class="ssoadm-grid-2" style="margin-bottom:12px;">
-                <div class="ssoadm-key-box">
-                    <div class="ssoadm-key-lbl">
-                        <span>Public Key (client_id / X-Ilmuna-Public-Key)</span>
-                        <span class="ssoadm-badge ssoadm-badge--navy" id="lblClientSlug">-</span>
-                    </div>
-                    <div class="ssoadm-key-row">
-                        <div class="ssoadm-code" id="txtClientPubKey">Memuat...</div>
-                        <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="MargoUI.copyText(document.getElementById('txtClientPubKey').textContent,'Public Key')">
-                            <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin
-                        </button>
-                    </div>
-                </div>
-                <div class="ssoadm-key-box">
-                    <div class="ssoadm-key-lbl">
-                        <span>Private Key (AES-256-CBC+HMAC at-rest)</span>
-                        <span class="ssoadm-badge ssoadm-badge--warn" id="lblClientSigMode">HMAC-SHA256</span>
-                    </div>
-                    <div class="ssoadm-key-row">
-                        <div class="ssoadm-code" id="txtClientPrivKey">••••••••••••••••••••••••</div>
-                        <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" id="btnTogglePriv" onclick="SSOADM.togglePriv()">
-                            <iconify-icon icon="solar:eye-linear"></iconify-icon> Lihat
-                        </button>
-                        <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.copyPriv()">
-                            <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div id="rsaOnceBox" style="display:none;background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:13px;margin-bottom:12px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                    <strong style="color:#92400E;font-size:12.5px;">
-                        <iconify-icon icon="solar:danger-triangle-bold"></iconify-icon>
-                        RSA-2048 Private Key PEM (Ditampilkan SATU KALI — Salin ke Aplikasi Klien sekarang!)
-                    </strong>
-                    <button type="button" class="ssoadm-btn ssoadm-btn--gold ssoadm-btn--sm" onclick="MargoUI.copyText(document.getElementById('rsaPemOut').value,'RSA Private PEM')">
-                        <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin PEM
-                    </button>
-                </div>
-                <textarea id="rsaPemOut" class="ssoadm-textarea" rows="6" readonly style="background:#0F172A;color:#FDE68A;"></textarea>
-            </div>
-
-            <form id="formEditClient" onsubmit="SSOADM.saveClient(event)">
-                <input type="hidden" id="edClientId" value="0">
-                <div class="ssoadm-grid-2" style="margin-bottom:12px;">
-                    <div class="ssoadm-field">
-                        <label for="edClientName">Nama Aplikasi Klien</label>
-                        <input type="text" id="edClientName" class="ssoadm-input" required>
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edClientSlug">Slug Klien</label>
-                        <input type="text" id="edClientSlug" class="ssoadm-input" required>
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAppUrl">URL Aplikasi (App Launcher)</label>
-                        <input type="url" id="edAppUrl" class="ssoadm-input" required>
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAppIcon">Ikon Solar Icons (solar:*)</label>
-                        <input type="text" id="edAppIcon" class="ssoadm-input" value="solar:widget-5-bold">
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edSigMode">Mode Tanda Tangan Server-to-Server</label>
-                        <select id="edSigMode" class="ssoadm-input">
-                            <option value="HMAC-SHA256">HMAC-SHA256 (Public + Private Key)</option>
-                            <option value="RSA-SHA256">RSA-SHA256 (Asimetris RSA-2048 PEM)</option>
-                            <option value="DUAL">DUAL (Wajib HMAC-SHA256 + RSA-2048)</option>
-                        </select>
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edRateLimit">Rate Limit (req / menit / IP)</label>
-                        <input type="number" id="edRateLimit" class="ssoadm-input" min="10" max="2000" value="180">
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAllowedDomains">Whitelist Domain (pisahkan koma)</label>
-                        <input type="text" id="edAllowedDomains" class="ssoadm-input">
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAllowedIps">Whitelist IP / CIDR (kosong = bebas IP bertanda tangan)</label>
-                        <input type="text" id="edAllowedIps" class="ssoadm-input">
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edLogoutWebhook">URL Back-Channel Logout Webhook (SLO)</label>
-                        <input type="url" id="edLogoutWebhook" class="ssoadm-input" placeholder="https://.../sso-logout-webhook.php">
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAllowedRoles">Hak Role Diizinkan (koma)</label>
-                        <input type="text" id="edAllowedRoles" class="ssoadm-input" value="admin,guru,ketua_kelas,siswa">
-                    </div>
-                </div>
-                <div class="ssoadm-grid-2" style="margin-bottom:12px;">
-                    <div class="ssoadm-field">
-                        <label for="edRedirectUris">Whitelist Redirect URIs (1 per baris — Exact Match!)</label>
-                        <textarea id="edRedirectUris" class="ssoadm-textarea" required></textarea>
-                    </div>
-                    <div class="ssoadm-field">
-                        <label for="edAllowedScopes">Allowed Scopes (koma)</label>
-                        <input type="text" id="edAllowedScopes" class="ssoadm-input" value="openid,profile,email,roles">
-                        <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-                            <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;">
-                                <input type="checkbox" id="edIsActive" checked>
-                                Klien Aktif
-                            </label>
-                            <span class="ssoadm-badge ssoadm-badge--teal" id="edRsaStatus">RSA Public PEM: Belum diatur</span>
-                        </div>
-                    </div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding-top:8px;border-top:1px solid #F1F5F9;">
-                    <div style="font-size:12px;color:#64748B;" id="edClientStats">Total request: 0</div>
-                    <button type="submit" class="ssoadm-btn ssoadm-btn--primary">
-                        <iconify-icon icon="solar:diskette-bold" width="17"></iconify-icon>
-                        <span>Simpan Perubahan Klien</span>
-                    </button>
-                </div>
-            </form>
         </div>
     </section>
 
@@ -1275,6 +1161,161 @@ require_once BASE_PATH . '/includes/header.php';
 </div>
 
 <!-- ======================================================================= -->
+<!-- UNIVERSAL MODAL 0: KELOLA KREDENSIAL & KONFIGURASI KLIEN SSO            -->
+<!-- ======================================================================= -->
+<div class="ilm-modal-backdrop" id="modalManageClient">
+    <div class="ilm-modal-dialog" style="max-width:780px;">
+        <div class="ilm-modal-header">
+            <div class="ilm-modal-header__brand">
+                <div class="ilm-modal-header__icon"><iconify-icon icon="solar:key-minimalistic-square-2-bold"></iconify-icon></div>
+                <div>
+                    <h3 class="ilm-modal-header__title" id="activeClientHeading">Kredensial Klien SSO</h3>
+                    <p class="ilm-modal-header__subtitle" id="edClientStats">Total request: 0</p>
+                </div>
+            </div>
+            <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('modalManageClient')">
+                <iconify-icon icon="solar:close-circle-bold"></iconify-icon>
+            </button>
+        </div>
+        <form id="formEditClient" onsubmit="SSOADM.saveClient(event)">
+            <input type="hidden" id="edClientId" value="0">
+            <div class="ilm-modal-body" style="max-height:calc(86vh - 150px);">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.testSigned()">
+                        <iconify-icon icon="solar:shield-check-bold" width="16"></iconify-icon>
+                        <span>Uji Koneksi Signed Token</span>
+                    </button>
+                    <button type="button" class="ssoadm-btn ssoadm-btn--gold ssoadm-btn--sm" onclick="SSOADM.generateRsa()">
+                        <iconify-icon icon="solar:lock-keyhole-bold" width="16"></iconify-icon>
+                        <span>Generate RSA-2048 PEM</span>
+                    </button>
+                    <button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" onclick="SSOADM.rotateClientKeys()">
+                        <iconify-icon icon="solar:refresh-circle-bold" width="16"></iconify-icon>
+                        <span>Rotasi Kunci</span>
+                    </button>
+                </div>
+
+                <div id="ssoTestBanner" class="ssoadm-test-banner"></div>
+
+                <div class="ssoadm-grid-2" style="margin-bottom:12px;">
+                    <div class="ssoadm-key-box">
+                        <div class="ssoadm-key-lbl">
+                            <span>Public Key (client_id / X-Ilmuna-Public-Key)</span>
+                            <span class="ssoadm-badge ssoadm-badge--navy" id="lblClientSlug">-</span>
+                        </div>
+                        <div class="ssoadm-key-row">
+                            <div class="ssoadm-code" id="txtClientPubKey">Memuat...</div>
+                            <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="MargoUI.copyText(document.getElementById('txtClientPubKey').textContent,'Public Key')">
+                                <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ssoadm-key-box">
+                        <div class="ssoadm-key-lbl">
+                            <span>Private Key (AES-256-CBC+HMAC at-rest)</span>
+                            <span class="ssoadm-badge ssoadm-badge--warn" id="lblClientSigMode">HMAC-SHA256</span>
+                        </div>
+                        <div class="ssoadm-key-row">
+                            <div class="ssoadm-code" id="txtClientPrivKey">••••••••••••••••••••••••</div>
+                            <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" id="btnTogglePriv" onclick="SSOADM.togglePriv()">
+                                <iconify-icon icon="solar:eye-linear"></iconify-icon> Lihat
+                            </button>
+                            <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.copyPriv()">
+                                <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="rsaOnceBox" style="display:none;background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:13px;margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                        <strong style="color:#92400E;font-size:12.5px;">
+                            <iconify-icon icon="solar:danger-triangle-bold"></iconify-icon>
+                            RSA-2048 Private Key PEM (Ditampilkan SATU KALI — Salin ke Aplikasi Klien sekarang!)
+                        </strong>
+                        <button type="button" class="ssoadm-btn ssoadm-btn--gold ssoadm-btn--sm" onclick="MargoUI.copyText(document.getElementById('rsaPemOut').value,'RSA Private PEM')">
+                            <iconify-icon icon="solar:copy-bold"></iconify-icon> Salin PEM
+                        </button>
+                    </div>
+                    <textarea id="rsaPemOut" class="ssoadm-textarea" rows="5" readonly style="background:#0F172A;color:#FDE68A;"></textarea>
+                </div>
+
+                <div class="ssoadm-grid-2" style="margin-bottom:12px;">
+                    <div class="ssoadm-field">
+                        <label for="edClientName">Nama Aplikasi Klien</label>
+                        <input type="text" id="edClientName" class="ssoadm-input" required>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edClientSlug">Slug Klien</label>
+                        <input type="text" id="edClientSlug" class="ssoadm-input" required>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAppUrl">URL Aplikasi (App Launcher)</label>
+                        <input type="url" id="edAppUrl" class="ssoadm-input" required>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAppIcon">Ikon Solar Icons (solar:*)</label>
+                        <input type="text" id="edAppIcon" class="ssoadm-input" value="solar:widget-5-bold">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edSigMode">Mode Tanda Tangan Server-to-Server</label>
+                        <select id="edSigMode" class="ssoadm-input">
+                            <option value="HMAC-SHA256">HMAC-SHA256 (Public + Private Key)</option>
+                            <option value="RSA-SHA256">RSA-SHA256 (Asimetris RSA-2048 PEM)</option>
+                            <option value="DUAL">DUAL (Wajib HMAC-SHA256 + RSA-2048)</option>
+                        </select>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edRateLimit">Rate Limit (req / menit / IP)</label>
+                        <input type="number" id="edRateLimit" class="ssoadm-input" min="10" max="2000" value="180">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAllowedDomains">Whitelist Domain (pisahkan koma)</label>
+                        <input type="text" id="edAllowedDomains" class="ssoadm-input">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAllowedIps">Whitelist IP / CIDR (kosong = bebas IP bertanda tangan)</label>
+                        <input type="text" id="edAllowedIps" class="ssoadm-input">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edLogoutWebhook">URL Back-Channel Logout Webhook (SLO)</label>
+                        <input type="url" id="edLogoutWebhook" class="ssoadm-input" placeholder="https://.../sso-logout-webhook.php">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAllowedRoles">Hak Role Diizinkan (koma)</label>
+                        <input type="text" id="edAllowedRoles" class="ssoadm-input" value="admin,guru,ketua_kelas,siswa">
+                    </div>
+                </div>
+                <div class="ssoadm-grid-2">
+                    <div class="ssoadm-field">
+                        <label for="edRedirectUris">Whitelist Redirect URIs (1 per baris — Exact Match!)</label>
+                        <textarea id="edRedirectUris" class="ssoadm-textarea" required></textarea>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="edAllowedScopes">Allowed Scopes (koma)</label>
+                        <input type="text" id="edAllowedScopes" class="ssoadm-input" value="openid,profile,email,roles">
+                        <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                            <label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;cursor:pointer;">
+                                <input type="checkbox" id="edIsActive" checked>
+                                Klien Aktif
+                            </label>
+                            <span class="ssoadm-badge ssoadm-badge--teal" id="edRsaStatus">RSA Public PEM: Belum diatur</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="ilm-modal-footer">
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('modalManageClient')">Tutup</button>
+                <button type="submit" class="ilm-modal-btn ilm-modal-btn--primary">
+                    <iconify-icon icon="solar:diskette-bold"></iconify-icon>
+                    <span>Simpan Perubahan Klien</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ======================================================================= -->
 <!-- UNIVERSAL MODAL 1: TAMBAH KLIEN SSO BARU                                -->
 <!-- ======================================================================= -->
 <div class="ilm-modal-backdrop" id="modalNewClient">
@@ -1533,6 +1574,7 @@ require_once BASE_PATH . '/includes/header.php';
         data: null,
         selectedClientId: 0,
         showPriv: false,
+        clientFilter: 'all',
         sessFilter: 'active',
         userFilter: 'all',
         portalSub: 'agendas'
@@ -1573,26 +1615,8 @@ require_once BASE_PATH . '/includes/header.php';
         });
     }
 
-    function renderClients() {
-        var list = (STATE.data && STATE.data.clients) || [];
-        var cntEl = document.getElementById('cntTabClients');
-        if (cntEl) cntEl.textContent = list.length;
-        if (!list.length) return;
-        if (!STATE.selectedClientId || !list.some(function (c) { return c.id === STATE.selectedClientId; })) {
-            STATE.selectedClientId = list[0].id;
-        }
-
-        document.getElementById('clientSelectorBar').innerHTML = list.map(function (c) {
-            var active = c.id === STATE.selectedClientId ? ' is-active' : '';
-            var dot = Number(c.is_active) === 1 ? '#10B981' : '#EF4444';
-            return '<button type="button" class="ssoadm-client-pill' + active + '" onclick="SSOADM.selectClient(' + c.id + ')">'
-                + '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';"></span>'
-                + '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="16"></iconify-icon>'
-                + '<span>' + esc(c.client_name) + '</span>'
-                + '</button>';
-        }).join('');
-
-        var c = list.find(function (x) { return x.id === STATE.selectedClientId; }) || list[0];
+    function populateClientModal(c) {
+        if (!c) return;
         document.getElementById('activeClientHeading').textContent = c.client_name + ' — Kredensial Zero-Trust';
         document.getElementById('lblClientSlug').textContent = c.client_slug;
         document.getElementById('lblClientSigMode').textContent = c.sig_mode;
@@ -1617,6 +1641,66 @@ require_once BASE_PATH . '/includes/header.php';
             : 'RSA Public PEM: Belum diatur';
         document.getElementById('edClientStats').textContent =
             'Total request API: ' + c.request_count + ' · Terakhir dipakai: ' + (c.last_used_at || 'Belum pernah') + (c.last_ip ? ' (' + c.last_ip + ')' : '');
+    }
+
+    function renderClients() {
+        var list = (STATE.data && STATE.data.clients) || [];
+        var cntEl = document.getElementById('cntTabClients');
+        if (cntEl) cntEl.textContent = list.length;
+
+        var searchEl = document.getElementById('clientSearchInput');
+        var q = searchEl ? (searchEl.value || '').toLowerCase().trim() : '';
+        var filtered = list.filter(function (c) {
+            if (STATE.clientFilter === 'active' && Number(c.is_active) !== 1) return false;
+            if (STATE.clientFilter === 'inactive' && Number(c.is_active) === 1) return false;
+            if (q !== '') {
+                var hay = ((c.client_name || '') + ' ' + (c.client_slug || '') + ' ' + (c.app_url || '') + ' ' + (c.public_key || '') + ' ' + (c.allowed_domains || '')).toLowerCase();
+                if (hay.indexOf(q) === -1) return false;
+            }
+            return true;
+        });
+
+        var tb = document.getElementById('clientsTableBody');
+        if (tb) {
+            if (!filtered.length) {
+                tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Tidak ada aplikasi klien SSO ditemukan.</td></tr>';
+            } else {
+                tb.innerHTML = filtered.map(function (c) {
+                    var stBadge = Number(c.is_active) === 1
+                        ? '<span class="ssoadm-badge ssoadm-badge--ok">Aktif</span>'
+                        : '<span class="ssoadm-badge ssoadm-badge--err">Nonaktif</span>';
+                    var rsaInfo = c.has_rsa_public
+                        ? ' <span class="ssoadm-badge ssoadm-badge--teal">RSA-2048</span>'
+                        : '';
+                    return '<tr id="adm-client-' + c.id + '">'
+                        + '<td data-label="Aplikasi Klien">'
+                        + '<div style="display:flex;align-items:center;gap:10px;">'
+                        + '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="18"></iconify-icon></div>'
+                        + '<div><strong>' + esc(c.client_name) + '</strong> <span class="ssoadm-badge ssoadm-badge--navy">' + esc(c.client_slug) + '</span>'
+                        + '<div style="font-size:11.5px;color:#64748B;">' + esc(c.app_url) + '</div></div>'
+                        + '</div></td>'
+                        + '<td data-label="Public Key">'
+                        + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+                        + '<code style="font-family:var(--font-mono);font-size:11.5px;background:#F1F5F9;color:#0F172A;padding:4px 8px;border-radius:7px;">' + esc(c.public_key) + '</code>'
+                        + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" style="padding:4px 8px;min-height:28px;" onclick="MargoUI.copyText(\'' + esc(c.public_key) + '\',\'Public Key\')" title="Salin Public Key"><iconify-icon icon="solar:copy-bold"></iconify-icon></button>'
+                        + '</div></td>'
+                        + '<td data-label="Mode & Limit"><span class="ssoadm-badge ssoadm-badge--warn">' + esc(c.sig_mode) + '</span>' + rsaInfo + '<div style="font-size:11px;color:#64748B;margin-top:3px;">Limit: ' + esc(c.rate_limit_per_min) + ' req/menit</div></td>'
+                        + '<td data-label="Trafik"><strong>' + esc(c.request_count) + ' req</strong><div style="font-size:11px;color:#64748B;">' + esc(c.last_used_at || 'Belum pernah') + (c.last_ip ? ' (' + esc(c.last_ip) + ')' : '') + '</div></td>'
+                        + '<td data-label="Status">' + stBadge + '</td>'
+                        + '<td data-label="Aksi" style="text-align:right;">'
+                        + '<div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'
+                        + '<button type="button" class="ssoadm-btn ssoadm-btn--primary ssoadm-btn--sm" onclick="SSOADM.openManageClient(' + c.id + ')"><iconify-icon icon="solar:key-minimalistic-square-2-bold"></iconify-icon> Kelola &amp; Kunci</button>'
+                        + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.testSigned(' + c.id + ')" title="Uji Koneksi Signed Token"><iconify-icon icon="solar:shield-check-bold"></iconify-icon> Uji</button>'
+                        + '</div></td>'
+                        + '</tr>';
+                }).join('');
+            }
+        }
+
+        if (STATE.selectedClientId) {
+            var activeObj = list.find(function (x) { return x.id === STATE.selectedClientId; });
+            if (activeObj) populateClientModal(activeObj);
+        }
     }
 
     function renderSessions() {
@@ -1826,16 +1910,25 @@ require_once BASE_PATH . '/includes/header.php';
                 Ilmuna.error('Kesalahan', 'Gagal menghubungi backend Admin Margo One.');
             }
         },
-        selectClient: function (id) {
+        openManageClient: function (id) {
             STATE.selectedClientId = id;
             STATE.showPriv = false;
             document.getElementById('rsaOnceBox').style.display = 'none';
             document.getElementById('ssoTestBanner').style.display = 'none';
-            renderClients();
+            var list = (STATE.data && STATE.data.clients) || [];
+            var c = list.find(function (x) { return x.id === id; });
+            if (!c) return;
+            populateClientModal(c);
+            openIlmunaModal('modalManageClient');
+        },
+        selectClient: function (id) {
+            SSOADM.openManageClient(id);
         },
         togglePriv: function () {
             STATE.showPriv = !STATE.showPriv;
-            renderClients();
+            var list = (STATE.data && STATE.data.clients) || [];
+            var c = list.find(function (x) { return x.id === STATE.selectedClientId; });
+            if (c) populateClientModal(c);
         },
         copyPriv: function () {
             var list = (STATE.data && STATE.data.clients) || [];
@@ -1909,17 +2002,23 @@ require_once BASE_PATH . '/includes/header.php';
                 Ilmuna.error('Gagal', res.message || 'Gagal membangkitkan RSA-2048.');
             }
         },
-        testSigned: async function () {
-            var res = await apiPost('test_client_signed', { id: STATE.selectedClientId });
+        testSigned: async function (optId) {
+            var targetId = optId || STATE.selectedClientId;
+            var res = await apiPost('test_client_signed', { id: targetId });
             var b = document.getElementById('ssoTestBanner');
-            b.style.display = 'block';
+            if (b) {
+                b.style.display = 'block';
+                if (res.success) {
+                    b.style.background = '#F0FDF4'; b.style.border = '1px solid #BBF7D0'; b.style.color = '#166534';
+                    b.textContent = res.message;
+                } else {
+                    b.style.background = '#FEF2F2'; b.style.border = '1px solid #FECACA'; b.style.color = '#991B1B';
+                    b.textContent = res.message || 'Uji koneksi gagal.';
+                }
+            }
             if (res.success) {
-                b.style.background = '#F0FDF4'; b.style.border = '1px solid #BBF7D0'; b.style.color = '#166534';
-                b.textContent = res.message;
                 Ilmuna.success('Uji Koneksi Sukses', res.message);
             } else {
-                b.style.background = '#FEF2F2'; b.style.border = '1px solid #FECACA'; b.style.color = '#991B1B';
-                b.textContent = res.message || 'Uji koneksi gagal.';
                 Ilmuna.error('Uji Koneksi Gagal', res.message || 'Periksa konfigurasi klien.');
             }
         },
@@ -2224,6 +2323,15 @@ require_once BASE_PATH . '/includes/header.php';
                 renderUsers();
             });
         });
+        document.querySelectorAll('#clientFilterPills .ilmuna-pill-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                STATE.clientFilter = btn.getAttribute('data-cfilter');
+                document.querySelectorAll('#clientFilterPills .ilmuna-pill-btn').forEach(function (b) { b.classList.toggle('is-active', b === btn); });
+                renderClients();
+            });
+        });
+        var cSearch = document.getElementById('clientSearchInput');
+        if (cSearch) cSearch.addEventListener('input', renderClients);
         document.getElementById('sessSearchInput').addEventListener('input', renderSessions);
         document.getElementById('userSearchInput').addEventListener('input', renderUsers);
         document.getElementById('auditSearchInput').addEventListener('input', renderJwksAndLogs);
