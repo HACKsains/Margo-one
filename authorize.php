@@ -156,10 +156,11 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             position: fixed; top: 50%; left: 50%; width: 300vmax; height: 300vmax;
             margin-top: -150vmax; margin-left: -150vmax; background: #E8EFF7; z-index: 9999;
             transform-origin: center; transform: rotate(-225deg) translateY(85%);
-            transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none;
+            box-shadow: 0 -20px 60px rgba(0,0,0,0.1); will-change: transform;
         }
-        .page-transition::before { content: ''; position: absolute; top: 10vh; left: 0; width: 100%; height: 100%; background: #52B2DC; }
-        .page-transition::after  { content: ''; position: absolute; top: 20vh; left: 0; width: 100%; height: 100%; background: #0D7A87; }
+        .page-transition::before { content: ''; position: absolute; top: 10vh; left: 0; width: 100%; height: 100%; background: #52B2DC; box-shadow: 0 -15px 35px rgba(0,0,0,0.08); }
+        .page-transition::after  { content: ''; position: absolute; top: 20vh; left: 0; width: 100%; height: 100%; background: #0D7A87; box-shadow: 0 -15px 35px rgba(0,0,0,0.1); }
         .page-transition.active  { transform: rotate(135deg) translateY(-10%); }
 
         #particleCanvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
@@ -181,7 +182,7 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             .auth-wrapper { flex-direction: row; align-items: stretch; justify-content: center; }
         }
 
-        /* LEFT SLIDE PANEL */
+        /* LEFT SLIDE PANEL (1:1 LOGIN.PHP DIAGONAL SLIDE-IN FROM BEHIND) */
         .slide-panel {
             width: 100%;
             background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 55%, #152C47 100%);
@@ -195,7 +196,9 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             flex-direction: column;
             justify-content: center;
             box-shadow: 0 20px 45px -15px rgba(29, 59, 94, 0.45);
-            animation: slideInLeft 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            transform: translate(-100%, 100%);
+            animation: slideInFromBehind 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            will-change: transform;
         }
         @media (min-width: 768px) {
             .slide-panel {
@@ -204,9 +207,14 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
                 border-radius: 30px 0 90px 30px;
             }
         }
-        @keyframes slideInLeft {
-            0% { opacity: 0; transform: translate(-40px, 30px); }
-            100% { opacity: 1; transform: translate(0, 0); }
+        @keyframes slideInFromBehind {
+            0% { transform: translate(-100%, 100%); opacity: 0; }
+            100% { transform: translate(0, 0); opacity: 1; }
+        }
+        .slide-out-behind { animation: slideOutBehind 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        @keyframes slideOutBehind {
+            0% { transform: translate(0, 0); opacity: 1; }
+            100% { transform: translate(-100%, 100%); opacity: 0; }
         }
         .pixel-pattern {
             position: absolute; inset: 0; pointer-events: none;
@@ -246,7 +254,7 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
         }
         @media (max-width: 767px) { .slide-caption { display: none; } }
 
-        /* RIGHT CONFIRMATION PANEL */
+        /* RIGHT CONFIRMATION PANEL (1:1 LOGIN.PHP FADE-IN OVERLAP) */
         .form-panel {
             width: 100%;
             background: rgba(255, 255, 255, 0.97);
@@ -264,7 +272,9 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             justify-content: center;
             text-align: center;
             box-shadow: 0 16px 40px rgba(29, 59, 94, 0.16), -16px 10px 36px -12px rgba(29, 59, 94, 0.18);
-            animation: fadeInRight 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            opacity: 0;
+            animation: fadeIn 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            animation-delay: 0.35s;
         }
         @media (min-width: 768px) {
             .form-panel {
@@ -276,9 +286,9 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
                 border-top-left-radius: 84px;
             }
         }
-        @keyframes fadeInRight {
-            0% { opacity: 0; transform: translateY(14px); }
-            100% { opacity: 1; transform: translateY(0); }
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
         }
 
         .collab-badge {
@@ -543,8 +553,12 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
                 var href = this.getAttribute('href');
                 if (!href) return;
                 e.preventDefault();
+                var sp = document.getElementById('slidePanel');
+                var fp = document.getElementById('formPanel');
+                if (sp) sp.classList.add('slide-out-behind');
+                if (fp) { fp.style.opacity = '0'; fp.style.transform = 'translateX(90px)'; fp.style.transition = 'all 0.45s ease-in'; }
                 if (pt) pt.classList.add('active');
-                setTimeout(function () { window.location.href = href; }, 320);
+                setTimeout(function () { window.location.href = href; }, 450);
             });
         });
 
