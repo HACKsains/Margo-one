@@ -22,32 +22,45 @@ require_once BASE_PATH . '/config.php';
  * Helper HTTP request ke Google OAuth API (mendukung cURL & stream fallback)
  */
 if (!function_exists('fetchGoogleApi')) {
-    function fetchGoogleApi($url, $postFields = null)
+    function fetchGoogleApi($url, $postFields = null, $bearerToken = null)
     {
+        $headers = [];
+        if (is_string($bearerToken) && $bearerToken !== '') {
+            $headers[] = 'Authorization: Bearer ' . $bearerToken;
+        }
+        if (is_array($postFields)) {
+            $headers[] = 'Content-Type: application/x-www-form-urlencoded';
+        }
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 8,
-                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT        => 10,
+                CURLOPT_CONNECTTIMEOUT => 6,
                 CURLOPT_SSL_VERIFYPEER => false,
                 CURLOPT_SSL_VERIFYHOST => 0,
             ]);
             if (is_array($postFields)) {
                 curl_setopt($ch, CURLOPT_POST, true);
                 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postFields));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+            }
+            if (!empty($headers)) {
+                curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             }
             $body = curl_exec($ch);
             curl_close($ch);
             if (is_string($body) && $body !== '') {
-                return json_decode($body, true);
+                $dec = json_decode($body, true);
+                if (is_array($dec)) {
+                    return $dec;
+                }
             }
         }
         $opts = [
             'http' => [
                 'method'        => is_array($postFields) ? 'POST' : 'GET',
-                'timeout'       => 8,
+                'timeout'       => 10,
                 'ignore_errors' => true,
             ],
             'ssl' => [
@@ -55,8 +68,10 @@ if (!function_exists('fetchGoogleApi')) {
                 'verify_peer_name' => false,
             ],
         ];
+        if (!empty($headers)) {
+            $opts['http']['header'] = implode("\r\n", $headers) . "\r\n";
+        }
         if (is_array($postFields)) {
-            $opts['http']['header']  = "Content-Type: application/x-www-form-urlencoded\r\n";
             $opts['http']['content'] = http_build_query($postFields);
         }
         $resp = @file_get_contents($url, false, stream_context_create($opts));

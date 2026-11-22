@@ -19,6 +19,10 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 require_once BASE_PATH . '/includes/email-verify-google-template.php';
 
+if (!headers_sent()) {
+    header('Cross-Origin-Opener-Policy: same-origin-allow-popups');
+}
+
 requireAuth();
 
 $pdo         = getDBConnection();
@@ -64,6 +68,16 @@ function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
     $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
     $uStmt->execute([$userId]);
     $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    // Jika belum tertaut di DB SSO, cek apakah akun dengan username sama sudah tertaut di Ilmuna Learn
+    if (empty($uRow['email_google']) && !empty($uRow['username']) && function_exists('margo_hydrate_google_link_from_learn')) {
+        $hydratedG = margo_hydrate_google_link_from_learn($pdo, $userId, (string)$uRow['username']);
+        if ($hydratedG && !empty($hydratedG['email_google'])) {
+            $uRow['email_google'] = $hydratedG['email_google'];
+            $uRow['google_id']    = $hydratedG['google_id'];
+            $_SESSION['user_email_google'] = $hydratedG['email_google'];
+        }
+    }
 
     $rawPhoto = !empty($uRow['foto_profil'])
         ? (string)$uRow['foto_profil']
@@ -410,7 +424,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         }
 
         // =====================================================================
-        // PERMINTAAN TAUTKAN AKUN GOOGLE 1-KLIK (IDENTIK LEARN/API/PROFILE-ACTION.PHP)
+        // TAUTKAN AKUN GOOGLE 1-KLIK INSTAN (TERVERIFIKASI LANGSUNG VIA GOOGLE OAUTH 2.0)
         // =====================================================================
         if ($act === 'link_google' || $act === 'request_link_google') {
             ilmuna_ensure_google_verification_table($pdo);
@@ -418,16 +432,21 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $accessToken = trim((string)($_POST['google_access_token'] ?? ''));
             $emailGoogle = '';
             $googleId    = '';
+            $emailVerified = false;
 
             if ($accessToken !== '') {
-                $uInfo = fetchGoogleApi('https://www.googleapis.com/oauth2/v3/userinfo?access_token=' . urlencode($accessToken));
+                $uInfo = fetchGoogleApi('https://www.googleapis.com/oauth2/v3/userinfo', null, $accessToken);
+                if (empty($uInfo['email'])) {
+                    $uInfo = fetchGoogleApi('https://www.googleapis.com/oauth2/v3/userinfo?access_token=' . urlencode($accessToken));
+                }
                 if (!empty($uInfo['email'])) {
-                    $emailGoogle = strtolower(trim((string)$uInfo['email']));
-                    $googleId    = trim((string)($uInfo['sub'] ?? ''));
+                    $emailGoogle   = strtolower(trim((string)$uInfo['email']));
+                    $googleId      = trim((string)($uInfo['sub'] ?? ''));
+                    $emailVerified = (!isset($uInfo['email_verified']) || $uInfo['email_verified'] === true || $uInfo['email_verified'] === 'true' || $uInfo['email_verified'] === 1);
                 } else {
                     echo json_encode([
                         'success' => false,
-                        'message' => 'Gagal mengambil informasi profil dari Google. Pastikan izin akun Google diberikan.',
+                        'message' => 'Gagal mengambil informasi profil dari Google. Pastikan izin akun Google diberikan dan coba lagi.',
                     ]);
                     exit;
                 }
@@ -441,6 +460,10 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
             if ($emailGoogle === '' || !filter_var($emailGoogle, FILTER_VALIDATE_EMAIL)) {
                 echo json_encode(['success' => false, 'message' => 'Alamat Gmail Google tidak valid.']);
+                exit;
+            }
+            if (!$emailVerified) {
+                echo json_encode(['success' => false, 'message' => 'Email Google tersebut belum diverifikasi oleh Google.']);
                 exit;
             }
 
@@ -460,55 +483,42 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            // Cek apakah akun Google ini sudah ditautkan ke pengguna ini sendiri
-            $chkSelf = $pdo->prepare("SELECT id FROM `users` WHERE `id` = ? AND (LOWER(`email_google`) = ? OR `google_id` = ?) LIMIT 1");
-            $chkSelf->execute([$userId, $emailGoogle, $googleId]);
-            if ($chkSelf->fetch()) {
-                echo json_encode([
-                    'success'      => true,
-                    'linked'       => true,
-                    'email_google' => $emailGoogle,
-                    'message'      => 'Akun Google ini (' . $emailGoogle . ') sudah berhasil tertaut dengan akun Anda.',
-                ]);
-                exit;
+            // Simpan langsung ke database karena kepemilikan akun sudah diverifikasi resmi oleh Google OAuth 2.0
+            $pdo->prepare("UPDATE `users` SET `email_google` = ?, `google_id` = ? WHERE `id` = ?")
+                ->execute([$emailGoogle, $googleId, $userId]);
+
+            try {
+                $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
+            } catch (Throwable $eDelV) {
+                // Non-fatal
             }
 
-            // Hapus permintaan verifikasi lama yang belum selesai untuk user ini
-            $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ? AND `verified_at` IS NULL")->execute([$userId]);
-
-            // Buat token verifikasi kriptografis baru
-            $token     = bin2hex(random_bytes(32));
-            $expiresAt = date('Y-m-d H:i:s', time() + 3600); // Berlaku 60 menit
-            $createdAt = date('Y-m-d H:i:s');
-            $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
-
-            $ins = $pdo->prepare("INSERT INTO `google_link_verifications` (`user_id`, `email_google`, `google_id`, `token`, `expires_at`, `created_at`, `ip_address`) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $ins->execute([$userId, $emailGoogle, $googleId, $token, $expiresAt, $createdAt, $ipAddress]);
-
-            $baseUrl   = defined('BASE_URL') ? rtrim(BASE_URL, '/') : 'http://localhost';
-            $verifyUrl = $baseUrl . '/verify-google.php?token=' . $token;
-
-            $userName = $currentUser['full_name'] ?? ($currentUser['username'] ?? 'Pengguna');
-            $mailRes  = ilmuna_send_google_verify_email($emailGoogle, $userName, $verifyUrl, 60);
-
-            if (empty($mailRes['success'])) {
-                echo json_encode([
-                    'success'      => true,
-                    'pending'      => true,
-                    'email_google' => $emailGoogle,
-                    'verify_url'   => $verifyUrl,
-                    'mail_failed'  => true,
-                    'message'      => 'Tautan verifikasi penautan Google berhasil dibuat! Karena proteksi SMTP membatasi pengiriman dari IP hosting, silakan klik tombol "Buka Link Verifikasi" di bawah ini untuk memverifikasi secara langsung.',
-                    'action_url'   => $verifyUrl,
-                ]);
-                exit;
+            $uNameNow = (string)($currentUser['username'] ?? '');
+            try {
+                $pdo->prepare("UPDATE `siswa` SET `gmail` = ? WHERE `id_user` = ? OR `nisn` = ? OR `nis` = ?")
+                    ->execute([$emailGoogle, $userId, $uNameNow, $uNameNow]);
+            } catch (Throwable $eSyncSiswa) {
+                // Non-fatal jika user bukan siswa
             }
+
+            if (function_exists('margo_sync_google_link_to_learn')) {
+                margo_sync_google_link_to_learn($pdo, $userId, $uNameNow, $emailGoogle, $googleId);
+            }
+
+            $_SESSION['user_email_google'] = $emailGoogle;
+
+            margo_sso_log_audit($pdo, 'google_linked', [
+                'user_id'     => $userId,
+                'http_status' => 200,
+                'detail'      => ['email_google' => $emailGoogle, 'verified_via' => 'google_oauth_gis'],
+            ]);
 
             echo json_encode([
                 'success'      => true,
-                'pending'      => true,
+                'linked'       => true,
+                'pending'      => false,
                 'email_google' => $emailGoogle,
-                'message'      => 'Tautan verifikasi telah dikirim ke ' . $emailGoogle . '. Silakan periksa kotak masuk atau spam di Gmail Anda dan klik tautan untuk menyelesaikan penautan.',
+                'message'      => 'Akun Google (' . $emailGoogle . ') berhasil ditautkan secara instan! Anda sekarang dapat masuk menggunakan Google SSO.',
             ]);
             exit;
         }
@@ -530,6 +540,9 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             try {
                 $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
             } catch (Throwable $e) {
+            }
+            if (function_exists('margo_sync_google_link_to_learn')) {
+                margo_sync_google_link_to_learn($pdo, $userId, (string)($currentUser['username'] ?? ''), null, null);
             }
             $_SESSION['user_email_google'] = null;
 
@@ -973,7 +986,15 @@ require_once BASE_PATH . '/includes/header.php';
             credentials: 'same-origin',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
-        return await r.json();
+        var raw = await r.text();
+        try {
+            return JSON.parse(raw);
+        } catch (parseErr) {
+            return {
+                success: false,
+                message: 'Server mengembalikan respons tidak valid (HTTP ' + r.status + '). Muat ulang halaman lalu coba lagi.'
+            };
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -1263,15 +1284,37 @@ require_once BASE_PATH . '/includes/header.php';
                 callback: async function (tokenResponse) {
                     if (tokenResponse && tokenResponse.access_token) {
                         await sendGoogleLinkRequest(tokenResponse.access_token, btn, origHtml);
-                    } else if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = origHtml;
+                    } else {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerHTML = origHtml;
+                        }
+                        if (tokenResponse && tokenResponse.error) {
+                            var errTxt = tokenResponse.error_description || tokenResponse.error;
+                            if (window.Ilmuna && typeof window.Ilmuna.alert === 'function') {
+                                window.Ilmuna.alert('error', 'Otorisasi Google Ditolak', 'Google mengembalikan kesalahan: ' + esc(errTxt));
+                            } else {
+                                notifyToast('error', 'Otorisasi Google Gagal', errTxt);
+                            }
+                        }
                     }
                 },
-                error_callback: function () {
+                error_callback: function (err) {
                     if (btn) {
                         btn.disabled = false;
                         btn.innerHTML = origHtml;
+                    }
+                    var errType = (err && err.type) ? String(err.type) : '';
+                    if (errType === 'popup_failed_to_open') {
+                        if (window.Ilmuna && typeof window.Ilmuna.alert === 'function') {
+                            window.Ilmuna.alert('warning', 'Pop-up Diblokir Browser', 'Izinkan pop-up untuk situs ini lalu klik Hubungkan kembali.');
+                        } else {
+                            notifyToast('warning', 'Pop-up Diblokir', 'Izinkan pop-up browser lalu coba lagi.');
+                        }
+                    } else if (errType === 'popup_closed') {
+                        notifyToast('info', 'Dibatalkan', 'Jendela pilih akun Google ditutup sebelum selesai.');
+                    } else if (errType !== '') {
+                        notifyToast('error', 'Gagal Memulai Google OAuth', 'Kesalahan Google GIS: ' + errType);
                     }
                 }
             });
@@ -1290,7 +1333,7 @@ require_once BASE_PATH . '/includes/header.php';
 
             var result = await postApi('link_google', { google_access_token: accessToken });
 
-            if (result.success) {
+            if (result && result.success) {
                 if (result.pending) {
                     if (result.email_google) {
                         renderGoogleCardPending(result.email_google);
@@ -1318,20 +1361,30 @@ require_once BASE_PATH . '/includes/header.php';
                         notifyToast('info', 'Verifikasi Dikirim', result.message);
                     }
                 } else {
+                    stopGooglePendingWatcher();
+                    if (INITIAL_PROFILE && INITIAL_PROFILE.user) {
+                        INITIAL_PROFILE.user.email_google = result.email_google || '';
+                        INITIAL_PROFILE.user.pending_email_google = '';
+                    }
                     renderGoogleCardConnected(result.email_google);
-                    notifyToast('success', 'Berhasil Ditautkan', result.message || 'Akun Google berhasil ditautkan ke akun Anda!');
+                    if (window.Ilmuna && typeof window.Ilmuna.success === 'function') {
+                        window.Ilmuna.success('Akun Google Terhubung', result.message || 'Akun Google berhasil ditautkan ke akun Anda!');
+                    } else {
+                        notifyToast('success', 'Berhasil Ditautkan', result.message || 'Akun Google berhasil ditautkan ke akun Anda!');
+                    }
                 }
             } else {
+                var failMsg = (result && result.message) ? result.message : 'Gagal menautkan akun Google.';
                 if (window.Ilmuna && typeof window.Ilmuna.alert === 'function') {
-                    window.Ilmuna.alert('error', 'Gagal Menautkan', result.message || 'Gagal menautkan akun Google.');
+                    window.Ilmuna.alert('error', 'Gagal Menautkan', esc(failMsg));
                 } else {
-                    notifyToast('error', 'Gagal', result.message || 'Gagal menautkan akun Google.');
+                    notifyToast('error', 'Gagal', failMsg);
                 }
             }
         } catch (err) {
             notifyToast('error', 'Kesalahan Sistem', 'Gagal memproses penautan akun Google.');
         } finally {
-            if (btn) {
+            if (btn && document.body.contains(btn)) {
                 btn.disabled = false;
                 btn.innerHTML = origHtml;
             }

@@ -1058,6 +1058,13 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
                         callback: function (resp) {
                             if (resp && resp.access_token) {
                                 submitGoogleVerify({ accessToken: resp.access_token }, btnGoogleLogin, defaultGoogleHtml);
+                            } else if (resp && resp.error && window.Ilmuna) {
+                                window.Ilmuna.alert('error', 'Autentikasi Google Gagal', window.Ilmuna.escape(resp.error_description || resp.error), 'Mengerti');
+                            }
+                        },
+                        error_callback: function (err) {
+                            if (err && err.type === 'popup_failed_to_open' && window.Ilmuna) {
+                                window.Ilmuna.alert('warning', 'Pop-up Diblokir', 'Izinkan pop-up browser untuk masuk menggunakan akun Google.', 'Mengerti');
                             }
                         }
                     });

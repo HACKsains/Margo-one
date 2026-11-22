@@ -960,6 +960,40 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
     $stmt->execute(['email_g' => $cleanEmail]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
+    // Fallback sinkronisasi lintas DB: bila akun sudah ditautkan di Ilmuna Learn (uofruaju_learn_ilmuna.users)
+    if (!$user && defined('LEARN_DB_NAME') && LEARN_DB_NAME !== '' && LEARN_DB_NAME !== DB_NAME) {
+        try {
+            $learnDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string)LEARN_DB_NAME);
+            if ($learnDb !== '') {
+                $stLearn = $pdo->prepare("
+                    SELECT username, email_google, google_id
+                    FROM `{$learnDb}`.`users`
+                    WHERE email_google IS NOT NULL AND TRIM(email_google) != '' AND LOWER(email_google) = ?
+                    LIMIT 1
+                ");
+                $stLearn->execute([$cleanEmail]);
+                $learnMatch = $stLearn->fetch(PDO::FETCH_ASSOC);
+                if ($learnMatch && !empty($learnMatch['username'])) {
+                    $stLocal = $pdo->prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(:uname){$statusSql} LIMIT 1");
+                    $stLocal->execute(['uname' => (string)$learnMatch['username']]);
+                    $localCand = $stLocal->fetch(PDO::FETCH_ASSOC);
+                    if ($localCand && empty($localCand['email_google'])) {
+                        $syncGid = !empty($learnMatch['google_id']) ? (string)$learnMatch['google_id'] : ($cleanGid !== '' ? $cleanGid : null);
+                        $pdo->prepare("UPDATE users SET email_google = ?, google_id = COALESCE(google_id, ?) WHERE id = ?")
+                            ->execute([$cleanEmail, $syncGid, (int)$localCand['id']]);
+                        $localCand['email_google'] = $cleanEmail;
+                        if ($syncGid) {
+                            $localCand['google_id'] = $syncGid;
+                        }
+                        $user = $localCand;
+                    }
+                }
+            }
+        } catch (Throwable $eLearnSync) {
+            // Non-fatal
+        }
+    }
+
     if (!$user) {
         $hasUnlinkedEmail = false;
         try {

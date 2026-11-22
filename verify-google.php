@@ -87,6 +87,10 @@ if ($token === '' || strlen($token) < 20) {
 
                 $pdo->commit();
 
+                if (function_exists('margo_sync_google_link_to_learn')) {
+                    margo_sync_google_link_to_learn($pdo, $userId, (string)($verif['username'] ?? ''), $emailGoogle, $googleId);
+                }
+
                 margo_sso_log_audit($pdo, 'google_linked', [
                     'user_id'     => $userId,
                     'http_status' => 200,

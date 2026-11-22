@@ -387,11 +387,19 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         // Non-fatal
     }
 
-    // Pastikan kolom allowed_apps ada pada tabel users eksisting (untuk permission login per aplikasi)
+    // Pastikan kolom allowed_apps, email_google, dan google_id ada pada tabel users eksisting
     try {
         $uColsCheck = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
-        if (!empty($uColsCheck) && !in_array('allowed_apps', $uColsCheck, true)) {
-            $pdo->exec("ALTER TABLE users ADD COLUMN allowed_apps TEXT NULL DEFAULT NULL");
+        if (!empty($uColsCheck)) {
+            if (!in_array('allowed_apps', $uColsCheck, true)) {
+                $pdo->exec("ALTER TABLE users ADD COLUMN allowed_apps TEXT NULL DEFAULT NULL");
+            }
+            if (!in_array('email_google', $uColsCheck, true)) {
+                $pdo->exec("ALTER TABLE users ADD COLUMN email_google VARCHAR(150) NULL DEFAULT NULL");
+            }
+            if (!in_array('google_id', $uColsCheck, true)) {
+                $pdo->exec("ALTER TABLE users ADD COLUMN google_id VARCHAR(120) NULL DEFAULT NULL");
+            }
         }
     } catch (Throwable $eColU) {
         // Non-fatal
@@ -744,6 +752,84 @@ if (!function_exists('margo_sso_set_setting')) {
         ");
         $st->execute([(string)$key, $stored, $encrypt ? 1 : 0]);
         return true;
+    }
+}
+
+/**
+ * Sinkronkan tautan email_google & google_id ke database Ilmuna Learn (jika terpisah)
+ */
+if (!function_exists('margo_sync_google_link_to_learn')) {
+    function margo_sync_google_link_to_learn(PDO $pdo, $userId, $username, $emailGoogle, $googleId = null)
+    {
+        if (!defined('LEARN_DB_NAME') || LEARN_DB_NAME === '' || LEARN_DB_NAME === DB_NAME) {
+            return;
+        }
+        $learnDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string)LEARN_DB_NAME);
+        if ($learnDb === '') {
+            return;
+        }
+        $uname = trim((string)$username);
+        try {
+            if ($uname !== '') {
+                $pdo->prepare("UPDATE `{$learnDb}`.`users` SET email_google = ?, google_id = ? WHERE LOWER(username) = LOWER(?)")
+                    ->execute([$emailGoogle, $googleId, $uname]);
+            } elseif ((int)$userId > 0) {
+                $pdo->prepare("UPDATE `{$learnDb}`.`users` SET email_google = ?, google_id = ? WHERE id = ?")
+                    ->execute([$emailGoogle, $googleId, (int)$userId]);
+            }
+            if ($emailGoogle !== null && $emailGoogle !== '' && $uname !== '') {
+                @$pdo->prepare("UPDATE `{$learnDb}`.`siswa` SET gmail = ? WHERE id_user = ? OR nisn = ? OR nis = ?")
+                    ->execute([$emailGoogle, (int)$userId, $uname, $uname]);
+            }
+        } catch (Throwable $e) {
+            // Non-fatal jika DB Learn tidak dapat diakses dari user MySQL saat ini
+        }
+    }
+}
+
+/**
+ * Hidrasi otomatis tautan email_google dari Ilmuna Learn bila akun sudah tertaut di sana
+ */
+if (!function_exists('margo_hydrate_google_link_from_learn')) {
+    function margo_hydrate_google_link_from_learn(PDO $pdo, $userId, $username)
+    {
+        $uname = trim((string)$username);
+        if ($uname === '' || !defined('LEARN_DB_NAME') || LEARN_DB_NAME === '' || LEARN_DB_NAME === DB_NAME) {
+            return null;
+        }
+        $learnDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string)LEARN_DB_NAME);
+        if ($learnDb === '') {
+            return null;
+        }
+        try {
+            $stL = $pdo->prepare("
+                SELECT email_google, google_id
+                FROM `{$learnDb}`.`users`
+                WHERE LOWER(username) = LOWER(?) AND email_google IS NOT NULL AND TRIM(email_google) != ''
+                LIMIT 1
+            ");
+            $stL->execute([$uname]);
+            $lRow = $stL->fetch(PDO::FETCH_ASSOC);
+            if (!$lRow || empty($lRow['email_google'])) {
+                return null;
+            }
+            $em  = strtolower(trim((string)$lRow['email_google']));
+            $gid = !empty($lRow['google_id']) ? trim((string)$lRow['google_id']) : ('goog_' . md5($em . '_ilmuna_sso'));
+            if (!filter_var($em, FILTER_VALIDATE_EMAIL)) {
+                return null;
+            }
+            // Pastikan tidak sedang dipakai user lain di SSO
+            $stChk = $pdo->prepare("SELECT id FROM users WHERE (LOWER(email_google) = ? OR google_id = ?) AND id != ? LIMIT 1");
+            $stChk->execute([$em, $gid, (int)$userId]);
+            if ($stChk->fetchColumn()) {
+                return null;
+            }
+            $pdo->prepare("UPDATE users SET email_google = ?, google_id = COALESCE(google_id, ?) WHERE id = ?")
+                ->execute([$em, $gid, (int)$userId]);
+            return ['email_google' => $em, 'google_id' => $gid];
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 }
 
