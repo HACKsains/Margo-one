@@ -158,50 +158,12 @@ require_once BASE_PATH . '/includes/header.php';
 ?>
 
 <!-- ========================================================================= -->
-<!-- 1. ECOSYSTEM HERO BANNER (LUMINA GOLD & GUNUNGAN NUSANTARA)               -->
+<!-- 1. ECOSYSTEM HERO BANNER (RINGKAS & BERSIH)                               -->
 <!-- ========================================================================= -->
-<section id="heroContent" class="margo-hero-banner">
+<section id="heroContent" class="margo-hero-banner" style="padding:20px 24px;">
     <img src="<?= htmlspecialchars($gununganUrl, ENT_QUOTES, 'UTF-8') ?>" alt="" class="margo-hero-gunungan" aria-hidden="true">
     <div class="margo-hero-body">
-        <div class="margo-hero-eyebrow">
-            <span class="dot"></span>
-            <span>Margo One · Sesi Single Sign-On Aktif</span>
-        </div>
-        <h1 class="margo-hero-title">Selamat datang, <?= htmlspecialchars($nama, ENT_QUOTES, 'UTF-8') ?></h1>
-        <p class="margo-hero-desc">
-            Akses seluruh layanan ekosistem digital Ilmuna cukup dengan satu autentikasi terpusat yang dilindungi enkripsi JWT RS256 &amp; Single Logout Global.
-        </p>
-        <div class="margo-hero-actions">
-            <a href="<?= htmlspecialchars($learnLaunchUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" class="margo-hero-btn margo-hero-btn--white">
-                <iconify-icon icon="solar:square-academic-cap-2-bold" width="17"></iconify-icon>
-                <span>Buka Ilmuna Learn</span>
-            </a>
-            <a href="<?= htmlspecialchars(BASE_URL . '/agenda', ENT_QUOTES, 'UTF-8') ?>" class="margo-hero-btn margo-hero-btn--glass">
-                <iconify-icon icon="solar:calendar-mark-bold" width="17"></iconify-icon>
-                <span>Agenda Ekosistem</span>
-            </a>
-            <?php if (hasRole('admin')): ?>
-                <a href="<?= htmlspecialchars(BASE_URL . '/dashboard/admin/', ENT_QUOTES, 'UTF-8') ?>" class="margo-hero-btn margo-hero-btn--gold">
-                    <iconify-icon icon="solar:shield-keyhole-bold" width="17"></iconify-icon>
-                    <span>Kontrol Admin</span>
-                </a>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <div class="margo-hero-aside">
-        <div class="margo-hero-stat">
-            <iconify-icon icon="solar:shield-check-bold"></iconify-icon>
-            <span>Metode: <strong><?= htmlspecialchars($loginMethodLabel, ENT_QUOTES, 'UTF-8') ?></strong></span>
-        </div>
-        <div class="margo-hero-stat">
-            <iconify-icon icon="solar:devices-bold"></iconify-icon>
-            <span>Perangkat Aktif: <strong><?= (int)$activeSessionsCount ?> sesi</strong></span>
-        </div>
-        <div class="margo-hero-stat">
-            <iconify-icon icon="solar:link-circle-bold"></iconify-icon>
-            <span>Aplikasi SSO: <strong><?= (int)$integratedCount ?> terhubung</strong></span>
-        </div>
+        <h1 class="margo-hero-title" style="margin:0;">Selamat datang, <?= htmlspecialchars($nama, ENT_QUOTES, 'UTF-8') ?></h1>
     </div>
 </section>
 
