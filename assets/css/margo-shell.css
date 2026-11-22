@@ -1194,13 +1194,13 @@ body.margo-shell-body {
 }
 
 .margo-hero-banner--16x9 {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 160 / 63;
     width: 100%;
-    padding: clamp(24px, 3.6vw, 44px) clamp(26px, 4vw, 48px);
+    padding: clamp(18px, 2.5vw, 30px) clamp(24px, 3.6vw, 44px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: clamp(20px, 3vw, 40px);
+    gap: clamp(18px, 2.8vw, 36px);
 }
 
 .margo-hero-banner--16x9 .margo-hero-body {
@@ -1209,17 +1209,17 @@ body.margo-shell-body {
 }
 
 .margo-hero-banner--16x9 .margo-hero-title {
-    font-size: clamp(1.45rem, 2.3vw, 2.15rem);
-    margin: 0 0 12px;
+    font-size: clamp(1.35rem, 2.1vw, 1.95rem);
+    margin: 0 0 9px;
     line-height: 1.18;
     letter-spacing: -0.02em;
 }
 
 .margo-hero-banner--16x9 .margo-hero-desc {
-    font-size: clamp(13px, 1.15vw, 15px);
+    font-size: clamp(12.5px, 1.1vw, 14.5px);
     margin: 0;
     color: rgba(255, 255, 255, 0.90);
-    line-height: 1.65;
+    line-height: 1.58;
 }
 
 .margo-hero-logo-showcase {
@@ -1229,15 +1229,15 @@ body.margo-shell-body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: clamp(16px, 2.2vw, 26px) clamp(22px, 3vw, 34px);
-    border-radius: 24px;
+    padding: clamp(12px, 1.6vw, 20px) clamp(18px, 2.4vw, 28px);
+    border-radius: 20px;
     background: rgba(255, 255, 255, 0.96);
     border: 1.5px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 20px 40px -12px rgba(15, 29, 47, 0.34);
+    box-shadow: 0 18px 34px -12px rgba(15, 29, 47, 0.32);
 }
 
 .margo-hero-brand-img {
-    width: clamp(145px, 18vw, 240px);
+    width: clamp(135px, 16vw, 210px);
     height: auto;
     object-fit: contain;
     display: block;
@@ -1908,10 +1908,10 @@ body.margo-shell-body {
     }
 
     .margo-hero-banner--16x9 {
-        aspect-ratio: 16 / 9;
+        aspect-ratio: 160 / 63;
         flex-direction: row;
         align-items: center;
-        padding: 22px 24px;
+        padding: 16px 22px;
     }
 
     .margo-hero-aside {
