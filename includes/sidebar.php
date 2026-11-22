@@ -24,8 +24,8 @@ require __DIR__ . '/menu.php';
 ?>
 <aside id="leftSidebar" class="margo-sidebar-left" aria-label="Navigasi Utama Margo One">
     <div class="margo-left-brand">
-        <a href="<?= htmlspecialchars(BASE_URL . '/gateway', ENT_QUOTES, 'UTF-8') ?>" class="margo-left-brand-link" aria-label="Beranda Margo One">
-            <img src="<?= htmlspecialchars(APP_LOGO_URL, ENT_QUOTES, 'UTF-8') ?>" alt="Margo One SSO" class="margo-left-logo">
+        <a href="<?= htmlspecialchars(BASE_URL . '/gateway', ENT_QUOTES, 'UTF-8') ?>" class="margo-left-brand-link" aria-label="Beranda Margo One" oncontextmenu="return false;">
+            <img src="<?= htmlspecialchars(APP_LOGO_URL, ENT_QUOTES, 'UTF-8') ?>" alt="Margo One SSO" class="margo-left-logo" draggable="false" oncontextmenu="return false;">
             <span class="margo-left-brand-tag">
                 <span class="dot"></span>
                 <span>Margo One · SSO</span>

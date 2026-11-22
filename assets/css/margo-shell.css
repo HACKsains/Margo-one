@@ -1194,13 +1194,15 @@ body.margo-shell-body {
 }
 
 .margo-hero-banner--16x9 {
-    aspect-ratio: 160 / 63;
+    aspect-ratio: 160 / 57;
     width: 100%;
-    padding: clamp(18px, 2.5vw, 30px) clamp(24px, 3.6vw, 44px);
+    padding: clamp(14px, 2vw, 24px) clamp(22px, 3.4vw, 40px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: clamp(18px, 2.8vw, 36px);
+    gap: clamp(16px, 2.5vw, 32px);
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .margo-hero-banner--16x9 .margo-hero-body {
@@ -1209,17 +1211,17 @@ body.margo-shell-body {
 }
 
 .margo-hero-banner--16x9 .margo-hero-title {
-    font-size: clamp(1.35rem, 2.1vw, 1.95rem);
-    margin: 0 0 9px;
-    line-height: 1.18;
+    font-size: clamp(1.3rem, 2vw, 1.85rem);
+    margin: 0 0 7px;
+    line-height: 1.16;
     letter-spacing: -0.02em;
 }
 
 .margo-hero-banner--16x9 .margo-hero-desc {
-    font-size: clamp(12.5px, 1.1vw, 14.5px);
+    font-size: clamp(12px, 1.05vw, 14px);
     margin: 0;
     color: rgba(255, 255, 255, 0.90);
-    line-height: 1.58;
+    line-height: 1.52;
 }
 
 .margo-hero-logo-showcase {
@@ -1229,18 +1231,45 @@ body.margo-shell-body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: clamp(12px, 1.6vw, 20px) clamp(18px, 2.4vw, 28px);
-    border-radius: 20px;
+    padding: clamp(10px, 1.35vw, 16px) clamp(16px, 2.2vw, 24px);
+    border-radius: 18px;
     background: rgba(255, 255, 255, 0.96);
     border: 1.5px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 18px 34px -12px rgba(15, 29, 47, 0.32);
+    box-shadow: 0 16px 32px -12px rgba(15, 29, 47, 0.30);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.margo-hero-logo-showcase::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    z-index: 3;
+    background: transparent;
 }
 
 .margo-hero-brand-img {
-    width: clamp(135px, 16vw, 210px);
+    width: clamp(120px, 14.5vw, 190px);
     height: auto;
     object-fit: contain;
     display: block;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
+}
+
+.margo-left-logo,
+.margo-app-icon img,
+.margo-hero-banner img {
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    -webkit-touch-callout: none;
 }
 
 .margo-hero-banner--16x9 .margo-hero-gunungan {
@@ -1908,10 +1937,10 @@ body.margo-shell-body {
     }
 
     .margo-hero-banner--16x9 {
-        aspect-ratio: 160 / 63;
+        aspect-ratio: 160 / 57;
         flex-direction: row;
         align-items: center;
-        padding: 16px 22px;
+        padding: 14px 20px;
     }
 
     .margo-hero-aside {

@@ -430,6 +430,18 @@ try {
             }
         };
 
+        // Anti-download & anti-drag untuk seluruh logo / gambar brand di portal
+        document.addEventListener('contextmenu', function (e) {
+            if (e.target && (e.target.tagName === 'IMG' || e.target.closest('.margo-hero-banner, .margo-hero-logo-showcase, .margo-left-brand, .margo-app-icon'))) {
+                e.preventDefault();
+            }
+        });
+        document.addEventListener('dragstart', function (e) {
+            if (e.target && (e.target.tagName === 'IMG' || e.target.closest('.margo-hero-banner, .margo-hero-logo-showcase, .margo-left-brand, .margo-app-icon'))) {
+                e.preventDefault();
+            }
+        });
+
         // Hydrate instantly from server-rendered PHP data (zero extra network calls needed on page load)
         var INIT_RIGHT_AGENDA = <?= json_encode($margoInitRightAgenda, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
         var INIT_RIGHT_NEWS   = <?= json_encode($margoInitRightNews, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
