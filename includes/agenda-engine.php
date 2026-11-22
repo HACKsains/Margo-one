@@ -243,46 +243,23 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
         }
     } catch (Throwable $eCol) {}
 
-    // Migrasi sekali data lama dari sso_agendas (bila tabel agendas belum memiliki agenda non-kaldik)
+    // Bersihkan sekali data dummy bawaan lama (yang created_by IS NULL) agar agenda 100% murni dari database nyata (Kaldik + input pengguna)
     try {
-        $nonKaldikCnt = (int)$apdo->query("SELECT COUNT(*) FROM `agendas` WHERE `source` != 'kaldik'")->fetchColumn();
-        if ($nonKaldikCnt === 0 && $ssoPdo !== null) {
-            $hasLegacy = (bool)$ssoPdo->query("SHOW TABLES LIKE 'sso_agendas'")->fetch();
-            if ($hasLegacy) {
-                $oldRows = $ssoPdo->query("
-                    SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active, created_by
-                    FROM `sso_agendas`
-                    ORDER BY id ASC
-                ")->fetchAll(PDO::FETCH_ASSOC);
+        $dummyTitles = [
+            'Sinkronisasi Akun & Tautan Google SSO Ekosistem Ilmuna',
+            'Koordinasi Pembelajaran & Evaluasi Kurikulum PAI',
+            'Persiapan Asesmen Sumatif & Uji Coba CBT Exam Browser',
+            'Audit Berkala & Rotasi Kunci JWT RS256 Margo One',
+        ];
+        $phD = implode(',', array_fill(0, count($dummyTitles), '?'));
+        $stClean = $apdo->prepare("DELETE FROM `agendas` WHERE `source` != 'kaldik' AND `created_by` IS NULL AND `title` IN ({$phD})");
+        $stClean->execute($dummyTitles);
 
-                if (!empty($oldRows)) {
-                    $ins = $apdo->prepare("
-                        INSERT IGNORE INTO `agendas`
-                            (source, source_ref_id, is_locked, title, description, start_date, end_date, start_time, location, category, link_url, visibility_scope, created_by, created_by_name, created_by_role, is_active)
-                        VALUES
-                            ('admin', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'all', ?, 'Administrator SSO', 'admin', ?)
-                    ");
-                    foreach ($oldRows as $r) {
-                        $ins->execute([
-                            (int)$r['id'],
-                            (string)$r['title'],
-                            $r['description'] !== null ? (string)$r['description'] : null,
-                            (string)$r['start_date'],
-                            !empty($r['end_date']) ? (string)$r['end_date'] : null,
-                            !empty($r['start_time']) ? (string)$r['start_time'] : null,
-                            !empty($r['location']) ? (string)$r['location'] : null,
-                            !empty($r['category']) ? (string)$r['category'] : 'akademik',
-                            !empty($r['link_url']) ? (string)$r['link_url'] : null,
-                            !empty($r['created_by']) ? (int)$r['created_by'] : null,
-                            (int)($r['is_active'] ?? 1),
-                        ]);
-                    }
-                    // Lepas source_ref_id pada hasil migrasi admin agar tidak berbenturan dengan ID baru
-                    $apdo->exec("UPDATE `agendas` SET `source_ref_id` = NULL WHERE `source` = 'admin' AND `source_ref_id` IS NOT NULL");
-                }
-            }
+        if ($ssoPdo !== null && (bool)$ssoPdo->query("SHOW TABLES LIKE 'sso_agendas'")->fetch()) {
+            $stCleanOld = $ssoPdo->prepare("DELETE FROM `sso_agendas` WHERE `created_by` IS NULL AND `title` IN ({$phD})");
+            $stCleanOld->execute($dummyTitles);
         }
-    } catch (Throwable $eMig) {
+    } catch (Throwable $eClean) {
         // Non-fatal
     }
 
