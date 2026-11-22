@@ -65,7 +65,7 @@ if ($pendingOAuth && !empty($pendingOAuth['client_db_id'])) {
     }
 }
 
-$postLoginRedirect = $pendingOAuth ? (BASE_URL . '/authorize?resume=1&continue=1') : (BASE_URL . '/gateway');
+$postLoginRedirect = $pendingOAuth ? (BASE_URL . '/authorize?resume=1') : (BASE_URL . '/gateway');
 
 /* ==============================================================================
  * 3. REDIRECT JIKA SUDAH LOGIN (kecuali prompt=login)

@@ -206,12 +206,9 @@ function margo_process_authorize_request(PDO $pdo, array $params, array $loggedI
         'nonce'                 => $nonce,
     ];
 
-    // 7. Layar Konfirmasi Akun hanya ditampilkan bila diminta eksplisit (prompt=consent / select_account / confirm=1)
-    //    Secara default (ketika masuk dari SSO / sudah punya sesi SSO aktif), langsung teruskan (seamless auto-login)!
-    $requireConfirmScreen = in_array($prompt, ['consent', 'select_account'], true)
-        || (isset($params['confirm']) && (string)$params['confirm'] === '1');
+    // 7. Layar Konfirmasi Akun ("Anda akan login sebagai: ... Lanjutkan / Login dengan akun lain")
     $isConfirmedContinue = isset($params['continue']) && ((string)$params['continue'] === '1' || $params['continue'] === true);
-    if ($requireConfirmScreen && !$isConfirmedContinue) {
+    if (!$isConfirmedContinue) {
         return [
             'action'      => 'confirm_account',
             'http_status' => 200,

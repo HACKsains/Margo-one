@@ -568,7 +568,7 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
             resize();
             window.addEventListener('resize', resize);
-            var colors = ['#1D3B5E', '#0D7A87', '#52B2DC', '#10B981'];
+            var colors = ['#1D3B5E', '#0D7A87', '#52B2DC'];
             var pts = [];
             for (var i = 0; i < 36; i++) {
                 pts.push({
