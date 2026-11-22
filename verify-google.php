@@ -33,7 +33,7 @@ if ($token === '' || strlen($token) < 20) {
     $stmt = $pdo->prepare("
         SELECT v.*, u.username, u.full_name, u.email AS user_email
         FROM google_link_verifications v
-        JOIN users u ON v.user_id = u.id
+        JOIN sso_users u ON v.user_id = u.id
         WHERE v.token = ?
         LIMIT 1
     ");
@@ -61,7 +61,7 @@ if ($token === '' || strlen($token) < 20) {
             : ('goog_' . md5($emailGoogle . '_ilmuna_sso'));
         $userName    = (string)($verif['full_name'] ?: $verif['username']);
 
-        $chk = $pdo->prepare("SELECT id, username FROM users WHERE (google_id = ? OR LOWER(email_google) = ?) AND id != ? LIMIT 1");
+        $chk = $pdo->prepare("SELECT id, username FROM sso_users WHERE (google_id = ? OR LOWER(email_google) = ?) AND id != ? LIMIT 1");
         $chk->execute([$googleId, $emailGoogle, $userId]);
         $claimed = $chk->fetch(PDO::FETCH_ASSOC);
 
@@ -72,7 +72,7 @@ if ($token === '' || strlen($token) < 20) {
             try {
                 $pdo->beginTransaction();
 
-                $updUser = $pdo->prepare("UPDATE users SET email_google = ?, google_id = ? WHERE id = ?");
+                $updUser = $pdo->prepare("UPDATE sso_users SET email_google = ?, google_id = ? WHERE id = ?");
                 $updUser->execute([$emailGoogle, $googleId, $userId]);
 
                 $updToken = $pdo->prepare("UPDATE google_link_verifications SET verified_at = ? WHERE id = ?");

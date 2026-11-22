@@ -65,7 +65,7 @@ function margo_prof_table_columns(PDO $pdo, $tableName)
 function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
 {
     $identity = margo_resolve_user_identity($pdo, $userId, getActiveRole());
-    $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $uStmt = $pdo->prepare("SELECT * FROM sso_users WHERE id = ? LIMIT 1");
     $uStmt->execute([$userId]);
     $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -149,7 +149,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
         // Lazy Check Status Penautan Google (dipanggil saat tab fokus / watcher 5 detik)
         if ($act === 'check_google_link_status') {
-            $userStmt = $pdo->prepare("SELECT email_google, google_id FROM users WHERE id = ? LIMIT 1");
+            $userStmt = $pdo->prepare("SELECT email_google, google_id FROM sso_users WHERE id = ? LIMIT 1");
             $userStmt->execute([$userId]);
             $uRow = $userStmt->fetch(PDO::FETCH_ASSOC);
             if (!empty($uRow['email_google'])) {
@@ -244,7 +244,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $photoFullUrl     = rtrim(BASE_URL, '/') . '/' . $photoRelativeUrl;
 
             // Update hanya tabel users milik Margo One SSO (100% terpisah dari Learn/aplikasi lain)
-            $userCols        = margo_prof_table_columns($pdo, 'users');
+            $userCols        = margo_prof_table_columns($pdo, 'sso_users');
             $userPhotoSets   = [];
             $userPhotoParams = [];
             if (in_array('foto_profil', $userCols, true)) {
@@ -257,7 +257,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             }
             if (!empty($userPhotoSets)) {
                 $userPhotoParams[] = $userId;
-                $pdo->prepare("UPDATE `users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute($userPhotoParams);
+                $pdo->prepare("UPDATE `sso_users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute($userPhotoParams);
             }
 
             $_SESSION['user_avatar'] = $photoFullUrl;
@@ -280,7 +280,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         // 2. HAPUS FOTO PROFIL (Khusus tabel users Margo One SSO)
         // =====================================================================
         if ($act === 'delete_photo') {
-            $userCols      = margo_prof_table_columns($pdo, 'users');
+            $userCols      = margo_prof_table_columns($pdo, 'sso_users');
             $userPhotoSets = [];
             if (in_array('foto_profil', $userCols, true)) {
                 $userPhotoSets[] = "`foto_profil` = NULL";
@@ -289,7 +289,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 $userPhotoSets[] = "`avatar` = NULL";
             }
             if (!empty($userPhotoSets)) {
-                $pdo->prepare("UPDATE `users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute([$userId]);
+                $pdo->prepare("UPDATE `sso_users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute([$userId]);
             }
 
             $_SESSION['user_avatar'] = null;
@@ -325,7 +325,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            $stU = $pdo->prepare("SELECT password_hash FROM users WHERE id = ? LIMIT 1");
+            $stU = $pdo->prepare("SELECT password_hash FROM sso_users WHERE id = ? LIMIT 1");
             $stU->execute([$userId]);
             $currHash = (string)$stU->fetchColumn();
             if ($currHash === '' || !password_verify($oldPass, $currHash)) {
@@ -334,7 +334,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             }
 
             $newHash = password_hash($newPass, PASSWORD_DEFAULT);
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([$newHash, $userId]);
+            $pdo->prepare("UPDATE sso_users SET password_hash = ? WHERE id = ?")->execute([$newHash, $userId]);
 
             $revokedCnt = 0;
             if ($revokeOther) {
@@ -404,7 +404,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             }
 
             // Cek apakah akun Google sudah ditautkan ke pengguna lain
-            $chk = $pdo->prepare("SELECT id, username FROM `users` WHERE (`google_id` = ? OR LOWER(`email_google`) = ?) AND `id` != ? LIMIT 1");
+            $chk = $pdo->prepare("SELECT id, username FROM `sso_users` WHERE (`google_id` = ? OR LOWER(`email_google`) = ?) AND `id` != ? LIMIT 1");
             $chk->execute([$googleId, $emailGoogle, $userId]);
             $exists = $chk->fetch(PDO::FETCH_ASSOC);
             if ($exists) {
@@ -416,7 +416,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             }
 
             // Cek apakah akun Google ini sudah ditautkan ke pengguna ini sendiri
-            $chkSelf = $pdo->prepare("SELECT id FROM `users` WHERE `id` = ? AND (LOWER(`email_google`) = ? OR `google_id` = ?) LIMIT 1");
+            $chkSelf = $pdo->prepare("SELECT id FROM `sso_users` WHERE `id` = ? AND (LOWER(`email_google`) = ? OR `google_id` = ?) LIMIT 1");
             $chkSelf->execute([$userId, $emailGoogle, $googleId]);
             if ($chkSelf->fetch()) {
                 echo json_encode([
@@ -491,7 +491,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         }
 
         if ($act === 'unlink_google') {
-            $pdo->prepare("UPDATE users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$userId]);
+            $pdo->prepare("UPDATE sso_users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$userId]);
             try {
                 $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
             } catch (Throwable $e) {

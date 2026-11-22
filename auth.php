@@ -300,7 +300,7 @@ function isLoggedIn()
             $pdo = getDBConnection();
             $sess = margo_validate_sso_session($pdo, null, (string)$_COOKIE[SSO_SESSION_COOKIE]);
             if ($sess) {
-                $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+                $uStmt = $pdo->prepare("SELECT * FROM sso_users WHERE id = ? LIMIT 1");
                 $uStmt->execute([(int)$sess['user_id']]);
                 $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
                 if ($uRow && margo_user_is_active($uRow)) {
@@ -452,7 +452,7 @@ function margo_fetch_user_roles(PDO $pdo, $userId)
 {
     $urCols = [];
     try {
-        $urCols = $pdo->query("SHOW COLUMNS FROM user_roles")->fetchAll(PDO::FETCH_COLUMN);
+        $urCols = $pdo->query("SHOW COLUMNS FROM sso_user_roles")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $e) {
         $urCols = ['id', 'user_id', 'role_id', 'is_primary'];
     }
@@ -462,7 +462,7 @@ function margo_fetch_user_roles(PDO $pdo, $userId)
 
     $rolesCols = [];
     try {
-        $rolesCols = $pdo->query("SHOW COLUMNS FROM roles")->fetchAll(PDO::FETCH_COLUMN);
+        $rolesCols = $pdo->query("SHOW COLUMNS FROM sso_roles")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $e) {
         $rolesCols = ['id', 'code', 'name', 'description'];
     }
@@ -475,8 +475,8 @@ function margo_fetch_user_roles(PDO $pdo, $userId)
 
     $stmt = $pdo->prepare("
         SELECT r.id, r.{$roleCodeCol} AS code, r.{$roleNameCol} AS name, r.{$roleDescCol} AS description, {$selectPrimary}
-        FROM user_roles ur
-        JOIN roles r ON ur.{$roleIdCol} = r.id
+        FROM sso_user_roles ur
+        JOIN sso_roles r ON ur.{$roleIdCol} = r.id
         WHERE ur.{$userIdCol} = :user_id
         ORDER BY {$orderClause}
     ");
@@ -673,7 +673,7 @@ function margo_resolve_logged_siswa(PDO $pdo, array $userRow)
  */
 function margo_resolve_user_identity(PDO $pdo, $userId, $activeRoleOverride = null)
 {
-    $st = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $st = $pdo->prepare("SELECT * FROM sso_users WHERE id = ? LIMIT 1");
     $st->execute([(int)$userId]);
     $user = $st->fetch(PDO::FETCH_ASSOC);
     if (!$user || !margo_user_is_active($user)) {
@@ -781,7 +781,7 @@ function establishUserSession(PDO $pdo, array $user, $loginMethod = 'password')
 
     // Update users.last_login
     try {
-        $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([(int)$user['id']]);
+        $pdo->prepare("UPDATE sso_users SET last_login = NOW() WHERE id = ?")->execute([(int)$user['id']]);
     } catch (Throwable $e) {
         // Non-fatal
     }
@@ -833,7 +833,7 @@ function loginUser($identifier, $password)
 
     $userCols = [];
     try {
-        $userCols = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+        $userCols = $pdo->query("SHOW COLUMNS FROM sso_users")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $e) {
         $userCols = ['id', 'username', 'email', 'email_google', 'nisn_nip', 'password_hash', 'status', 'is_active', 'full_name'];
     }
@@ -867,7 +867,7 @@ function loginUser($identifier, $password)
     }
     $statusSql = !empty($statusConditions) ? " AND (" . implode(" AND ", $statusConditions) . ")" : "";
 
-    $sql = "SELECT * FROM users WHERE (" . implode(" OR ", $whereParts) . "){$statusSql} LIMIT 1";
+    $sql = "SELECT * FROM sso_users WHERE (" . implode(" OR ", $whereParts) . "){$statusSql} LIMIT 1";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($loginParams);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -906,7 +906,7 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
 
     $userCols = [];
     try {
-        $userCols = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+        $userCols = $pdo->query("SHOW COLUMNS FROM sso_users")->fetchAll(PDO::FETCH_COLUMN);
     } catch (Throwable $e) {
         $userCols = ['id', 'username', 'email', 'email_google', 'google_id', 'status', 'is_active', 'full_name'];
     }
@@ -927,7 +927,7 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
     // STRICT: HANYA cocokkan kolom users.email_google milik Margo One SSO yang sudah tertaut!
     // Tabel users SSO terpisah penuh dari database Ilmuna Learn maupun aplikasi lain.
     $stmt = $pdo->prepare("
-        SELECT * FROM users
+        SELECT * FROM sso_users
         WHERE email_google IS NOT NULL AND TRIM(email_google) != '' AND LOWER(email_google) = :email_g{$statusSql}
         LIMIT 1
     ");
@@ -938,7 +938,7 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
         $hasUnlinkedEmail = false;
         try {
             if (in_array('email', $userCols, true)) {
-                $stU = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1");
+                $stU = $pdo->prepare("SELECT id FROM sso_users WHERE LOWER(email) = ? LIMIT 1");
                 $stU->execute([$cleanEmail]);
                 if ($stU->fetchColumn()) {
                     $hasUnlinkedEmail = true;
@@ -970,7 +970,7 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
     // Simpan google_id bila belum terisi (tanpa mengubah email_google)
     if ($cleanGid !== '' && in_array('google_id', $userCols, true) && empty($user['google_id'])) {
         try {
-            $pdo->prepare("UPDATE users SET google_id = ? WHERE id = ?")->execute([$cleanGid, (int)$user['id']]);
+            $pdo->prepare("UPDATE sso_users SET google_id = ? WHERE id = ?")->execute([$cleanGid, (int)$user['id']]);
             $user['google_id'] = $cleanGid;
         } catch (Throwable $eGid) {
             // Non-fatal

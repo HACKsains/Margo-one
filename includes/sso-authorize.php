@@ -170,7 +170,7 @@ function margo_process_authorize_request(PDO $pdo, array $params, array $loggedI
     $allowedRoles = margo_sso_parse_list($client['allowed_roles']);
     $userAllowedApps = $loggedInUser['allowed_apps'] ?? null;
     try {
-        $stUa = $pdo->prepare("SELECT allowed_apps FROM users WHERE id = ? LIMIT 1");
+        $stUa = $pdo->prepare("SELECT allowed_apps FROM sso_users WHERE id = ? LIMIT 1");
         $stUa->execute([(int)$loggedInUser['id']]);
         $dbAllowedApps = $stUa->fetchColumn();
         if ($dbAllowedApps !== false) {

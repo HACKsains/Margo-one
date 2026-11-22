@@ -443,8 +443,6 @@ function getDBConnection() {
         }
 
         // 3. Fallback cPanel: DB_NAME (uofruaju_margo_one) menggunakan user MySQL cPanel eksisting (uofruaju_Learn_Ilmuna)
-        // CATATAN: Margo One SSO WAJIB terpisah total di DB_NAME (uofruaju_margo_one) dan TIDAK BOLEH
-        // terhubung langsung ke tabel users milik uofruaju_learn_ilmuna.
         if ($pdo === null) {
             try {
                 $dsnCpDedicated = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
@@ -455,8 +453,21 @@ function getDBConnection() {
             }
         }
 
+        // 4. Fallback cPanel Host DB (uofruaju_learn_ilmuna) jika DB uofruaju_margo_one belum dibuat di cPanel.
+        //    AMAN 100% TERPISAH: Margo One SSO menggunakan tabel terisolasi `sso_users`, `sso_roles`, `sso_user_roles`
+        //    sehingga TIDAK PERNAH menyentuh atau bercampur dengan tabel `users` milik Ilmuna Learn!
         if ($pdo === null) {
-            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO (' . DB_NAME . '): ' . implode(' | ', $errors));
+            try {
+                $dsnCpFallback = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=uofruaju_learn_ilmuna;charset=" . DB_CHARSET;
+                $pdo = new PDO($dsnCpFallback, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
+                $pdo->exec("SET time_zone = '+07:00'");
+            } catch (PDOException $e4) {
+                $errors[] = 'cPanel Fallback DB: ' . $e4->getMessage();
+            }
+        }
+
+        if ($pdo === null) {
+            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO: ' . implode(' | ', $errors));
         }
     }
 

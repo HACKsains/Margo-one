@@ -208,7 +208,7 @@ try {
 
         $freshAllowedApps = $currentUser['allowed_apps'] ?? null;
         try {
-            $stUa = $pdo->prepare("SELECT allowed_apps FROM users WHERE id = ? LIMIT 1");
+            $stUa = $pdo->prepare("SELECT allowed_apps FROM sso_users WHERE id = ? LIMIT 1");
             $stUa->execute([$userId]);
             $dbUa = $stUa->fetchColumn();
             if ($dbUa !== false) {

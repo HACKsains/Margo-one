@@ -191,7 +191,7 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
     $ssoByRef   = [];
     $ssoByEmail = [];
     $ssoByNisn  = [];
-    $ssoUsers = $ssoPdo->query("SELECT id, username, full_name, email, nisn_nip, sync_ref_id, credentials_sent_at FROM `users`")->fetchAll(PDO::FETCH_ASSOC);
+    $ssoUsers = $ssoPdo->query("SELECT id, username, full_name, email, nisn_nip, sync_ref_id, credentials_sent_at FROM `sso_users`")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($ssoUsers as $su) {
         $ref = trim((string)($su['sync_ref_id'] ?? ''));
         if ($ref !== '') {
@@ -341,7 +341,7 @@ function margo_learn_sync_generate_credentials(PDO $ssoPdo, $refNumber, $learnId
     for ($try = 0; $try < 25; $try++) {
         $randTail = margo_learn_sync_rand_chars('abcdefghjkmnpqrstuvwxyz23456789', 4);
         $cand = $rPrefix . '_' . substr($numSlice, -4) . $seedHashNum . '_' . $randTail;
-        $chk = $ssoPdo->prepare("SELECT id FROM `users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1");
+        $chk = $ssoPdo->prepare("SELECT id FROM `sso_users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1");
         $chk->execute([$cand]);
         if (!$chk->fetchColumn()) {
             $username = $cand;
@@ -543,7 +543,7 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
 
     // Cek apakah akun SSO sudah ada
     $existing = null;
-    $stEx = $ssoPdo->prepare("SELECT id, username, email FROM `users` WHERE `sync_ref_id` = ? OR LOWER(`email`) = LOWER(?) LIMIT 1");
+    $stEx = $ssoPdo->prepare("SELECT id, username, email FROM `sso_users` WHERE `sync_ref_id` = ? OR LOWER(`email`) = LOWER(?) LIMIT 1");
     $stEx->execute([$syncRef, $gmail]);
     $existing = $stEx->fetch(PDO::FETCH_ASSOC) ?: null;
 
@@ -568,7 +568,7 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
         $ssoUsername = (string)$existing['username'];
         $ssoPassword = $creds['password'];
 
-        $ssoPdo->prepare("UPDATE `users` SET `password_hash` = ?, `email` = ?, `nisn_nip` = COALESCE(NULLIF(`nisn_nip`, ''), ?), `sync_source` = 'learn', `sync_ref_id` = COALESCE(`sync_ref_id`, ?) WHERE `id` = ?")
+        $ssoPdo->prepare("UPDATE `sso_users` SET `password_hash` = ?, `email` = ?, `nisn_nip` = COALESCE(NULLIF(`nisn_nip`, ''), ?), `sync_source` = 'learn', `sync_ref_id` = COALESCE(`sync_ref_id`, ?) WHERE `id` = ?")
             ->execute([password_hash($ssoPassword, PASSWORD_DEFAULT), $gmail, $refNumber, $syncRef, $ssoUserId]);
     } else {
         // Buat akun SSO BARU 100% terpisah (email_google=NULL, google_id=NULL, foto_profil=NULL)
@@ -576,7 +576,7 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
         $ssoPassword = $creds['password'];
 
         $ins = $ssoPdo->prepare("
-            INSERT INTO `users`
+            INSERT INTO `sso_users`
                 (`username`, `email`, `email_google`, `google_id`, `password_hash`, `full_name`, `nisn_nip`, `foto_profil`, `status`, `is_active`, `sync_source`, `sync_ref_id`)
             VALUES
                 (?, ?, NULL, NULL, ?, ?, ?, NULL, 'active', 1, 'learn', ?)
@@ -593,10 +593,10 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
 
         // Assign role di tabel user_roles milik Margo One SSO
         $roleMap = [];
-        foreach ($ssoPdo->query("SELECT id, code FROM `roles`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        foreach ($ssoPdo->query("SELECT id, code FROM `sso_roles`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $roleMap[strtolower((string)$r['code'])] = (int)$r['id'];
         }
-        $insUr = $ssoPdo->prepare("INSERT IGNORE INTO `user_roles` (`user_id`, `role_id`, `is_primary`) VALUES (?, ?, ?)");
+        $insUr = $ssoPdo->prepare("INSERT IGNORE INTO `sso_user_roles` (`user_id`, `role_id`, `is_primary`) VALUES (?, ?, ?)");
         $assignedAny = false;
         foreach ($roles as $idx => $rc) {
             $rcLow = strtolower(trim((string)$rc));
@@ -625,7 +625,7 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
     $mailMsg = (string)($mailRes['message'] ?? ($mailOk ? 'Terkirim' : 'Gagal kirim email'));
 
     if ($mailOk) {
-        $ssoPdo->prepare("UPDATE `users` SET `credentials_sent_at` = ? WHERE `id` = ?")
+        $ssoPdo->prepare("UPDATE `sso_users` SET `credentials_sent_at` = ? WHERE `id` = ?")
             ->execute([date('Y-m-d H:i:s'), $ssoUserId]);
     }
 

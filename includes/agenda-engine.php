@@ -713,7 +713,7 @@ function margo_agenda_get_guru_classes(PDO $ssoPdo, array $userSession)
     // Ambil row user lengkap dari SSO DB
     $uRow = $userSession;
     try {
-        $stU = $ssoPdo->prepare("SELECT * FROM `users` WHERE `id` = ? LIMIT 1");
+        $stU = $ssoPdo->prepare("SELECT * FROM `sso_users` WHERE `id` = ? LIMIT 1");
         $stU->execute([(int)($userSession['id'] ?? 0)]);
         $dbU = $stU->fetch(PDO::FETCH_ASSOC);
         if ($dbU) {
@@ -723,7 +723,7 @@ function margo_agenda_get_guru_classes(PDO $ssoPdo, array $userSession)
 
     // Cari user.id padanan di Learn DB (jika ID berbeda antara DB SSO dan DB Learn)
     $learnUserId = (int)($uRow['id'] ?? 0);
-    if ($learnInfo && $lpdo !== $ssoPdo) {
+    if ($lpdo) {
         try {
             $stLu = $lpdo->prepare("
                 SELECT id FROM `users`
@@ -823,7 +823,7 @@ function margo_agenda_get_siswa_kelas(PDO $ssoPdo, array $userSession)
 
     $uRow = $userSession;
     try {
-        $stU = $ssoPdo->prepare("SELECT * FROM `users` WHERE `id` = ? LIMIT 1");
+        $stU = $ssoPdo->prepare("SELECT * FROM `sso_users` WHERE `id` = ? LIMIT 1");
         $stU->execute([(int)($userSession['id'] ?? 0)]);
         $dbU = $stU->fetch(PDO::FETCH_ASSOC);
         if ($dbU) {

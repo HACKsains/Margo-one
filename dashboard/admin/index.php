@@ -190,7 +190,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
                s.expires_at, s.revoked_at, s.last_activity_at, s.created_at,
                u.username, u.full_name, u.email
         FROM sso_sessions s
-        LEFT JOIN users u ON u.id = s.user_id
+        LEFT JOIN sso_users u ON u.id = s.user_id
         ORDER BY (s.revoked_at IS NULL AND s.expires_at > NOW()) DESC, s.last_activity_at DESC
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -206,10 +206,10 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
     unset($sr);
 
     // 3. Users + Roles + Orphan Guru Detection
-    $allRoles = $pdo->query("SELECT id, code, name FROM roles ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $allRoles = $pdo->query("SELECT id, code, name FROM sso_roles ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
     $usersRaw = $pdo->query("
         SELECT u.*
-        FROM users u
+        FROM sso_users u
         ORDER BY u.id ASC
         LIMIT 200
     ")->fetchAll(PDO::FETCH_ASSOC);
@@ -217,8 +217,8 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
     $urMap = [];
     $urRows = $pdo->query("
         SELECT ur.user_id, r.code, r.name, ur.is_primary
-        FROM user_roles ur
-        JOIN roles r ON ur.role_id = r.id
+        FROM sso_user_roles ur
+        JOIN sso_roles r ON ur.role_id = r.id
         ORDER BY ur.is_primary DESC, r.id ASC
     ")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($urRows as $ur) {
@@ -272,7 +272,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
         SELECT l.id, l.user_id, l.client_id, l.event_type, l.http_status, l.ip_address, l.user_agent, l.detail_json, l.created_at,
                u.username, c.client_name
         FROM sso_audit_logs l
-        LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN sso_users u ON u.id = l.user_id
         LEFT JOIN sso_clients c ON c.id = l.client_id
         ORDER BY l.id DESC
         LIMIT 100
@@ -603,7 +603,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            $allRolesRows = $pdo->query("SELECT id, code FROM roles")->fetchAll(PDO::FETCH_ASSOC);
+            $allRolesRows = $pdo->query("SELECT id, code FROM sso_roles")->fetchAll(PDO::FETCH_ASSOC);
             $codeToId = [];
             foreach ($allRolesRows as $rr) {
                 $codeToId[(string)$rr['code']] = (int)$rr['id'];
@@ -625,13 +625,13 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
             $pdo->beginTransaction();
             try {
-                $pdo->prepare("DELETE FROM user_roles WHERE user_id = ?")->execute([$uid]);
-                $insUr = $pdo->prepare("INSERT INTO user_roles (user_id, role_id, is_primary) VALUES (?, ?, ?)");
+                $pdo->prepare("DELETE FROM sso_user_roles WHERE user_id = ?")->execute([$uid]);
+                $insUr = $pdo->prepare("INSERT INTO sso_user_roles (user_id, role_id, is_primary) VALUES (?, ?, ?)");
                 foreach ($validCodes as $vc) {
                     $insUr->execute([$uid, $codeToId[$vc], ($vc === $primaryCode ? 1 : 0)]);
                 }
                 if (isset($_POST['allowed_apps'])) {
-                    $pdo->prepare("UPDATE users SET allowed_apps = ? WHERE id = ?")
+                    $pdo->prepare("UPDATE sso_users SET allowed_apps = ? WHERE id = ?")
                         ->execute([$allowedAppsRaw !== '' ? $allowedAppsRaw : null, $uid]);
                 }
                 $pdo->commit();
@@ -689,7 +689,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 echo json_encode(['success' => false, 'message' => 'Kata sandi reset minimal 8 karakter.']);
                 exit;
             }
-            $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?")->execute([password_hash($newPass, PASSWORD_DEFAULT), $uid]);
+            $pdo->prepare("UPDATE sso_users SET password_hash = ? WHERE id = ?")->execute([password_hash($newPass, PASSWORD_DEFAULT), $uid]);
             $revoked = $forceOut ? margo_revoke_all_user_sessions($pdo, $uid, 0, true) : 0;
 
             margo_sso_log_audit($pdo, 'admin_password_reset', [
@@ -704,7 +704,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         // ---- PUTUS TAUTAN GOOGLE USER OLEH ADMIN ----
         if ($act === 'admin_unlink_google') {
             $uid = (int)($_POST['user_id'] ?? 0);
-            $pdo->prepare("UPDATE users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$uid]);
+            $pdo->prepare("UPDATE sso_users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$uid]);
             margo_sso_log_audit($pdo, 'admin_google_unlinked', ['user_id' => $uid]);
             echo json_encode(['success' => true, 'message' => 'Tautan Google SSO pengguna berhasil diputuskan.']);
             exit;
@@ -763,7 +763,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $healed = 0;
             $hasGuruTbl = (bool)$pdo->query("SHOW TABLES LIKE 'guru'")->fetch();
             if ($hasGuruTbl) {
-                $uRows = $pdo->query("SELECT * FROM users")->fetchAll(PDO::FETCH_ASSOC);
+                $uRows = $pdo->query("SELECT * FROM sso_users")->fetchAll(PDO::FETCH_ASSOC);
                 foreach ($uRows as $uRow) {
                     $rCodes = array_column(margo_fetch_user_roles($pdo, (int)$uRow['id']), 'code');
                     if (in_array('guru', $rCodes, true) || in_array('admin', $rCodes, true)) {

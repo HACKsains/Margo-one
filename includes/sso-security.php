@@ -387,27 +387,118 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         // Non-fatal
     }
 
-    // Pastikan kolom isolasi & metadata sinkronisasi ada pada tabel users milik Margo One SSO
+    // 0. Tabel Identitas Terisolasi Milik Margo One SSO (100% TERPISAH dari tabel users Ilmuna Learn!)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS sso_roles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            code VARCHAR(50) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            description TEXT NULL,
+            badge_color VARCHAR(30) DEFAULT 'teal',
+            icon VARCHAR(80) DEFAULT 'solar:user-bold',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS sso_users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(80) NOT NULL UNIQUE,
+            email VARCHAR(150) NULL,
+            email_google VARCHAR(150) NULL,
+            google_id VARCHAR(120) NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            full_name VARCHAR(150) NOT NULL,
+            nisn_nip VARCHAR(60) NULL,
+            gender VARCHAR(20) NULL,
+            phone VARCHAR(30) NULL,
+            foto_profil VARCHAR(255) NULL,
+            avatar VARCHAR(255) NULL,
+            allowed_apps TEXT NULL,
+            sync_source VARCHAR(40) NULL,
+            sync_ref_id VARCHAR(80) NULL,
+            credentials_sent_at DATETIME NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'active',
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            last_login DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_sso_users_email (email),
+            INDEX idx_sso_users_email_google (email_google),
+            INDEX idx_sso_users_sync_ref (sync_ref_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS sso_user_roles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            role_id INT NOT NULL,
+            is_primary TINYINT(1) NOT NULL DEFAULT 0,
+            assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_sso_user_role (user_id, role_id),
+            INDEX idx_sso_ur_user (user_id),
+            INDEX idx_sso_ur_role (role_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    // Seed 4 role standar Margo One SSO di sso_roles (idempoten)
     try {
-        $uColsCheck = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+        $insSsoRole = $pdo->prepare("
+            INSERT IGNORE INTO sso_roles (code, name, description, badge_color, icon)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        foreach ([
+            ['admin', 'Administrator', 'Pengelola penuh Identity Provider Margo One SSO', 'navy', 'solar:shield-user-bold'],
+            ['guru', 'Guru', 'Pendidik / Pengajar ekosistem Ilmuna', 'teal', 'solar:user-speak-bold'],
+            ['ketua_kelas', 'Ketua Kelas', 'Perwakilan kelas & koordinator siswa', 'gold', 'solar:crown-bold'],
+            ['siswa', 'Siswa', 'Peserta didik ekosistem Ilmuna', 'sky', 'solar:square-academic-cap-2-bold'],
+        ] as $srSeed) {
+            $insSsoRole->execute($srSeed);
+        }
+
+        // Seed 1 akun Administrator bawaan khusus Margo One SSO bila sso_users masih benar-benar kosong
+        $cntSsoUsers = (int)$pdo->query("SELECT COUNT(*) FROM sso_users")->fetchColumn();
+        if ($cntSsoUsers === 0) {
+            $adminHash = password_hash('admin123', PASSWORD_DEFAULT);
+            $pdo->prepare("
+                INSERT INTO sso_users (username, email, password_hash, full_name, status, is_active)
+                VALUES ('admin', 'admin@margo-one.ilmuna.my.id', ?, 'Administrator Margo One SSO', 'active', 1)
+            ")->execute([$adminHash]);
+            $newAdmId = (int)$pdo->lastInsertId();
+            $admRoleId = (int)$pdo->query("SELECT id FROM sso_roles WHERE code = 'admin' LIMIT 1")->fetchColumn();
+            if ($newAdmId > 0 && $admRoleId > 0) {
+                $pdo->prepare("INSERT IGNORE INTO sso_user_roles (user_id, role_id, is_primary) VALUES (?, ?, 1)")
+                    ->execute([$newAdmId, $admRoleId]);
+            }
+        }
+    } catch (Throwable $eSeedSsoU) {
+        // Non-fatal
+    }
+
+    // Pastikan kolom terbaru selalu ada pada sso_users eksisting
+    try {
+        $uColsCheck = $pdo->query("SHOW COLUMNS FROM sso_users")->fetchAll(PDO::FETCH_COLUMN);
         if (!empty($uColsCheck)) {
             if (!in_array('allowed_apps', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN allowed_apps TEXT NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN allowed_apps TEXT NULL DEFAULT NULL");
             }
             if (!in_array('email_google', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN email_google VARCHAR(150) NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN email_google VARCHAR(150) NULL DEFAULT NULL");
             }
             if (!in_array('google_id', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN google_id VARCHAR(120) NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN google_id VARCHAR(120) NULL DEFAULT NULL");
+            }
+            if (!in_array('avatar', $uColsCheck, true)) {
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN avatar VARCHAR(255) NULL DEFAULT NULL");
             }
             if (!in_array('sync_source', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN sync_source VARCHAR(40) NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN sync_source VARCHAR(40) NULL DEFAULT NULL");
             }
             if (!in_array('sync_ref_id', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN sync_ref_id VARCHAR(80) NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN sync_ref_id VARCHAR(80) NULL DEFAULT NULL");
             }
             if (!in_array('credentials_sent_at', $uColsCheck, true)) {
-                $pdo->exec("ALTER TABLE users ADD COLUMN credentials_sent_at DATETIME NULL DEFAULT NULL");
+                $pdo->exec("ALTER TABLE sso_users ADD COLUMN credentials_sent_at DATETIME NULL DEFAULT NULL");
             }
         }
     } catch (Throwable $eColU) {
