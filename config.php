@@ -319,6 +319,33 @@ if (!defined('GOOGLE_CLIENT_SECRET')) {
     define('GOOGLE_CLIENT_SECRET', getenv('GOOGLE_CLIENT_SECRET') ?: '');
 }
 
+// ==============================================================================
+// GOOGLE APPS SCRIPT RELAY & SMTP CONFIGURATION (VERIFIKASI GMAIL PENAUTAN SSO)
+// ==============================================================================
+if (!defined('ILMUNA_GOOGLE_RELAY_URL')) {
+    define('ILMUNA_GOOGLE_RELAY_URL', 'https://script.google.com/macros/s/AKfycbyfBUsTy6pTx-738xeXs_-MahXE_xAP3DOqfVNEfBE0TBgIjKPPlQ2z7FZHXsoR_i0Cwg/exec');
+}
+if (!defined('ILMUNA_GOOGLE_RELAY_TOKEN')) {
+    define('ILMUNA_GOOGLE_RELAY_TOKEN', '1LmuN@28');
+}
+if (!defined('ILMUNA_GOOGLE_RELAY_PUBLIC_KEY')) {
+    define('ILMUNA_GOOGLE_RELAY_PUBLIC_KEY', 'pk_ilmuna_7c7cbb2a802e0bce86aa7c682859e9ce');
+}
+if (!defined('ILMUNA_GOOGLE_RELAY_PRIVATE_KEY')) {
+    define('ILMUNA_GOOGLE_RELAY_PRIVATE_KEY', 'sk_ilmuna_8d5e0907150fb0054ce9be16fcde014c464ca4cbb28482ecbfd16cea0835c957');
+}
+if (!defined('ILMUNA_GOOGLE_RELAY_BACKUP_URLS')) {
+    define('ILMUNA_GOOGLE_RELAY_BACKUP_URLS', []);
+}
+if (!defined('ILMUNA_SMTP_HOST'))      define('ILMUNA_SMTP_HOST', 'mail.ilmuna.my.id');
+if (!defined('ILMUNA_SMTP_PORT'))      define('ILMUNA_SMTP_PORT', 465);
+if (!defined('ILMUNA_SMTP_SECURE'))    define('ILMUNA_SMTP_SECURE', 'ssl');
+if (!defined('ILMUNA_SMTP_USER'))      define('ILMUNA_SMTP_USER', 'noreply@ilmuna.my.id');
+if (!defined('ILMUNA_SMTP_PASS'))      define('ILMUNA_SMTP_PASS', 'Ilmuna28@');
+if (!defined('ILMUNA_SMTP_FROM'))      define('ILMUNA_SMTP_FROM', 'noreply@ilmuna.my.id');
+if (!defined('ILMUNA_SMTP_FROM_NAME')) define('ILMUNA_SMTP_FROM_NAME', 'Margo One — Ilmuna SSO');
+if (!defined('ILMUNA_SMTP_ENABLED'))   define('ILMUNA_SMTP_ENABLED', true);
+
 function getGoogleOAuthConfig() {
     return [
         'client_id'     => GOOGLE_CLIENT_ID,
