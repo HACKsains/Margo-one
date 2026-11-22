@@ -482,7 +482,7 @@ function autoInitializeSsoDatabase(PDO $pdo) {
                 }
 
                 // Auto-sync sekali ke folder sibling /home/uofruaju/learn.ilmuna.my.id di cPanel bila belum tersinkron
-                $syncFlagFile = sys_get_temp_dir() . '/margo_learn_slo_synced_v5.flag';
+                $syncFlagFile = sys_get_temp_dir() . '/margo_learn_slo_synced_v6.flag';
                 if (!file_exists($syncFlagFile) && is_dir('/home/uofruaju/learn.ilmuna.my.id')) {
                     if (file_exists(BASE_PATH . '/database.php')) {
                         require_once BASE_PATH . '/database.php';

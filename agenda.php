@@ -5,11 +5,14 @@
  * ==============================================================================
  * Arsitektur & Fitur Utama:
  *   1. Database Khusus Agenda (`uofruaju_margo_agenda`) dengan sinkronisasi real-time
- *      dari `uofruaju_learn_ilmuna.kalender_pendidikan` melalui MySQL Database Triggers.
+ *      SEMUA baris `uofruaju_learn_ilmuna.kalender_pendidikan` (termasuk KBM Reguler,
+ *      Libur Nasional, Libur Semester, Kegiatan/Ujian & Keagamaan) via MySQL Triggers.
  *   2. Kalender Interaktif bergaya `curriculum.php`:
  *      - Tampilan Bulan (Masehi + Hijriyah), Minggu, Hari, & Daftar Agenda
  *      - Drag-to-Select rentang tanggal langsung di grid kalender + Floating Drag Bar
- *      - Mode Kuas Cepat (Quick Paint) untuk penjadwalan cepat multi-hari
+ *      - Mode Kuas Cepat (Quick Paint) & Pemilih Warna untuk setiap jenis kegiatan
+ *      - Kode Warna Lengkap untuk status Kaldik maupun kategori Rapat, Akademik,
+ *        Kegiatan, Sistem SSO, Pengumuman, & Pribadi!
  *   3. Aturan Hak Akses & Audiens Berbasis Peran:
  *      - Admin : membuat agenda untuk Semua Orang (`all`), Khusus Guru (`guru`),
  *                Khusus Siswa (`siswa`), atau Pribadi (`private`).
@@ -17,7 +20,6 @@
  *      - Siswa : membuat agenda HANYA untuk Diri Sendiri (`private`).
  *   4. Proteksi Mutlak Kaldik: Agenda bersumber dari Kaldik (`source = 'kaldik'`)
  *      terkunci permanen (read-only) — tidak dapat diubah atau dihapus oleh siapapun.
- *   5. Palet Warna Resmi Ketat: #1D3B5E (Navy), #0D7A87 (Teal), #52B2DC (Sky Blue).
  *
  * 100% kompatibel PHP 7.4 (ea-php74) hingga PHP 8.3.
  * ==============================================================================
@@ -50,7 +52,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
     $act = trim((string)($_POST['api_action'] ?? $_GET['api_action'] ?? 'list'));
     try {
         if ($act === 'list') {
-            $items  = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]);
+            $items  = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
             $ctx    = margo_agenda_build_user_context($pdo, $currentUser);
             $status = $ctx['is_admin'] ? margo_agenda_get_status($pdo) : null;
             echo json_encode([
@@ -73,7 +75,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         if ($act === 'save') {
             $res = margo_agenda_save($pdo, $currentUser, $_POST);
             if (!empty($res['success'])) {
-                $res['items'] = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]);
+                $res['items'] = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
             }
             echo json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
@@ -111,7 +113,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            // Gabungkan tanggal berurutan menjadi blok rentang (start_date..end_date) agar rapi di kalender
+            // Gabungkan tanggal berurutan menjadi blok rentang (start_date..end_date)
             $ranges = [];
             $rStart = $dates[0];
             $rPrev  = $dates[0];
@@ -150,7 +152,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             echo json_encode([
                 'success' => true,
                 'message' => $savedCnt . ' agenda berhasil diterapkan pada ' . count($dates) . ' tanggal terpilih.',
-                'items'   => margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]),
+                'items'   => margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]),
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -159,7 +161,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $id = (int)($_POST['id'] ?? 0);
             $res = margo_agenda_delete($pdo, $currentUser, $id);
             if (!empty($res['success'])) {
-                $res['items'] = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]);
+                $res['items'] = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
             }
             echo json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
@@ -174,7 +176,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $trgRes  = margo_agenda_install_kaldik_triggers($pdo);
             $syncRes = margo_agenda_backfill_from_kaldik($pdo);
             $status  = margo_agenda_get_status($pdo);
-            $items   = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]);
+            $items   = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
             echo json_encode([
                 'success' => !empty($syncRes['ok']),
                 'message' => $syncRes['message'] . (!empty($trgRes['kaldik_triggers_ok']) ? ' (MySQL Trigger Real-Time Aktif)' : ''),
@@ -199,7 +201,7 @@ $userCtx        = margo_agenda_build_user_context($pdo, $currentUser);
 $isAdmin        = !empty($userCtx['is_admin']);
 $isGuru         = !empty($userCtx['is_guru']);
 $isSiswa        = !empty($userCtx['is_siswa']);
-$initialAgendas = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 600]);
+$initialAgendas = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
 $agendaDbStatus = $isAdmin ? margo_agenda_get_status($pdo) : null;
 $focusId        = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
@@ -207,69 +209,76 @@ $pageTitle = 'Agenda & Kalender Interaktif';
 $pageIcon  = 'solar:calendar-mark-bold';
 
 $extraHead = '<style>
-/* ===== STRICT 3-COLOR PALETTE: #1D3B5E (NAVY), #0D7A87 (TEAL), #52B2DC (SKY) ===== */
-.mag-painter-card{background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:13px 16px;margin-bottom:14px;box-shadow:0 4px 14px rgba(29,59,94,.04);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.mag-painter-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* ===== PALET WARNA KALDIK (PARITAS CURRICULUM.PHP) + KATEGORI KEGIATAN / RAPAT ===== */
+.mag-painter-card{background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:13px 16px;margin-bottom:14px;box-shadow:0 4px 14px rgba(15,23,42,.04);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.mag-painter-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .mag-role-hint{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:10px;background:rgba(13,122,135,0.08);color:#1D3B5E;font-size:12px;font-weight:700}
 .mag-swatch-group{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .mag-swatch-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:1.5px solid #CBD5E1;background:#F8FAFC;color:#1D3B5E;transition:all .16s ease;font-family:inherit}
-.mag-swatch-btn:hover{border-color:#0D7A87;background:#fff;transform:translateY(-1px)}
-.mag-swatch-btn.is-selected{background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;border-color:transparent;box-shadow:0 4px 12px -2px rgba(13,122,135,.35)}
-.mag-swatch-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mag-swatch-btn:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(15,23,42,.08)}
+.mag-swatch-btn.is-selected{box-shadow:0 0 0 2.5px #0F172A,0 4px 10px rgba(15,23,42,.12);transform:scale(1.02)}
+.mag-swatch-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.mag-swatch--akademik{color:#0B5D67;background:#ECFEFF;border-color:#99F6E4}
+.mag-swatch--rapat{color:#3730A3;background:#EEF2FF;border-color:#C7D2FE}
+.mag-swatch--kegiatan{color:#9A3412;background:#FFF7ED;border-color:#FED7AA}
+.mag-swatch--sistem{color:#1D3B5E;background:#F1F5F9;border-color:#CBD5E1}
+.mag-swatch--pengumuman{color:#075985;background:#F0F9FF;border-color:#BAE6FD}
+.mag-swatch--pribadi{color:#9D174D;background:#FDF2F8;border-color:#FBCFE8}
 
 /* ===== RBC-STYLE MAIN CALENDAR WRAPPER (PERSIS CURRICULUM.PHP) ===== */
-.mag-rbc-card{background:#fff;border:1px solid #E2E8F0;border-radius:20px;box-shadow:0 6px 22px rgba(29,59,94,.05);overflow:hidden;margin-bottom:18px;user-select:none}
+.mag-rbc-card{background:#fff;border:1px solid #E2E8F0;border-radius:20px;box-shadow:0 6px 22px rgba(15,23,42,.05);overflow:hidden;margin-bottom:18px;user-select:none}
 .mag-rbc-toolbar{padding:15px 18px;background:#fff;border-bottom:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
 .mag-rbc-left{display:flex;align-items:center;gap:12px;min-width:220px}
 .mag-rbc-icon{width:42px;height:42px;border-radius:12px;background:rgba(13,122,135,0.10);color:#0D7A87;display:flex;align-items:center;justify-content:center;font-size:21px;flex-shrink:0}
-.mag-rbc-title{font-family:"Outfit",sans-serif;font-size:18px;font-weight:800;color:#1D3B5E;line-height:1.2;margin:0}
-.mag-rbc-hijri{font-size:11.5px;font-weight:700;color:#0D7A87;background:rgba(82,178,220,0.14);padding:2px 9px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;margin-top:3px;width:fit-content}
+.mag-rbc-title{font-family:"Outfit",sans-serif;font-size:18px;font-weight:800;color:#0F172A;line-height:1.2;margin:0}
+.mag-rbc-hijri{font-size:11.5px;font-weight:700;color:#0D7A87;background:rgba(13,122,135,0.09);padding:2px 9px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;margin-top:3px;width:fit-content}
 .mag-nav-group{display:inline-flex;align-items:center;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:3px;gap:2px}
 .mag-nav-btn{border:none;background:transparent;padding:6px 11px;border-radius:7px;font-size:12px;font-weight:700;color:#1D3B5E;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;font-family:inherit}
-.mag-nav-btn:hover{background:#fff;color:#0D7A87;box-shadow:0 1px 3px rgba(29,59,94,.08)}
+.mag-nav-btn:hover{background:#fff;color:#0D7A87;box-shadow:0 1px 3px rgba(15,23,42,.08)}
 .mag-view-group{display:inline-flex;align-items:center;background:#F1F5F9;border-radius:10px;padding:3px;gap:2px}
 .mag-view-btn{border:none;background:transparent;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;color:#475569;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s;font-family:inherit}
-.mag-view-btn:hover{color:#1D3B5E}
-.mag-view-btn.is-active{background:#fff;color:#0D7A87;font-weight:800;box-shadow:0 2px 6px rgba(29,59,94,.08)}
+.mag-view-btn:hover{color:#0F172A}
+.mag-view-btn.is-active{background:#fff;color:#0D7A87;font-weight:800;box-shadow:0 2px 6px rgba(15,23,42,.08)}
 
-/* ===== FILTER & LEGEND BAR ===== */
-.mag-subbar{padding:10px 18px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.mag-legend-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:11.5px;font-weight:700;color:#475569}
-.mag-legend-item{display:inline-flex;align-items:center;gap:5px}
-.mag-legend-swatch{width:10px;height:10px;border-radius:3px;display:inline-block}
-.mag-db-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(29,59,94,0.07);color:#1D3B5E;font-size:11px;font-weight:700}
+/* ===== LEGEND & DB STATUS STRIP ===== */
+.mag-subbar{padding:11px 18px;background:#F8FAFC;border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.mag-legend-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;font-weight:700;color:#334155}
+.mag-legend-grp{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 9px;border-radius:9px;background:#fff;border:1px solid #E2E8F0}
+.mag-legend-title{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#64748B;font-weight:800}
+.mag-legend-item{display:inline-flex;align-items:center;gap:4px}
+.mag-legend-swatch{width:9px;height:9px;border-radius:3px;display:inline-block;flex-shrink:0}
+.mag-db-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(29,59,94,0.08);color:#1D3B5E;font-size:11px;font-weight:700}
 
 /* ===== MONTH GRID (DRAG-TO-SELECT + MASEHI & HIJRIYAH) ===== */
 .mag-cal-table-wrap{width:100%;overflow-x:auto}
-.mag-cal-table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:680px}
-.mag-cal-table th{padding:10px 6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#1D3B5E;background:#F8FAFC;border-bottom:1.5px solid #E2E8F0;border-right:1px solid #E2E8F0;text-align:center;width:14.285%}
+.mag-cal-table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:700px}
+.mag-cal-table th{padding:11px 6px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#475569;background:#F8FAFC;border-bottom:1.5px solid #E2E8F0;border-right:1px solid #E2E8F0;text-align:center;width:14.285%}
 .mag-cal-table th:last-child{border-right:none}
-.mag-cal-table th.th-sun{background:rgba(29,59,94,0.06);color:#1D3B5E}
-.mag-cell{height:118px;min-height:118px;border-right:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0;padding:7px 8px;vertical-align:top;cursor:pointer;position:relative;background:#fff;transition:background .12s,box-shadow .12s}
+.mag-cal-table th.th-sun{background:#FEF2F2 !important;color:#DC2626 !important}
+.mag-cell{height:122px;min-height:122px;border-right:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0;padding:7px 8px;vertical-align:top;cursor:pointer;position:relative;background:#fff;transition:background .12s,box-shadow .12s}
 .mag-cell:last-child{border-right:none}
 .mag-cell:hover{box-shadow:inset 0 0 0 2px #0D7A87;z-index:2}
 .mag-cell.is-other{background:#F8FAFC;opacity:.52}
-.mag-cell.is-sunday{background:rgba(29,59,94,0.025)}
-.mag-cell.is-today{border-top:2.5px solid #0D7A87 !important;background:rgba(82,178,220,0.08) !important}
-.mag-cell.is-selecting{outline:2.5px dashed #52B2DC !important;background:rgba(82,178,220,0.20) !important;z-index:5}
+.mag-cell.is-sunday{background:#FFF5F5}
+.mag-cell.is-sunday .mag-masehi-num{color:#DC2626}
+.mag-cell.is-sunday .mag-hijri-num{color:#B91C1C;background:rgba(220,38,38,0.08)}
+.mag-cell.is-today{border-top:2.5px solid #0D7A87 !important;background:rgba(13,122,135,0.05) !important}
+.mag-cell.is-selecting{outline:2.5px dashed #0284C7 !important;background:rgba(2,132,199,0.16) !important;z-index:5}
 .mag-is-kuas .mag-cell{cursor:cell !important}
-.mag-is-kuas .mag-cell:hover{box-shadow:inset 0 0 0 2.5px #52B2DC !important;background:rgba(82,178,220,0.10) !important}
+.mag-is-kuas .mag-cell:hover{box-shadow:inset 0 0 0 2.5px #10B981 !important;background:rgba(16,185,129,0.06) !important}
 .mag-cell-top{display:flex;justify-content:space-between;align-items:center;line-height:1;margin-bottom:5px;gap:4px}
-.mag-masehi-num{font-family:"Outfit",sans-serif;font-size:15px;font-weight:800;color:#1D3B5E;display:inline-flex;align-items:center;gap:4px}
+.mag-masehi-num{font-family:"Outfit",sans-serif;font-size:15px;font-weight:800;color:#0F172A;display:inline-flex;align-items:center;gap:4px}
 .mag-cell.is-today .mag-masehi-num{color:#0D7A87}
-.mag-hijri-num{font-size:9.5px;font-weight:700;color:#0D7A87;background:rgba(13,122,135,0.09);padding:2px 5px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:74px}
-.mag-cell-add{position:absolute;bottom:5px;right:6px;width:20px;height:20px;border-radius:6px;border:1px solid rgba(13,122,135,0.25);background:#fff;color:#0D7A87;display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;transition:opacity .15s;pointer-events:none}
+.mag-hijri-num{font-size:9.5px;font-weight:700;color:#0D7A87;background:rgba(13,122,135,0.09);padding:2px 5px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px}
+.mag-cell-add{position:absolute;bottom:5px;right:6px;width:20px;height:20px;border-radius:6px;border:1px solid rgba(13,122,135,0.28);background:#fff;color:#0D7A87;display:flex;align-items:center;justify-content:center;font-size:13px;opacity:0;transition:opacity .15s;pointer-events:none}
 .mag-cell:hover .mag-cell-add{opacity:1}
 
-/* ===== EVENT CHIPS (STRICT 3-COLOR PALETTE) ===== */
+/* ===== EVENT CHIPS BERWARNA (KALDIK + KEGIATAN/RAPAT/PRIBADI) ===== */
 .mag-chips-wrap{display:flex;flex-direction:column;gap:3.5px;margin-top:3px}
 .mag-chip{display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:6px;font-size:10.5px;font-weight:700;line-height:1.25;cursor:pointer;transition:transform .12s,box-shadow .12s;overflow:hidden;white-space:nowrap;border-left:3px solid #0D7A87}
-.mag-chip:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(29,59,94,.12)}
+.mag-chip:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(15,23,42,.12)}
+.mag-chip-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
 .mag-chip-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.mag-chip--kaldik{background:rgba(29,59,94,0.10);color:#1D3B5E;border-left-color:#1D3B5E}
-.mag-chip--admin{background:rgba(13,122,135,0.12);color:#0D7A87;border-left-color:#0D7A87}
-.mag-chip--kelas{background:rgba(82,178,220,0.18);color:#1D3B5E;border-left-color:#52B2DC}
-.mag-chip--private{background:#F1F5F9;color:#1D3B5E;border-left-color:#1D3B5E;border-left-style:dashed}
 .mag-chip-more{font-size:10px;font-weight:800;color:#0D7A87;padding:1px 4px;cursor:pointer;display:inline-block}
 .mag-chip-more:hover{text-decoration:underline}
 
@@ -280,7 +289,9 @@ $extraHead = '<style>
 .mag-week-col{border-right:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0;display:flex;flex-direction:column}
 .mag-week-col:last-child{border-right:none}
 .mag-week-head{padding:11px 8px;background:#F8FAFC;border-bottom:1.5px solid #E2E8F0;text-align:center}
-.mag-week-col.is-today .mag-week-head{background:rgba(82,178,220,0.14);border-bottom-color:#0D7A87}
+.mag-week-col.is-today .mag-week-head{background:rgba(13,122,135,0.09);border-bottom-color:#0D7A87}
+.mag-week-col.is-sunday .mag-week-head{background:#FEF2F2}
+.mag-week-col.is-sunday .mag-week-day,.mag-week-col.is-sunday .mag-week-num{color:#DC2626}
 .mag-week-day{font-size:11px;font-weight:800;text-transform:uppercase;color:#475569}
 .mag-week-num{font-family:"Outfit",sans-serif;font-size:19px;font-weight:900;color:#1D3B5E;margin:2px 0}
 .mag-week-hijri{font-size:10px;font-weight:700;color:#0D7A87}
@@ -298,17 +309,14 @@ $extraHead = '<style>
 /* ===== AGENDA LIST VIEW ===== */
 .mag-list-wrap{padding:16px;display:flex;flex-direction:column;gap:10px;background:#fff}
 .mag-item{display:flex;align-items:stretch;gap:14px;padding:13px 14px;border-radius:15px;background:#fff;border:1px solid #E2E8F0;transition:all .18s ease;cursor:pointer}
-.mag-item:hover{border-color:#0D7A87;box-shadow:0 10px 22px -10px rgba(13,122,135,.22);transform:translateY(-1px)}
-.mag-item.is-kaldik{border-left:4px solid #1D3B5E;background:rgba(29,59,94,0.015)}
-.mag-date-box{width:64px;flex-shrink:0;border-radius:13px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 6px;text-align:center}
-.mag-date-box.is-kaldik{background:#1D3B5E}
-.mag-date-box.is-past{background:#E2E8F0;color:#475569}
-.mag-date-m{font-size:10px;font-weight:800;text-transform:uppercase;opacity:.9}
+.mag-item:hover{box-shadow:0 10px 22px -10px rgba(15,23,42,.18);transform:translateY(-1px)}
+.mag-date-box{width:64px;flex-shrink:0;border-radius:13px;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 6px;text-align:center}
+.mag-date-m{font-size:10px;font-weight:800;text-transform:uppercase;opacity:.92}
 .mag-date-d{font-family:"Outfit",sans-serif;font-size:22px;font-weight:900;line-height:1.05}
-.mag-date-y{font-size:9.5px;opacity:.75}
+.mag-date-y{font-size:9.5px;opacity:.82}
 .mag-item-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .mag-item-top{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.mag-item-title{margin:0;font-family:"Outfit",sans-serif;font-size:14.5px;font-weight:800;color:#1D3B5E}
+.mag-item-title{margin:0;font-family:"Outfit",sans-serif;font-size:14.5px;font-weight:800;color:#0F172A}
 .mag-item-desc{font-size:12.5px;color:#475569;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mag-item-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:3px;font-size:11.5px;color:#64748B}
 .mag-item-meta span{display:inline-flex;align-items:center;gap:4px}
@@ -316,23 +324,27 @@ $extraHead = '<style>
 .mag-mini-btn:hover{border-color:#0D7A87;color:#0D7A87;background:#fff}
 
 /* ===== FLOATING DRAG CONFIRMATION BAR (PERSIS CURRICULUM.PHP) ===== */
-.mag-drag-bar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(30px);background:#1D3B5E;color:#fff;border:1px solid rgba(82,178,220,0.45);border-radius:16px;padding:12px 16px;box-shadow:0 14px 36px rgba(29,59,94,.42);display:none;align-items:center;gap:10px;z-index:9999;font-size:12.5px;transition:transform .22s ease,opacity .22s ease;opacity:0;max-width:95vw;flex-wrap:wrap}
+.mag-drag-bar{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(30px);background:#0F172A;color:#fff;border:1px solid rgba(255,255,255,0.16);border-radius:16px;padding:12px 16px;box-shadow:0 14px 36px rgba(15,23,42,.45);display:none;align-items:center;gap:9px;z-index:9999;font-size:12.5px;transition:transform .22s ease,opacity .22s ease;opacity:0;max-width:96vw;flex-wrap:wrap}
 .mag-drag-bar.show{display:flex;transform:translateX(-50%) translateY(0);opacity:1}
-.mag-drag-input{padding:7px 11px;border-radius:9px;border:1px solid rgba(82,178,220,0.45);background:rgba(255,255,255,0.12);color:#fff;font-size:12.5px;font-weight:600;min-width:190px;font-family:inherit;outline:none}
-.mag-drag-input::placeholder{color:rgba(255,255,255,0.68)}
-.mag-drag-select{padding:7px 10px;border-radius:9px;border:1px solid rgba(82,178,220,0.45);background:#162E4A;color:#fff;font-size:12px;font-weight:700;font-family:inherit;outline:none}
+.mag-drag-input{padding:7px 11px;border-radius:9px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.10);color:#fff;font-size:12.5px;font-weight:600;min-width:175px;font-family:inherit;outline:none}
+.mag-drag-input::placeholder{color:rgba(255,255,255,0.65)}
+.mag-drag-select{padding:7px 10px;border-radius:9px;border:1px solid rgba(255,255,255,0.22);background:#1E293B;color:#fff;font-size:12px;font-weight:700;font-family:inherit;outline:none}
+.mag-drag-cat-group{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.mag-drag-cat-pill{border:none;border-radius:8px;padding:5px 9px;font-size:11px;font-weight:800;color:#fff;cursor:pointer;opacity:.82;transition:all .15s;font-family:inherit}
+.mag-drag-cat-pill:hover{opacity:1;transform:translateY(-1px)}
+.mag-drag-cat-pill.is-active{opacity:1;outline:2px solid #fff;outline-offset:1.5px;transform:scale(1.05)}
 .mag-drag-btn{padding:7px 13px;border-radius:9px;border:none;font-size:12px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;transition:all .15s}
 .mag-drag-btn--save{background:#0D7A87;color:#fff}
-.mag-drag-btn--save:hover{background:#52B2DC;color:#1D3B5E}
+.mag-drag-btn--save:hover{background:#52B2DC;color:#0F172A}
 .mag-drag-btn--detail{background:rgba(82,178,220,0.22);color:#fff;border:1px solid rgba(82,178,220,0.5)}
 .mag-drag-btn--cancel{background:rgba(255,255,255,0.12);color:#fff}
 
-/* ===== MODAL FORM FIELDS & SCOPE PICKER ===== */
+/* ===== MODAL FORM FIELDS, SCOPE & COLOR SWATCH PICKER ===== */
 .mag-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
 .mag-field label{font-size:12px;font-weight:700;color:#1D3B5E}
 .mag-input,.mag-textarea{width:100%;padding:9px 11px;min-height:40px;border:1.5px solid #CBD5E1;border-radius:10px;font-size:13px;font-family:inherit;color:#0F172A;background:#fff}
 .mag-input:focus,.mag-textarea:focus{outline:none;border-color:#0D7A87;box-shadow:0 0 0 3px rgba(13,122,135,0.12)}
-.mag-textarea{min-height:78px;resize:vertical}
+.mag-textarea{min-height:76px;resize:vertical}
 .mag-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .mag-scope-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .mag-scope-card{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;border:1.5px solid #E2E8F0;background:#F8FAFC;cursor:pointer;transition:all .15s;text-align:left;font-family:inherit}
@@ -340,6 +352,10 @@ $extraHead = '<style>
 .mag-scope-card.is-active{border-color:#0D7A87;background:rgba(13,122,135,0.08);box-shadow:0 0 0 1px #0D7A87}
 .mag-scope-card strong{display:block;font-size:12px;color:#1D3B5E;font-weight:800}
 .mag-scope-card small{display:block;font-size:10.5px;color:#64748B;margin-top:1px}
+.mag-color-picker{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:3px}
+.mag-color-dot-btn{width:26px;height:26px;border-radius:8px;border:2px solid transparent;cursor:pointer;transition:transform .14s,box-shadow .14s;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:13px}
+.mag-color-dot-btn:hover{transform:scale(1.1)}
+.mag-color-dot-btn.is-active{border-color:#0F172A;box-shadow:0 0 0 2px #fff inset;transform:scale(1.12)}
 .mag-dur-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .mag-dur-btn{border:1px solid #CBD5E1;background:#F8FAFC;color:#1D3B5E;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;cursor:pointer;font-family:inherit}
 .mag-dur-btn:hover{background:#0D7A87;color:#fff;border-color:#0D7A87}
@@ -355,8 +371,8 @@ require_once BASE_PATH . '/includes/header.php';
     <div class="ilmuna-filter-topline">
         <div class="ilmuna-pill-group" id="agendaScopePills">
             <button type="button" class="ilmuna-pill-btn is-active" data-scope="all">Semua</button>
-            <button type="button" class="ilmuna-pill-btn" data-scope="kaldik">Kaldik (Terkunci)</button>
-            <button type="button" class="ilmuna-pill-btn" data-scope="admin">Ekosistem</button>
+            <button type="button" class="ilmuna-pill-btn" data-scope="kaldik">Kaldik (Semua &amp; KBM)</button>
+            <button type="button" class="ilmuna-pill-btn" data-scope="admin">Ekosistem / Rapat</button>
             <?php if ($isGuru || !empty($userCtx['siswa_kelas_id'])): ?>
                 <button type="button" class="ilmuna-pill-btn" data-scope="kelas">Kelas</button>
             <?php endif; ?>
@@ -364,7 +380,7 @@ require_once BASE_PATH . '/includes/header.php';
         </div>
         <div class="ilmuna-search-wrap">
             <iconify-icon icon="solar:magnifer-linear"></iconify-icon>
-            <input type="text" id="agendaSearchInput" class="ilmuna-search-input" placeholder="Cari judul agenda, lokasi, kelas, kaldik...">
+            <input type="text" id="agendaSearchInput" class="ilmuna-search-input" placeholder="Cari KBM, rapat, ujian, libur, kelas...">
         </div>
         <div class="ilmuna-filter-actions">
             <?php if ($isAdmin): ?>
@@ -381,7 +397,7 @@ require_once BASE_PATH . '/includes/header.php';
     </div>
 </div>
 
-<!-- QUICK PAINTER & DRAG-TO-SELECT BAR (PERSIS CURRICULUM.PHP) -->
+<!-- QUICK PAINTER & PALET WARNA KEGIATAN (PERSIS CURRICULUM.PHP) -->
 <div class="mag-painter-card">
     <div class="mag-painter-left">
         <button type="button" class="mag-swatch-btn" id="btnToggleKuas" onclick="MARGO_AGENDA.toggleKuas()">
@@ -389,24 +405,30 @@ require_once BASE_PATH . '/includes/header.php';
             <span id="lblToggleKuas">Mode Kuas: OFF</span>
         </button>
         <div class="mag-swatch-group" id="magCatSwatches">
-            <button type="button" class="mag-swatch-btn is-selected" data-cat="akademik" onclick="MARGO_AGENDA.pickBrushCat('akademik', this)">
+            <button type="button" class="mag-swatch-btn mag-swatch--akademik is-selected" data-cat="akademik" data-color="#0D7A87" onclick="MARGO_AGENDA.pickBrushCat('akademik', '#0D7A87', this)">
                 <span class="mag-swatch-dot" style="background:#0D7A87;"></span> Akademik
             </button>
-            <button type="button" class="mag-swatch-btn" data-cat="kegiatan" onclick="MARGO_AGENDA.pickBrushCat('kegiatan', this)">
-                <span class="mag-swatch-dot" style="background:#52B2DC;"></span> Kegiatan
+            <button type="button" class="mag-swatch-btn mag-swatch--rapat" data-cat="rapat" data-color="#4F46E5" onclick="MARGO_AGENDA.pickBrushCat('rapat', '#4F46E5', this)">
+                <span class="mag-swatch-dot" style="background:#4F46E5;"></span> Rapat
             </button>
-            <button type="button" class="mag-swatch-btn" data-cat="rapat" onclick="MARGO_AGENDA.pickBrushCat('rapat', this)">
-                <span class="mag-swatch-dot" style="background:#1D3B5E;"></span> Rapat
+            <button type="button" class="mag-swatch-btn mag-swatch--kegiatan" data-cat="kegiatan" data-color="#EA580C" onclick="MARGO_AGENDA.pickBrushCat('kegiatan', '#EA580C', this)">
+                <span class="mag-swatch-dot" style="background:#EA580C;"></span> Kegiatan
             </button>
-            <button type="button" class="mag-swatch-btn" data-cat="pribadi" onclick="MARGO_AGENDA.pickBrushCat('pribadi', this)">
-                <span class="mag-swatch-dot" style="background:#0D7A87;opacity:.65;"></span> Pengingat
+            <button type="button" class="mag-swatch-btn mag-swatch--sistem" data-cat="sistem" data-color="#1D3B5E" onclick="MARGO_AGENDA.pickBrushCat('sistem', '#1D3B5E', this)">
+                <span class="mag-swatch-dot" style="background:#1D3B5E;"></span> Sistem SSO
+            </button>
+            <button type="button" class="mag-swatch-btn mag-swatch--pengumuman" data-cat="pengumuman" data-color="#0284C7" onclick="MARGO_AGENDA.pickBrushCat('pengumuman', '#0284C7', this)">
+                <span class="mag-swatch-dot" style="background:#0284C7;"></span> Pengumuman
+            </button>
+            <button type="button" class="mag-swatch-btn mag-swatch--pribadi" data-cat="pribadi" data-color="#DB2777" onclick="MARGO_AGENDA.pickBrushCat('pribadi', '#DB2777', this)">
+                <span class="mag-swatch-dot" style="background:#DB2777;"></span> Pribadi
             </button>
         </div>
     </div>
     <div class="mag-role-hint">
         <iconify-icon icon="solar:hand-stars-bold" width="16" style="color:#0D7A87;"></iconify-icon>
         <?php if ($isAdmin): ?>
-            <span><strong>Tip Drag:</strong> Seret tanggal di kalender untuk buat agenda <strong>Semua / Guru / Siswa</strong>. Kaldik bersifat terkunci.</span>
+            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Semua / Guru / Siswa</strong>. Kaldik tersinkron utuh &amp; terkunci.</span>
         <?php elseif ($isGuru): ?>
             <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Diri Sendiri</strong> atau <strong>Kelas yang Anda Ampu</strong>.</span>
         <?php else: ?>
@@ -453,13 +475,26 @@ require_once BASE_PATH . '/includes/header.php';
         </div>
     </div>
 
-    <!-- LEGEND & DB STATUS STRIP -->
+    <!-- LEGEND WARNA LENGKAP (KALDIK + KEGIATAN/RAPAT) & DB STATUS -->
     <div class="mag-subbar">
         <div class="mag-legend-row">
-            <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#1D3B5E;"></span> Kaldik Resmi (Terkunci)</span>
-            <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#0D7A87;"></span> Agenda Admin / Ekosistem</span>
-            <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#52B2DC;"></span> Agenda Kelas (Guru)</span>
-            <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#CBD5E1;border:1px dashed #1D3B5E;"></span> Agenda Pribadi</span>
+            <div class="mag-legend-grp">
+                <span class="mag-legend-title"><iconify-icon icon="solar:lock-keyhole-bold" style="vertical-align:middle;"></iconify-icon> Kaldik:</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#10B981;"></span> Efektif KBM</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EF4444;"></span> Libur Nasional</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#64748B;"></span> Libur Semester</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#F59E0B;"></span> Kegiatan/Ujian</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#8B5CF6;"></span> Keagamaan</span>
+            </div>
+            <div class="mag-legend-grp">
+                <span class="mag-legend-title">Agenda:</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#0D7A87;"></span> Akademik</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#4F46E5;"></span> Rapat</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#EA580C;"></span> Kegiatan</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#1D3B5E;"></span> Sistem</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#0284C7;"></span> Pengumuman/Kelas</span>
+                <span class="mag-legend-item"><span class="mag-legend-swatch" style="background:#DB2777;"></span> Pribadi</span>
+            </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <span class="mag-db-pill" id="calCountPill">0 agenda terlihat</span>
@@ -482,7 +517,14 @@ require_once BASE_PATH . '/includes/header.php';
         <iconify-icon icon="solar:calendar-add-bold" width="18" style="color:#52B2DC;"></iconify-icon>
         <span id="magDragCountLbl">0 tanggal dipilih</span>
     </div>
-    <input type="text" id="magDragTitle" class="mag-drag-input" placeholder="Ketik judul agenda cepat...">
+    <input type="text" id="magDragTitle" class="mag-drag-input" placeholder="Judul agenda / rapat...">
+    <div class="mag-drag-cat-group" id="magDragCatGroup">
+        <button type="button" class="mag-drag-cat-pill is-active" data-cat="akademik" data-color="#0D7A87" style="background:#0D7A87;" onclick="MARGO_AGENDA.pickDragCat('akademik','#0D7A87',this)">Akademik</button>
+        <button type="button" class="mag-drag-cat-pill" data-cat="rapat" data-color="#4F46E5" style="background:#4F46E5;" onclick="MARGO_AGENDA.pickDragCat('rapat','#4F46E5',this)">Rapat</button>
+        <button type="button" class="mag-drag-cat-pill" data-cat="kegiatan" data-color="#EA580C" style="background:#EA580C;" onclick="MARGO_AGENDA.pickDragCat('kegiatan','#EA580C',this)">Kegiatan</button>
+        <button type="button" class="mag-drag-cat-pill" data-cat="pengumuman" data-color="#0284C7" style="background:#0284C7;" onclick="MARGO_AGENDA.pickDragCat('pengumuman','#0284C7',this)">Info</button>
+        <button type="button" class="mag-drag-cat-pill" data-cat="pribadi" data-color="#DB2777" style="background:#DB2777;" onclick="MARGO_AGENDA.pickDragCat('pribadi','#DB2777',this)">Pribadi</button>
+    </div>
     <?php if ($isAdmin): ?>
         <select id="magDragScope" class="mag-drag-select">
             <option value="all">Semua Orang</option>
@@ -505,7 +547,7 @@ require_once BASE_PATH . '/includes/header.php';
             </select>
         <?php endif; ?>
     <?php else: ?>
-        <span style="padding:5px 10px;border-radius:8px;background:rgba(82,178,220,0.2);font-size:11.5px;font-weight:700;">
+        <span style="padding:5px 10px;border-radius:8px;background:rgba(219,39,119,0.28);font-size:11.5px;font-weight:700;">
             <iconify-icon icon="solar:lock-keyhole-minimalistic-bold"></iconify-icon> Pribadi (Saya Saja)
         </span>
     <?php endif; ?>
@@ -518,7 +560,7 @@ require_once BASE_PATH . '/includes/header.php';
     <button type="button" class="mag-drag-btn mag-drag-btn--cancel" onclick="MARGO_AGENDA.cancelDrag()">Batal</button>
 </div>
 
-<!-- MODAL DETAIL AGENDA (READ-ONLY UNTUK KALDIK & NON-PEMILIK, AKSI EDIT/HAPUS UNTUK PEMILIK) -->
+<!-- MODAL DETAIL AGENDA -->
 <div class="ilm-modal-backdrop" id="modalAgendaDetail">
     <div class="ilm-modal-dialog" style="max-width:560px;">
         <div class="ilm-modal-header">
@@ -540,15 +582,15 @@ require_once BASE_PATH . '/includes/header.php';
     </div>
 </div>
 
-<!-- MODAL TAMBAH / EDIT AGENDA (TERSEDIA UNTUK ADMIN, GURU & SISWA SESUAI ATURAN AUDIENS) -->
+<!-- MODAL TAMBAH / EDIT AGENDA (ADMIN, GURU & SISWA) -->
 <div class="ilm-modal-backdrop" id="modalAgendaForm">
-    <div class="ilm-modal-dialog" style="max-width:580px;">
+    <div class="ilm-modal-dialog" style="max-width:590px;">
         <div class="ilm-modal-header">
             <div class="ilm-modal-header__brand">
                 <div class="ilm-modal-header__icon"><iconify-icon icon="solar:calendar-add-bold"></iconify-icon></div>
                 <div>
                     <h3 class="ilm-modal-header__title" id="frmAgHeading">Tambah Agenda Baru</h3>
-                    <p class="ilm-modal-header__subtitle" id="frmAgSub">Tersimpan di database agenda &amp; langsung tampil di kalender</p>
+                    <p class="ilm-modal-header__subtitle" id="frmAgSub">Tersimpan di database agenda &amp; langsung tampil berwarna di kalender</p>
                 </div>
             </div>
             <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('modalAgendaForm')">
@@ -558,10 +600,11 @@ require_once BASE_PATH . '/includes/header.php';
         <form id="formAgendaUniversal" onsubmit="MARGO_AGENDA.saveAgenda(event)">
             <input type="hidden" id="agId" value="0">
             <input type="hidden" id="agScope" value="<?= $isAdmin ? 'all' : 'private' ?>">
+            <input type="hidden" id="agColorHex" value="#0D7A87">
             <div class="ilm-modal-body" style="max-height:calc(85vh - 150px);overflow-y:auto;">
                 <div class="mag-field">
                     <label for="agTitle">Judul Agenda</label>
-                    <input type="text" id="agTitle" class="mag-input" placeholder="Contoh: Rapat Evaluasi / Persiapan Ujian / Belajar Mandiri" required>
+                    <input type="text" id="agTitle" class="mag-input" placeholder="Contoh: Rapat Dewan Guru / Persiapan Ujian / Belajar Mandiri" required>
                 </div>
 
                 <!-- TARGET AUDIENS BERBASIS PERAN -->
@@ -574,26 +617,26 @@ require_once BASE_PATH . '/includes/header.php';
                                 <div><strong>Semua Orang</strong><small>Admin, Guru &amp; Siswa</small></div>
                             </button>
                             <button type="button" class="mag-scope-card" data-val="guru" onclick="MARGO_AGENDA.selectModalScope('guru')">
-                                <iconify-icon icon="solar:user-speak-bold" width="20" style="color:#1D3B5E;"></iconify-icon>
+                                <iconify-icon icon="solar:user-speak-bold" width="20" style="color:#4F46E5;"></iconify-icon>
                                 <div><strong>Khusus Guru</strong><small>Hanya Dewan Guru</small></div>
                             </button>
                             <button type="button" class="mag-scope-card" data-val="siswa" onclick="MARGO_AGENDA.selectModalScope('siswa')">
-                                <iconify-icon icon="solar:square-academic-cap-2-bold" width="20" style="color:#52B2DC;"></iconify-icon>
+                                <iconify-icon icon="solar:square-academic-cap-2-bold" width="20" style="color:#0284C7;"></iconify-icon>
                                 <div><strong>Khusus Siswa</strong><small>Siswa &amp; Ketua Kelas</small></div>
                             </button>
                             <button type="button" class="mag-scope-card" data-val="private" onclick="MARGO_AGENDA.selectModalScope('private')">
-                                <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#1D3B5E;"></iconify-icon>
+                                <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;"></iconify-icon>
                                 <div><strong>Pribadi Admin</strong><small>Hanya Diri Sendiri</small></div>
                             </button>
                         </div>
                     <?php elseif ($isGuru): ?>
                         <div class="mag-scope-grid" id="agScopePicker">
                             <button type="button" class="mag-scope-card is-active" data-val="private" onclick="MARGO_AGENDA.selectModalScope('private')">
-                                <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#1D3B5E;"></iconify-icon>
+                                <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;"></iconify-icon>
                                 <div><strong>Diri Sendiri</strong><small>Hanya terlihat oleh Anda</small></div>
                             </button>
                             <button type="button" class="mag-scope-card" data-val="kelas" onclick="MARGO_AGENDA.selectModalScope('kelas')" <?= empty($userCtx['guru_classes']) ? 'disabled style="opacity:.55;cursor:not-allowed;"' : '' ?>>
-                                <iconify-icon icon="solar:buildings-2-bold" width="20" style="color:#0D7A87;"></iconify-icon>
+                                <iconify-icon icon="solar:buildings-2-bold" width="20" style="color:#0284C7;"></iconify-icon>
                                 <div><strong>Kelas yang Diampu</strong><small><?= !empty($userCtx['guru_classes']) ? (count($userCtx['guru_classes']) . ' rombel tersedia') : 'Belum ada kelas diampu' ?></small></div>
                             </button>
                         </div>
@@ -608,7 +651,7 @@ require_once BASE_PATH . '/includes/header.php';
                         </div>
                     <?php else: ?>
                         <div class="mag-lock-banner" style="margin-bottom:0;">
-                            <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#0D7A87;flex-shrink:0;margin-top:1px;"></iconify-icon>
+                            <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;flex-shrink:0;margin-top:1px;"></iconify-icon>
                             <div>
                                 <strong>Hanya Diri Sendiri (Pribadi)</strong><br>
                                 Agenda yang dibuat oleh siswa bersifat pribadi dan hanya dapat dilihat oleh akun Anda sendiri.
@@ -633,29 +676,41 @@ require_once BASE_PATH . '/includes/header.php';
                         </div>
                     </div>
                     <div class="mag-field">
+                        <label for="agCategory">Kategori Kegiatan</label>
+                        <select id="agCategory" class="mag-input" onchange="MARGO_AGENDA.onModalCatChange()">
+                            <option value="akademik">Akademik</option>
+                            <option value="rapat">Rapat / Koordinasi</option>
+                            <option value="kegiatan">Kegiatan</option>
+                            <option value="sistem">Sistem SSO</option>
+                            <option value="pengumuman">Pengumuman</option>
+                            <option value="pribadi">Pribadi / Pengingat</option>
+                        </select>
+                    </div>
+                    <div class="mag-field">
+                        <label>Warna Label di Kalender</label>
+                        <div class="mag-color-picker" id="agColorSwatches">
+                            <button type="button" class="mag-color-dot-btn is-active" data-hex="#0D7A87" style="background:#0D7A87;" title="Teal (Akademik)" onclick="MARGO_AGENDA.pickModalColor('#0D7A87')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#4F46E5" style="background:#4F46E5;" title="Indigo (Rapat)" onclick="MARGO_AGENDA.pickModalColor('#4F46E5')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#EA580C" style="background:#EA580C;" title="Oranye (Kegiatan)" onclick="MARGO_AGENDA.pickModalColor('#EA580C')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#1D3B5E" style="background:#1D3B5E;" title="Navy (Sistem)" onclick="MARGO_AGENDA.pickModalColor('#1D3B5E')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#0284C7" style="background:#0284C7;" title="Sky Blue (Pengumuman / Kelas)" onclick="MARGO_AGENDA.pickModalColor('#0284C7')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#DB2777" style="background:#DB2777;" title="Magenta (Pribadi)" onclick="MARGO_AGENDA.pickModalColor('#DB2777')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#059669" style="background:#059669;" title="Hijau Zamrud" onclick="MARGO_AGENDA.pickModalColor('#059669')"></button>
+                            <button type="button" class="mag-color-dot-btn" data-hex="#D97706" style="background:#D97706;" title="Kuning Emas" onclick="MARGO_AGENDA.pickModalColor('#D97706')"></button>
+                        </div>
+                    </div>
+                    <div class="mag-field">
                         <label for="agStartTime">Waktu (WIB, opsional)</label>
                         <input type="text" id="agStartTime" class="mag-input" placeholder="08:00">
                     </div>
                     <div class="mag-field">
-                        <label for="agCategory">Kategori</label>
-                        <select id="agCategory" class="mag-input">
-                            <option value="akademik">Akademik</option>
-                            <option value="kegiatan">Kegiatan</option>
-                            <option value="rapat">Rapat / Koordinasi</option>
-                            <option value="sistem">Sistem SSO</option>
-                            <option value="pribadi">Pribadi / Pengingat</option>
-                        </select>
+                        <label for="agLocation">Lokasi / Media (opsional)</label>
+                        <input type="text" id="agLocation" class="mag-input" placeholder="Ruang Kelas / Aula / Zoom">
                     </div>
                 </div>
-                <div class="mag-grid-2">
-                    <div class="mag-field">
-                        <label for="agLocation">Lokasi / Media (opsional)</label>
-                        <input type="text" id="agLocation" class="mag-input" placeholder="Ruang Kelas / Aula / Online">
-                    </div>
-                    <div class="mag-field">
-                        <label for="agLink">Tautan Terkait (opsional)</label>
-                        <input type="text" id="agLink" class="mag-input" placeholder="https://learn.ilmuna.my.id">
-                    </div>
+                <div class="mag-field">
+                    <label for="agLink">Tautan Terkait (opsional)</label>
+                    <input type="text" id="agLink" class="mag-input" placeholder="https://learn.ilmuna.my.id">
                 </div>
                 <div class="mag-field" style="margin-bottom:0;">
                     <label for="agDesc">Catatan / Deskripsi</label>
@@ -681,8 +736,37 @@ require_once BASE_PATH . '/includes/header.php';
     var USER_CTX   = <?= json_encode($userCtx, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     var FOCUS_ID   = <?= (int)$focusId ?>;
 
-    var MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+    var MONTHS   = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     var DAYS_MON = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+
+    var CAT_COLORS = {
+        akademik:   '#0D7A87',
+        rapat:      '#4F46E5',
+        kegiatan:   '#EA580C',
+        sistem:     '#1D3B5E',
+        pengumuman: '#0284C7',
+        pribadi:    '#DB2777'
+    };
+    var CAT_LABELS = {
+        akademik:       'Akademik',
+        rapat:          'Rapat',
+        kegiatan:       'Kegiatan',
+        sistem:         'Sistem SSO',
+        pengumuman:     'Pengumuman',
+        pribadi:        'Pribadi',
+        kbm:            'Efektif KBM',
+        libur_nasional: 'Libur Nasional',
+        libur_semester: 'Libur Semester',
+        keagamaan:      'Keagamaan',
+        kaldik:         'Kaldik'
+    };
+    var KALDIK_COLORS = {
+        'Efektif KBM':            '#10B981',
+        'Libur Nasional':         '#EF4444',
+        'Libur Semester':         '#64748B',
+        'Kegiatan Sekolah/Ujian': '#F59E0B',
+        'Libur Khusus Keagamaan': '#8B5CF6'
+    };
 
     var now = new Date();
     var STATE = {
@@ -691,6 +775,9 @@ require_once BASE_PATH . '/includes/header.php';
         cursor: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
         scopeFilter: 'all',
         brushCat: 'akademik',
+        brushColor: '#0D7A87',
+        dragCat: 'akademik',
+        dragColor: '#0D7A87',
         kuasMode: false,
         dragging: false,
         dragStart: '',
@@ -711,6 +798,38 @@ require_once BASE_PATH . '/includes/header.php';
         return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
     }
     function todayStr() { return toYmd(now); }
+
+    function hexToRgb(hex) {
+        var h = String(hex || '#0D7A87').replace('#', '');
+        if (h.length !== 6) h = '0D7A87';
+        return {
+            r: parseInt(h.slice(0, 2), 16),
+            g: parseInt(h.slice(2, 4), 16),
+            b: parseInt(h.slice(4, 6), 16)
+        };
+    }
+
+    function getEventColor(ag) {
+        if (ag && ag.color_hex && /^#[0-9A-Fa-f]{6}$/.test(ag.color_hex)) {
+            return ag.color_hex.toUpperCase();
+        }
+        if (ag && ag.source === 'kaldik') {
+            return KALDIK_COLORS[ag.status_hari] || '#10B981';
+        }
+        return CAT_COLORS[ag && ag.category] || '#0D7A87';
+    }
+
+    function chipInlineStyle(ag) {
+        var hex = getEventColor(ag);
+        var rgb = hexToRgb(hex);
+        var darkR = Math.max(0, Math.floor(rgb.r * 0.62));
+        var darkG = Math.max(0, Math.floor(rgb.g * 0.62));
+        var darkB = Math.max(0, Math.floor(rgb.b * 0.62));
+        var borderStyle = (ag.visibility_scope === 'private') ? 'dashed' : 'solid';
+        return 'background:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.14);'
+             + 'color:rgb(' + darkR + ',' + darkG + ',' + darkB + ');'
+             + 'border-left:3px ' + borderStyle + ' ' + hex + ';';
+    }
 
     // Format Hijriyah dinamis (Umm Al-Qura) dengan fallback aman
     var hijriFmtShort = null;
@@ -751,7 +870,7 @@ require_once BASE_PATH . '/includes/header.php';
             if (STATE.scopeFilter === 'kelas' && ag.visibility_scope !== 'kelas') return false;
             if (STATE.scopeFilter === 'private' && ag.visibility_scope !== 'private') return false;
             if (q) {
-                var hay = ((ag.title || '') + ' ' + (ag.description || '') + ' ' + (ag.location || '') + ' ' + (ag.visibility_label || '') + ' ' + (ag.status_hari || '')).toLowerCase();
+                var hay = ((ag.title || '') + ' ' + (ag.description || '') + ' ' + (ag.location || '') + ' ' + (ag.visibility_label || '') + ' ' + (ag.status_hari || '') + ' ' + (ag.category || '')).toLowerCase();
                 if (hay.indexOf(q) === -1) return false;
             }
             return true;
@@ -767,29 +886,43 @@ require_once BASE_PATH . '/includes/header.php';
                 map[d].push(ag);
             });
         });
+        // Urutkan tiap hari: agenda khusus (rapat/kegiatan/kelas/pribadi/libur/ujian) di atas, KBM Reguler tetap tampil di bawahnya
+        Object.keys(map).forEach(function (d) {
+            map[d].sort(function (a, b) {
+                var aRoutine = (a.source === 'kaldik' && a.status_hari === 'Efektif KBM' && a.title === 'KBM Reguler') ? 1 : 0;
+                var bRoutine = (b.source === 'kaldik' && b.status_hari === 'Efektif KBM' && b.title === 'KBM Reguler') ? 1 : 0;
+                if (aRoutine !== bRoutine) return aRoutine - bRoutine;
+                return Number(a.id) - Number(b.id);
+            });
+        });
         return map;
     }
 
-    function chipClass(ag) {
-        if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) return 'mag-chip mag-chip--kaldik';
-        if (ag.visibility_scope === 'kelas') return 'mag-chip mag-chip--kelas';
-        if (ag.visibility_scope === 'private') return 'mag-chip mag-chip--private';
-        return 'mag-chip mag-chip--admin';
+    function chipIcon(ag) {
+        var hex = getEventColor(ag);
+        if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) {
+            return '<span class="mag-chip-dot" style="background:' + hex + ';"></span><iconify-icon icon="solar:lock-keyhole-bold" width="10" style="flex-shrink:0;opacity:.75;"></iconify-icon>';
+        }
+        return '<span class="mag-chip-dot" style="background:' + hex + ';"></span>';
     }
 
-    function chipIcon(ag) {
-        if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) return '<iconify-icon icon="solar:lock-keyhole-bold" width="11" style="flex-shrink:0;"></iconify-icon>';
-        if (ag.visibility_scope === 'kelas') return '<iconify-icon icon="solar:buildings-2-bold" width="11" style="flex-shrink:0;"></iconify-icon>';
-        if (ag.visibility_scope === 'private') return '<iconify-icon icon="solar:user-bold" width="11" style="flex-shrink:0;"></iconify-icon>';
-        return '<iconify-icon icon="solar:calendar-mark-bold" width="11" style="flex-shrink:0;"></iconify-icon>';
+    function colorBadgeHtml(label, hex, withLock) {
+        var rgb = hexToRgb(hex);
+        var darkR = Math.max(0, Math.floor(rgb.r * 0.65));
+        var darkG = Math.max(0, Math.floor(rgb.g * 0.65));
+        var darkB = Math.max(0, Math.floor(rgb.b * 0.65));
+        return '<span class="ilmuna-badge" style="background:rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.14);color:rgb(' + darkR + ',' + darkG + ',' + darkB + ');border:1px solid rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.35);">'
+            + (withLock ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> ' : '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + hex + ';margin-right:4px;"></span>')
+            + esc(label) + '</span>';
     }
 
     function scopeBadgeHtml(ag) {
+        var hex = getEventColor(ag);
         if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) {
-            return '<span class="ilmuna-badge ilmuna-badge--navy"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> KALDIK · TERKUNCI</span>';
+            return colorBadgeHtml('KALDIK · ' + (ag.status_hari || 'Terkunci'), hex, true);
         }
-        var cls = (ag.visibility_scope === 'kelas') ? 'ilmuna-badge--info' : (ag.visibility_scope === 'private' ? 'ilmuna-badge--navy' : 'ilmuna-badge--teal');
-        return '<span class="ilmuna-badge ' + cls + '">' + esc(ag.visibility_label || 'Semua Orang') + '</span>';
+        var catLbl = CAT_LABELS[ag.category] || ag.category || 'Agenda';
+        return colorBadgeHtml(catLbl, hex, false) + ' <span class="ilmuna-badge ilmuna-badge--navy">' + esc(ag.visibility_label || 'Semua Orang') + '</span>';
     }
 
     function renderToolbarTitles() {
@@ -820,7 +953,7 @@ require_once BASE_PATH . '/includes/header.php';
         var y = STATE.cursor.getFullYear();
         var m = STATE.cursor.getMonth();
         var first = new Date(y, m, 1);
-        var startOffset = (first.getDay() + 6) % 7; // Senin = 0 .. Minggu = 6
+        var startOffset = (first.getDay() + 6) % 7;
         var daysInMonth = new Date(y, m + 1, 0).getDate();
         var totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
         var startDate = new Date(y, m, 1 - startOffset);
@@ -849,7 +982,7 @@ require_once BASE_PATH . '/includes/header.php';
             var chipsHtml = '';
             var shown = dayEvs.slice(0, 3);
             shown.forEach(function (ag) {
-                chipsHtml += '<div class="' + chipClass(ag) + '" data-agenda-id="' + ag.id + '" title="' + esc(ag.title + ' (' + (ag.visibility_label || '') + ')') + '">'
+                chipsHtml += '<div class="mag-chip" style="' + chipInlineStyle(ag) + '" data-agenda-id="' + ag.id + '" title="' + esc(ag.title + ' · ' + (ag.status_hari || CAT_LABELS[ag.category] || ag.category) + ' (' + (ag.visibility_label || '') + ')') + '">'
                     + chipIcon(ag)
                     + '<span class="mag-chip-title">' + esc(ag.title) + '</span>'
                     + '</div>';
@@ -881,7 +1014,8 @@ require_once BASE_PATH . '/includes/header.php';
             var dt = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i);
             var dStr = toYmd(dt);
             var dayEvs = dateIdx[dStr] || [];
-            html += '<div class="mag-week-col' + (dStr === tStr ? ' is-today' : '') + '">'
+            var colCls = 'mag-week-col' + (dStr === tStr ? ' is-today' : '') + (dt.getDay() === 0 ? ' is-sunday' : '');
+            html += '<div class="' + colCls + '">'
                 + '<div class="mag-week-head">'
                 + '<div class="mag-week-day">' + DAYS_MON[i] + '</div>'
                 + '<div class="mag-week-num">' + dt.getDate() + '</div>'
@@ -890,9 +1024,9 @@ require_once BASE_PATH . '/includes/header.php';
                 + '<div class="mag-week-body">';
             if (dayEvs.length) {
                 dayEvs.forEach(function (ag) {
-                    html += '<div class="' + chipClass(ag) + '" style="white-space:normal;padding:6px 8px;flex-direction:column;align-items:flex-start;gap:2px;" onclick="MARGO_AGENDA.openDetail(' + ag.id + ')">'
+                    html += '<div class="mag-chip" style="' + chipInlineStyle(ag) + 'white-space:normal;padding:6px 8px;flex-direction:column;align-items:flex-start;gap:2px;" onclick="MARGO_AGENDA.openDetail(' + ag.id + ')">'
                         + '<div style="display:flex;align-items:center;gap:5px;width:100%;">' + chipIcon(ag) + '<span style="font-weight:800;">' + esc(ag.title) + '</span></div>'
-                        + '<div style="font-size:10px;opacity:.8;">' + esc(ag.visibility_label || '') + (ag.start_time ? ' · ' + esc(ag.start_time) : '') + '</div>'
+                        + '<div style="font-size:10px;opacity:.85;">' + esc(ag.status_hari || CAT_LABELS[ag.category] || ag.visibility_label || '') + (ag.start_time ? ' · ' + esc(ag.start_time) : '') + '</div>'
                         + '</div>';
                 });
             } else {
@@ -931,9 +1065,8 @@ require_once BASE_PATH . '/includes/header.php';
     }
 
     function renderAgendaCardHtml(ag) {
-        var tStr = todayStr();
         var isKaldik = (ag.source === 'kaldik' || Number(ag.is_locked) === 1);
-        var isPast = (ag.end_date || ag.start_date) < tStr;
+        var hex = getEventColor(ag);
         var actBtns = '';
         if (ag.can_edit && !isKaldik) {
             actBtns = '<div style="display:flex;gap:5px;" onclick="event.stopPropagation()">'
@@ -941,15 +1074,15 @@ require_once BASE_PATH . '/includes/header.php';
                 + '<button type="button" class="mag-mini-btn" onclick="MARGO_AGENDA.deleteAgenda(' + ag.id + ')"><iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon></button>'
                 + '</div>';
         }
-        return '<article class="mag-item' + (isKaldik ? ' is-kaldik' : '') + '" onclick="MARGO_AGENDA.openDetail(' + ag.id + ')">'
-            + '<div class="mag-date-box' + (isKaldik ? ' is-kaldik' : (isPast ? ' is-past' : '')) + '">'
+        return '<article class="mag-item" style="border-left:4px solid ' + hex + ';" onclick="MARGO_AGENDA.openDetail(' + ag.id + ')">'
+            + '<div class="mag-date-box" style="background:' + hex + ';">'
             + '<span class="mag-date-m">' + esc(ag.month_short) + '</span>'
             + '<span class="mag-date-d">' + esc(ag.day_num) + '</span>'
             + '<span class="mag-date-y">' + esc(ag.year) + '</span>'
             + '</div>'
             + '<div class="mag-item-body">'
             + '<div class="mag-item-top">'
-            + '<h4 class="mag-item-title">' + (isKaldik ? '<iconify-icon icon="solar:lock-keyhole-bold" style="vertical-align:middle;margin-right:4px;"></iconify-icon>' : '') + esc(ag.title) + '</h4>'
+            + '<h4 class="mag-item-title">' + (isKaldik ? '<iconify-icon icon="solar:lock-keyhole-bold" style="vertical-align:middle;margin-right:4px;color:' + hex + ';"></iconify-icon>' : '') + esc(ag.title) + '</h4>'
             + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' + scopeBadgeHtml(ag) + actBtns + '</div>'
             + '</div>'
             + (ag.description ? '<div class="mag-item-desc">' + esc(ag.description) + '</div>' : '')
@@ -1001,6 +1134,12 @@ require_once BASE_PATH . '/includes/header.php';
         });
     }
 
+    function syncDragCatPills() {
+        document.querySelectorAll('#magDragCatGroup .mag-drag-cat-pill').forEach(function (b) {
+            b.classList.toggle('is-active', b.getAttribute('data-cat') === STATE.dragCat);
+        });
+    }
+
     function showDragBar() {
         var bar = document.getElementById('magDragBar');
         var lbl = document.getElementById('magDragCountLbl');
@@ -1008,6 +1147,9 @@ require_once BASE_PATH . '/includes/header.php';
         var sorted = STATE.selectedDates.slice().sort();
         var rangeTxt = sorted.length === 1 ? sorted[0] : (sorted[0] + ' s/d ' + sorted[sorted.length - 1]);
         lbl.textContent = sorted.length + ' tanggal (' + rangeTxt + ')';
+        STATE.dragCat = STATE.brushCat;
+        STATE.dragColor = STATE.brushColor;
+        syncDragCatPills();
         bar.classList.add('show');
         var inp = document.getElementById('magDragTitle');
         if (inp) setTimeout(function () { inp.focus(); }, 60);
@@ -1142,13 +1284,21 @@ require_once BASE_PATH . '/includes/header.php';
             var card = document.getElementById('magRbcCard');
             if (card) card.classList.toggle('mag-is-kuas', STATE.kuasMode);
             if (STATE.kuasMode && window.Ilmuna) {
-                Ilmuna.info('Mode Kuas Aktif', 'Klik atau seret tanggal pada kalender untuk menjadwalkan agenda cepat kategori "' + STATE.brushCat.toUpperCase() + '".');
+                Ilmuna.info('Mode Kuas Aktif', 'Klik atau seret tanggal pada kalender untuk membuat agenda cepat kategori "' + (CAT_LABELS[STATE.brushCat] || STATE.brushCat) + '".');
             }
         },
-        pickBrushCat: function (cat, el) {
+        pickBrushCat: function (cat, hex, el) {
             STATE.brushCat = cat;
+            STATE.brushColor = hex || CAT_COLORS[cat] || '#0D7A87';
             document.querySelectorAll('#magCatSwatches .mag-swatch-btn').forEach(function (b) {
                 b.classList.toggle('is-selected', b === el);
+            });
+        },
+        pickDragCat: function (cat, hex, el) {
+            STATE.dragCat = cat;
+            STATE.dragColor = hex || CAT_COLORS[cat] || '#0D7A87';
+            document.querySelectorAll('#magDragCatGroup .mag-drag-cat-pill').forEach(function (b) {
+                b.classList.toggle('is-active', b === el);
             });
         },
         onDragScopeChange: function () {
@@ -1169,12 +1319,15 @@ require_once BASE_PATH . '/includes/header.php';
             var quickKelasEl = document.getElementById('magDragKelas');
             var chosenScope = quickScopeEl ? quickScopeEl.value : defaultScopeForRole();
             var chosenKelas = quickKelasEl ? quickKelasEl.value : '';
+            var cCat = STATE.dragCat || STATE.brushCat;
+            var cCol = STATE.dragColor || STATE.brushColor;
             hideDragBar();
             MARGO_AGENDA.openFormModal(null, {
                 start_date: sorted[0],
                 end_date: sorted[sorted.length - 1],
                 title: quickTitle,
-                category: STATE.brushCat,
+                category: cCat,
+                color_hex: cCol,
                 visibility_scope: chosenScope,
                 target_kelas_id: chosenKelas
             });
@@ -1183,7 +1336,7 @@ require_once BASE_PATH . '/includes/header.php';
             if (!STATE.selectedDates.length) return;
             var title = (document.getElementById('magDragTitle').value || '').trim();
             if (!title) {
-                if (window.Ilmuna) Ilmuna.warning('Judul Diperlukan', 'Isi judul agenda singkat pada kotak di bar bawah sebelum menyimpan.');
+                if (window.Ilmuna) Ilmuna.warning('Judul Diperlukan', 'Isi judul agenda/rapat pada kotak di bar bawah sebelum menyimpan.');
                 var inp = document.getElementById('magDragTitle');
                 if (inp) inp.focus();
                 return;
@@ -1196,7 +1349,8 @@ require_once BASE_PATH . '/includes/header.php';
             var res = await apiPost('save_batch', {
                 dates: STATE.selectedDates,
                 title: title,
-                category: STATE.brushCat,
+                category: STATE.dragCat || STATE.brushCat,
+                color_hex: STATE.dragColor || STATE.brushColor,
                 visibility_scope: scopeVal,
                 target_kelas_id: kelasVal
             });
@@ -1220,6 +1374,22 @@ require_once BASE_PATH . '/includes/header.php';
             var kWrap = document.getElementById('agKelasWrap');
             if (kWrap) kWrap.style.display = (val === 'kelas') ? '' : 'none';
         },
+        pickModalColor: function (hex) {
+            var norm = String(hex || '#0D7A87').toUpperCase();
+            var inp = document.getElementById('agColorHex');
+            if (inp) inp.value = norm;
+            document.querySelectorAll('#agColorSwatches .mag-color-dot-btn').forEach(function (b) {
+                var active = (b.getAttribute('data-hex') || '').toUpperCase() === norm;
+                b.classList.toggle('is-active', active);
+                b.innerHTML = active ? '<iconify-icon icon="solar:check-read-bold" width="13"></iconify-icon>' : '';
+            });
+        },
+        onModalCatChange: function () {
+            var cat = document.getElementById('agCategory').value;
+            if (CAT_COLORS[cat]) {
+                MARGO_AGENDA.pickModalColor(CAT_COLORS[cat]);
+            }
+        },
         setQuickDur: function (daysToAdd) {
             var sVal = document.getElementById('agStartDate').value;
             if (!sVal) return;
@@ -1228,16 +1398,27 @@ require_once BASE_PATH . '/includes/header.php';
             document.getElementById('agEndDate').value = toYmd(dt);
         },
         openFormForDate: function (dStr) {
-            MARGO_AGENDA.openFormModal(null, { start_date: dStr, end_date: dStr, category: STATE.brushCat });
+            MARGO_AGENDA.openFormModal(null, {
+                start_date: dStr,
+                end_date: dStr,
+                category: STATE.brushCat,
+                color_hex: STATE.brushColor
+            });
         },
         openDetail: function (id) {
             var ag = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });
             if (!ag) return;
             var isKaldik = (ag.source === 'kaldik' || Number(ag.is_locked) === 1);
+            var hex = getEventColor(ag);
 
-            document.getElementById('detAgIcon').innerHTML = isKaldik
-                ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon>'
-                : '<iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>';
+            var iconBox = document.getElementById('detAgIcon');
+            if (iconBox) {
+                iconBox.style.background = hex;
+                iconBox.style.color = '#fff';
+                iconBox.innerHTML = isKaldik
+                    ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon>'
+                    : '<iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>';
+            }
             document.getElementById('detAgTitle').textContent = ag.title;
             document.getElementById('detAgDate').textContent = ag.start_date
                 + (ag.end_date && ag.end_date !== ag.start_date ? ' s/d ' + ag.end_date : '')
@@ -1246,7 +1427,7 @@ require_once BASE_PATH . '/includes/header.php';
             var bodyHtml = '';
             if (isKaldik) {
                 bodyHtml += '<div class="mag-lock-banner">'
-                    + '<iconify-icon icon="solar:lock-keyhole-bold" width="22" style="color:#1D3B5E;flex-shrink:0;"></iconify-icon>'
+                    + '<iconify-icon icon="solar:lock-keyhole-bold" width="22" style="color:' + hex + ';flex-shrink:0;"></iconify-icon>'
                     + '<div><strong>Agenda Resmi Kalender Pendidikan (Kaldik) · Terkunci Permanen</strong><br>'
                     + 'Tersinkron otomatis dari Ilmuna Learn melalui Database Trigger dan <strong>tidak dapat diubah atau dihapus</strong> dari Margo One SSO.</div>'
                     + '</div>';
@@ -1254,7 +1435,6 @@ require_once BASE_PATH . '/includes/header.php';
 
             bodyHtml += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">'
                 + scopeBadgeHtml(ag)
-                + (ag.status_hari ? '<span class="ilmuna-badge ilmuna-badge--teal">' + esc(ag.status_hari) + '</span>' : '')
                 + (ag.location ? '<span class="ilmuna-badge ilmuna-badge--navy"><iconify-icon icon="solar:map-point-bold"></iconify-icon> ' + esc(ag.location) + '</span>' : '')
                 + '</div>'
                 + '<p style="margin:0 0 10px;font-size:13.5px;line-height:1.65;color:#334155;white-space:pre-line;">' + esc(ag.description || 'Tidak ada catatan tambahan.') + '</p>'
@@ -1298,17 +1478,20 @@ require_once BASE_PATH . '/includes/header.php';
                 document.getElementById('agLink').value = ag.link_url_raw || '';
                 document.getElementById('agDesc').value = ag.description || '';
                 MARGO_AGENDA.selectModalScope(ag.visibility_scope || defaultScopeForRole());
+                MARGO_AGENDA.pickModalColor(getEventColor(ag));
                 var kSel = document.getElementById('agKelasId');
                 if (kSel && ag.target_kelas_id) kSel.value = String(ag.target_kelas_id);
             } else {
                 var p = preset || {};
+                var cCat = p.category || STATE.brushCat || 'akademik';
                 document.getElementById('frmAgHeading').textContent = 'Tambah Agenda Baru';
                 document.getElementById('agId').value = '0';
                 document.getElementById('agTitle').value = p.title || '';
                 document.getElementById('agStartDate').value = p.start_date || todayStr();
                 document.getElementById('agEndDate').value = p.end_date || p.start_date || todayStr();
-                document.getElementById('agCategory').value = p.category || STATE.brushCat || 'akademik';
+                document.getElementById('agCategory').value = cCat;
                 MARGO_AGENDA.selectModalScope(p.visibility_scope || defaultScopeForRole());
+                MARGO_AGENDA.pickModalColor(p.color_hex || CAT_COLORS[cCat] || '#0D7A87');
                 var kSel2 = document.getElementById('agKelasId');
                 if (kSel2 && p.target_kelas_id) kSel2.value = String(p.target_kelas_id);
             }
@@ -1330,6 +1513,7 @@ require_once BASE_PATH . '/includes/header.php';
                 end_date: document.getElementById('agEndDate').value,
                 start_time: document.getElementById('agStartTime').value.trim(),
                 category: document.getElementById('agCategory').value,
+                color_hex: document.getElementById('agColorHex') ? document.getElementById('agColorHex').value : '',
                 location: document.getElementById('agLocation').value.trim(),
                 link_url: document.getElementById('agLink').value.trim(),
                 description: document.getElementById('agDesc').value.trim(),

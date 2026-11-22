@@ -281,7 +281,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
     // 5. Portal Content (Agenda dari Dedicated Agenda DB + Kaldik Sync, Pengumuman, Layanan Ekosistem Non-SSO)
     $portalAgendas = margo_agenda_fetch_visible($pdo, getCurrentUser(), [
         'include_inactive_admin' => true,
-        'limit'                  => 300,
+        'limit'                  => 1000,
     ]);
     $agendaDbStatus = margo_agenda_get_status($pdo);
 
@@ -754,6 +754,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 'start_time'       => (string)($_POST['start_time'] ?? ''),
                 'location'         => (string)($_POST['location'] ?? ''),
                 'category'         => (string)($_POST['category'] ?? 'akademik'),
+                'color_hex'        => (string)($_POST['color_hex'] ?? ''),
                 'link_url'         => (string)($_POST['link_url'] ?? ''),
                 'visibility_scope' => (string)($_POST['visibility_scope'] ?? 'all'),
                 'target_kelas_id'  => (int)($_POST['target_kelas_id'] ?? 0),
@@ -1634,13 +1635,14 @@ require_once BASE_PATH . '/includes/header.php';
                     <div class="ssoadm-field"><label>Tanggal Mulai</label><input type="date" id="pAgStart" class="ssoadm-input" required></div>
                     <div class="ssoadm-field"><label>Tanggal Selesai (opsional)</label><input type="date" id="pAgEnd" class="ssoadm-input"></div>
                     <div class="ssoadm-field"><label>Jam WIB (opsional)</label><input type="text" id="pAgTime" class="ssoadm-input" placeholder="08:00"></div>
-                    <div class="ssoadm-field"><label>Kategori</label>
+                    <div class="ssoadm-field"><label>Kategori &amp; Warna</label>
                         <select id="pAgCat" class="ssoadm-input">
-                            <option value="akademik">Akademik</option>
-                            <option value="sistem">Sistem SSO</option>
-                            <option value="rapat">Rapat</option>
-                            <option value="kegiatan">Kegiatan</option>
-                            <option value="pengumuman">Pengumuman</option>
+                            <option value="akademik">Akademik (Teal #0D7A87)</option>
+                            <option value="rapat">Rapat / Koordinasi (Indigo #4F46E5)</option>
+                            <option value="kegiatan">Kegiatan (Oranye #EA580C)</option>
+                            <option value="sistem">Sistem SSO (Navy #1D3B5E)</option>
+                            <option value="pengumuman">Pengumuman (Biru #0284C7)</option>
+                            <option value="pribadi">Pribadi / Pengingat (Magenta #DB2777)</option>
                         </select>
                     </div>
                     <div class="ssoadm-field"><label>Target Audiens (Siapa yang Dapat Melihat)</label>
@@ -2101,10 +2103,12 @@ require_once BASE_PATH . '/includes/header.php';
         if (tbAg) {
             tbAg.innerHTML = agendas.length ? agendas.map(function (a) {
                 var isKaldik = (a.source === 'kaldik' || Number(a.is_locked) === 1);
+                var cHex = (a.color_hex && /^#[0-9A-Fa-f]{6}$/.test(a.color_hex)) ? a.color_hex : '#0D7A87';
+                var colorDot = '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cHex + ';margin-right:5px;vertical-align:middle;"></span>';
                 var stB = Number(a.is_active) === 1 ? '<span class="ssoadm-badge ssoadm-badge--ok">Aktif</span>' : '<span class="ssoadm-badge ssoadm-badge--err">Draft</span>';
                 var srcBadge = isKaldik
-                    ? '<span class="ssoadm-badge ssoadm-badge--navy"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> KALDIK · TERKUNCI</span>'
-                    : '<span class="ssoadm-badge ssoadm-badge--teal">' + esc(a.visibility_label || 'Semua Orang') + '</span> <span class="ssoadm-badge ssoadm-badge--navy">' + esc(a.category || 'akademik') + '</span>';
+                    ? '<span class="ssoadm-badge" style="background:' + cHex + '1F;color:' + cHex + ';border:1px solid ' + cHex + '55;"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> KALDIK · ' + esc(a.status_hari || 'Terkunci') + '</span>'
+                    : '<span class="ssoadm-badge ssoadm-badge--teal">' + esc(a.visibility_label || 'Semua Orang') + '</span> <span class="ssoadm-badge" style="background:' + cHex + '1F;color:' + cHex + ';border:1px solid ' + cHex + '55;">' + colorDot + esc(a.category || 'akademik') + '</span>';
                 var actBtns = isKaldik
                     ? '<span style="font-size:11.5px;font-weight:700;color:#64748B;display:inline-flex;align-items:center;gap:4px;"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> Read-Only (Kaldik)</span>'
                     : '<div style="display:flex;gap:6px;justify-content:flex-end;">'

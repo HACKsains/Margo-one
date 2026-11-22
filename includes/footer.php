@@ -30,6 +30,7 @@ try {
                 'month_short'      => (string)$rF['month_short'],
                 'day_num'          => (string)$rF['day_num'],
                 'source'           => (string)$rF['source'],
+                'color_hex'        => (string)($rF['color_hex'] ?? '#0D7A87'),
                 'visibility_label' => (string)$rF['visibility_label'],
             ];
         }
@@ -233,7 +234,9 @@ try {
             }
             strip.innerHTML = items.map(function (ag, idx) {
                 var cls = idx === 0 ? 'margo-agenda-card is-featured' : 'margo-agenda-card';
-                return '<a class="' + cls + '" href="' + escHtml(BASE_URL + '/agenda?id=' + ag.id) + '" title="' + escHtml(ag.title) + '">'
+                var accent = (ag.color_hex && /^#[0-9A-Fa-f]{6}$/.test(ag.color_hex)) ? ag.color_hex : '';
+                var stAttr = (idx > 0 && accent) ? (' style="border-top:3px solid ' + accent + ';"') : '';
+                return '<a class="' + cls + '"' + stAttr + ' href="' + escHtml(BASE_URL + '/agenda?id=' + ag.id) + '" title="' + escHtml(ag.title) + '">'
                     + '<span class="margo-agenda-year">' + escHtml(ag.year) + '</span>'
                     + '<span class="margo-agenda-month">' + escHtml(ag.month_short) + '</span>'
                     + '<span class="margo-agenda-day">' + escHtml(ag.day_num) + '</span>'

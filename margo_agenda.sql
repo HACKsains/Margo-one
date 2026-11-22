@@ -1,10 +1,10 @@
 -- ==============================================================================
--- MARGO ONE — ILMUNA SSO · DEDICATED AGENDA DATABASE & KALDIK TRIGGERS
+-- MARGO ONE — ILMUNA SSO · DEDICATED AGENDA DATABASE & KALDIK TRIGGERS (v2)
 -- ==============================================================================
 -- Database khusus Agenda: `uofruaju_margo_agenda`
--- Catatan cPanel: Buat database `uofruaju_margo_agenda` di cPanel -> MySQL Databases
--- lalu beri hak akses ALL PRIVILEGES kepada user `uofruaju_margo_one` & `uofruaju_Learn_Ilmuna`.
--- Skema tabel & 5 MySQL Trigger ini juga dipasang otomatis oleh `includes/agenda-engine.php`.
+-- Menyinkronkan SEMUA baris `uofruaju_learn_ilmuna`.`kalender_pendidikan`
+-- (termasuk Efektif KBM / KBM Reguler, Libur Nasional, Libur Semester,
+--  Kegiatan Sekolah/Ujian, dan Libur Khusus Keagamaan) lengkap dengan warna status.
 -- ==============================================================================
 
 CREATE DATABASE IF NOT EXISTS `uofruaju_margo_agenda`
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `agendas` (
     `start_time` VARCHAR(12) NULL,
     `location` VARCHAR(160) NULL,
     `category` VARCHAR(40) NOT NULL DEFAULT 'akademik',
+    `color_hex` VARCHAR(20) NULL DEFAULT NULL,
     `status_hari` VARCHAR(60) NULL DEFAULT NULL,
     `tahun_pelajaran` VARCHAR(30) NULL DEFAULT NULL,
     `semester` VARCHAR(20) NULL DEFAULT NULL,
@@ -72,7 +73,7 @@ END$$
 DELIMITER ;
 
 -- ==============================================================================
--- TRIGGER SINKRONISASI REAL-TIME PADA `uofruaju_learn_ilmuna`.`kalender_pendidikan`
+-- TRIGGER SINKRONISASI REAL-TIME SEMUA BARIS KALDIK (v2_sync_all_kaldik)
 -- ==============================================================================
 USE `uofruaju_learn_ilmuna`;
 
@@ -83,30 +84,44 @@ CREATE TRIGGER `trg_kaldik_to_agenda_ai`
 AFTER INSERT ON `kalender_pendidikan`
 FOR EACH ROW
 BEGIN
-    IF (
-        (NEW.status_hari != 'Efektif KBM' AND COALESCE(NEW.keterangan, '') NOT LIKE 'Libur Akhir Pekan%')
-        OR
-        (NEW.status_hari = 'Efektif KBM' AND TRIM(COALESCE(NEW.keterangan, '')) != '' AND TRIM(COALESCE(NEW.keterangan, '')) != 'KBM Reguler')
-    ) THEN
-        SET @margo_kaldik_sync_bypass = 1;
-        INSERT INTO `uofruaju_margo_agenda`.`agendas`
-            (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
-        VALUES (
-            'kaldik', NEW.id, 1,
-            CASE WHEN TRIM(COALESCE(NEW.keterangan, '')) = '' OR TRIM(COALESCE(NEW.keterangan, '')) = 'KBM Reguler' THEN NEW.status_hari ELSE LEFT(TRIM(NEW.keterangan), 200) END,
-            CONCAT('Agenda resmi Kalender Pendidikan (Kaldik) · TA ', COALESCE(NEW.tahun_pelajaran, '-'), ' Semester ', COALESCE(NEW.semester, '-'), ' · Status: ', NEW.status_hari, IF(TRIM(COALESCE(NEW.keterangan, '')) != '', CONCAT(' — ', TRIM(NEW.keterangan)), '')),
-            NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
-            CASE WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan' WHEN NEW.status_hari IN ('Libur Nasional', 'Libur Khusus Keagamaan', 'Libur Semester') THEN 'kaldik' ELSE 'akademik' END,
-            NEW.status_hari, NEW.tahun_pelajaran, NEW.semester, 'https://learn.ilmuna.my.id', 'all', 'Kalender Pendidikan (Kaldik)', 'kaldik', 1
-        )
-        ON DUPLICATE KEY UPDATE
-            `is_locked` = 1, `title` = VALUES(`title`), `description` = VALUES(`description`),
-            `start_date` = VALUES(`start_date`), `end_date` = VALUES(`end_date`),
-            `category` = VALUES(`category`), `status_hari` = VALUES(`status_hari`),
-            `tahun_pelajaran` = VALUES(`tahun_pelajaran`), `semester` = VALUES(`semester`),
-            `visibility_scope` = 'all', `is_active` = 1;
-        SET @margo_kaldik_sync_bypass = 0;
-    END IF;
+    /* v2_sync_all_kaldik */
+    SET @margo_kaldik_sync_bypass = 1;
+    INSERT INTO `uofruaju_margo_agenda`.`agendas`
+        (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `color_hex`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
+    VALUES (
+        'kaldik', NEW.id, 1,
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN IF(TRIM(COALESCE(NEW.keterangan, '')) = '', 'Efektif KBM', LEFT(TRIM(NEW.keterangan), 200))
+            WHEN TRIM(COALESCE(NEW.keterangan, '')) = '' OR TRIM(COALESCE(NEW.keterangan, '')) = 'KBM Reguler' THEN NEW.status_hari
+            ELSE LEFT(TRIM(NEW.keterangan), 200)
+        END,
+        CONCAT('Agenda resmi Kalender Pendidikan (Kaldik) · TA ', COALESCE(NEW.tahun_pelajaran, '-'), ' Semester ', COALESCE(NEW.semester, '-'), ' · Status: ', NEW.status_hari, IF(TRIM(COALESCE(NEW.keterangan, '')) != '', CONCAT(' — ', TRIM(NEW.keterangan)), '')),
+        NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN 'kbm'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan'
+            WHEN NEW.status_hari = 'Libur Nasional' THEN 'libur_nasional'
+            WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN 'keagamaan'
+            WHEN NEW.status_hari = 'Libur Semester' THEN 'libur_semester'
+            ELSE 'kaldik'
+        END,
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN '#10B981'
+            WHEN NEW.status_hari = 'Libur Nasional' THEN '#EF4444'
+            WHEN NEW.status_hari = 'Libur Semester' THEN '#64748B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN '#8B5CF6'
+            ELSE '#10B981'
+        END,
+        NEW.status_hari, NEW.tahun_pelajaran, NEW.semester, 'https://learn.ilmuna.my.id', 'all', 'Kalender Pendidikan (Kaldik)', 'kaldik', 1
+    )
+    ON DUPLICATE KEY UPDATE
+        `is_locked` = 1, `title` = VALUES(`title`), `description` = VALUES(`description`),
+        `start_date` = VALUES(`start_date`), `end_date` = VALUES(`end_date`),
+        `category` = VALUES(`category`), `color_hex` = VALUES(`color_hex`), `status_hari` = VALUES(`status_hari`),
+        `tahun_pelajaran` = VALUES(`tahun_pelajaran`), `semester` = VALUES(`semester`),
+        `visibility_scope` = 'all', `is_active` = 1;
+    SET @margo_kaldik_sync_bypass = 0;
 END$$
 
 DROP TRIGGER IF EXISTS `trg_kaldik_to_agenda_au`$$
@@ -114,32 +129,43 @@ CREATE TRIGGER `trg_kaldik_to_agenda_au`
 AFTER UPDATE ON `kalender_pendidikan`
 FOR EACH ROW
 BEGIN
+    /* v2_sync_all_kaldik */
     SET @margo_kaldik_sync_bypass = 1;
-    IF (
-        (NEW.status_hari != 'Efektif KBM' AND COALESCE(NEW.keterangan, '') NOT LIKE 'Libur Akhir Pekan%')
-        OR
-        (NEW.status_hari = 'Efektif KBM' AND TRIM(COALESCE(NEW.keterangan, '')) != '' AND TRIM(COALESCE(NEW.keterangan, '')) != 'KBM Reguler')
-    ) THEN
-        INSERT INTO `uofruaju_margo_agenda`.`agendas`
-            (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
-        VALUES (
-            'kaldik', NEW.id, 1,
-            CASE WHEN TRIM(COALESCE(NEW.keterangan, '')) = '' OR TRIM(COALESCE(NEW.keterangan, '')) = 'KBM Reguler' THEN NEW.status_hari ELSE LEFT(TRIM(NEW.keterangan), 200) END,
-            CONCAT('Agenda resmi Kalender Pendidikan (Kaldik) · TA ', COALESCE(NEW.tahun_pelajaran, '-'), ' Semester ', COALESCE(NEW.semester, '-'), ' · Status: ', NEW.status_hari, IF(TRIM(COALESCE(NEW.keterangan, '')) != '', CONCAT(' — ', TRIM(NEW.keterangan)), '')),
-            NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
-            CASE WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan' WHEN NEW.status_hari IN ('Libur Nasional', 'Libur Khusus Keagamaan', 'Libur Semester') THEN 'kaldik' ELSE 'akademik' END,
-            NEW.status_hari, NEW.tahun_pelajaran, NEW.semester, 'https://learn.ilmuna.my.id', 'all', 'Kalender Pendidikan (Kaldik)', 'kaldik', 1
-        )
-        ON DUPLICATE KEY UPDATE
-            `is_locked` = 1, `title` = VALUES(`title`), `description` = VALUES(`description`),
-            `start_date` = VALUES(`start_date`), `end_date` = VALUES(`end_date`),
-            `category` = VALUES(`category`), `status_hari` = VALUES(`status_hari`),
-            `tahun_pelajaran` = VALUES(`tahun_pelajaran`), `semester` = VALUES(`semester`),
-            `visibility_scope` = 'all', `is_active` = 1;
-    ELSE
-        DELETE FROM `uofruaju_margo_agenda`.`agendas`
-        WHERE `source` = 'kaldik' AND `source_ref_id` = NEW.id;
-    END IF;
+    INSERT INTO `uofruaju_margo_agenda`.`agendas`
+        (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`, `location`, `category`, `color_hex`, `status_hari`, `tahun_pelajaran`, `semester`, `link_url`, `visibility_scope`, `created_by_name`, `created_by_role`, `is_active`)
+    VALUES (
+        'kaldik', NEW.id, 1,
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN IF(TRIM(COALESCE(NEW.keterangan, '')) = '', 'Efektif KBM', LEFT(TRIM(NEW.keterangan), 200))
+            WHEN TRIM(COALESCE(NEW.keterangan, '')) = '' OR TRIM(COALESCE(NEW.keterangan, '')) = 'KBM Reguler' THEN NEW.status_hari
+            ELSE LEFT(TRIM(NEW.keterangan), 200)
+        END,
+        CONCAT('Agenda resmi Kalender Pendidikan (Kaldik) · TA ', COALESCE(NEW.tahun_pelajaran, '-'), ' Semester ', COALESCE(NEW.semester, '-'), ' · Status: ', NEW.status_hari, IF(TRIM(COALESCE(NEW.keterangan, '')) != '', CONCAT(' — ', TRIM(NEW.keterangan)), '')),
+        NEW.tanggal, NEW.tanggal, NULL, 'Kalender Pendidikan Sekolah',
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN 'kbm'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN 'kegiatan'
+            WHEN NEW.status_hari = 'Libur Nasional' THEN 'libur_nasional'
+            WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN 'keagamaan'
+            WHEN NEW.status_hari = 'Libur Semester' THEN 'libur_semester'
+            ELSE 'kaldik'
+        END,
+        CASE
+            WHEN NEW.status_hari = 'Efektif KBM' THEN '#10B981'
+            WHEN NEW.status_hari = 'Libur Nasional' THEN '#EF4444'
+            WHEN NEW.status_hari = 'Libur Semester' THEN '#64748B'
+            WHEN NEW.status_hari = 'Kegiatan Sekolah/Ujian' THEN '#F59E0B'
+            WHEN NEW.status_hari = 'Libur Khusus Keagamaan' THEN '#8B5CF6'
+            ELSE '#10B981'
+        END,
+        NEW.status_hari, NEW.tahun_pelajaran, NEW.semester, 'https://learn.ilmuna.my.id', 'all', 'Kalender Pendidikan (Kaldik)', 'kaldik', 1
+    )
+    ON DUPLICATE KEY UPDATE
+        `is_locked` = 1, `title` = VALUES(`title`), `description` = VALUES(`description`),
+        `start_date` = VALUES(`start_date`), `end_date` = VALUES(`end_date`),
+        `category` = VALUES(`category`), `color_hex` = VALUES(`color_hex`), `status_hari` = VALUES(`status_hari`),
+        `tahun_pelajaran` = VALUES(`tahun_pelajaran`), `semester` = VALUES(`semester`),
+        `visibility_scope` = 'all', `is_active` = 1;
     SET @margo_kaldik_sync_bypass = 0;
 END$$
 
@@ -148,6 +174,7 @@ CREATE TRIGGER `trg_kaldik_to_agenda_ad`
 AFTER DELETE ON `kalender_pendidikan`
 FOR EACH ROW
 BEGIN
+    /* v2_sync_all_kaldik */
     SET @margo_kaldik_sync_bypass = 1;
     DELETE FROM `uofruaju_margo_agenda`.`agendas`
     WHERE `source` = 'kaldik' AND `source_ref_id` = OLD.id;

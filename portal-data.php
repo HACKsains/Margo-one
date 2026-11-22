@@ -134,7 +134,7 @@ try {
         $out = margo_agenda_fetch_visible($pdo, $currentUser, [
             'upcoming' => !$showAll,
             'month'    => $monthFilter,
-            'limit'    => $showAll ? 600 : 12,
+            'limit'    => $showAll ? 1500 : 12,
         ]);
 
         echo json_encode(['success' => true, 'data' => $out], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
