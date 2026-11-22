@@ -705,8 +705,230 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         if ($act === 'admin_unlink_google') {
             $uid = (int)($_POST['user_id'] ?? 0);
             $pdo->prepare("UPDATE sso_users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$uid]);
+            try {
+                $pdo->prepare("DELETE FROM sso_google_link_verifications WHERE user_id = ?")->execute([$uid]);
+            } catch (Throwable $eG) {}
             margo_sso_log_audit($pdo, 'admin_google_unlinked', ['user_id' => $uid]);
             echo json_encode(['success' => true, 'message' => 'Tautan Google SSO pengguna berhasil diputuskan.']);
+            exit;
+        }
+
+        // ---- HAPUS 1 AKUN PENGGUNA SSO (TERISOLASI HANYA DI TABEL sso_users) ----
+        if ($act === 'delete_user') {
+            $uid     = (int)($_POST['user_id'] ?? 0);
+            $adminId = (int)getCurrentUser()['id'];
+
+            if ($uid <= 0) {
+                echo json_encode(['success' => false, 'message' => 'ID pengguna tidak valid.']);
+                exit;
+            }
+            if ($uid === $adminId) {
+                echo json_encode(['success' => false, 'message' => 'Anda tidak dapat menghapus akun Administrator yang sedang digunakan untuk login.']);
+                exit;
+            }
+
+            $stTarget = $pdo->prepare("SELECT id, username, full_name FROM sso_users WHERE id = ? LIMIT 1");
+            $stTarget->execute([$uid]);
+            $targetUser = $stTarget->fetch(PDO::FETCH_ASSOC);
+            if (!$targetUser) {
+                echo json_encode(['success' => false, 'message' => 'Akun pengguna tidak ditemukan di Margo One SSO.']);
+                exit;
+            }
+
+            // Cegah penghapusan admin aktif terakhir
+            $stIsAdm = $pdo->prepare("
+                SELECT COUNT(*) FROM sso_user_roles ur
+                JOIN sso_roles r ON r.id = ur.role_id
+                WHERE ur.user_id = ? AND r.code = 'admin'
+            ");
+            $stIsAdm->execute([$uid]);
+            if ((int)$stIsAdm->fetchColumn() > 0) {
+                $totalAdmins = (int)$pdo->query("
+                    SELECT COUNT(DISTINCT ur.user_id)
+                    FROM sso_user_roles ur
+                    JOIN sso_roles r ON r.id = ur.role_id
+                    JOIN sso_users u ON u.id = ur.user_id
+                    WHERE r.code = 'admin' AND (u.is_active = 1 OR u.is_active IS NULL)
+                ")->fetchColumn();
+                if ($totalAdmins <= 1) {
+                    echo json_encode(['success' => false, 'message' => 'Tidak dapat menghapus satu-satunya akun Administrator aktif di Margo One SSO.']);
+                    exit;
+                }
+            }
+
+            // Cabut seluruh sesi global terlebih dahulu (SLO webhook ke semua SP)
+            margo_revoke_all_user_sessions($pdo, $uid, 0, true);
+
+            $pdo->beginTransaction();
+            try {
+                foreach (['sso_user_roles', 'sso_google_link_verifications', 'sso_refresh_tokens', 'sso_auth_codes', 'sso_sessions'] as $relTbl) {
+                    try {
+                        $pdo->prepare("DELETE FROM `{$relTbl}` WHERE user_id = ?")->execute([$uid]);
+                    } catch (Throwable $eRel) {}
+                }
+                $pdo->prepare("DELETE FROM sso_users WHERE id = ?")->execute([$uid]);
+                $pdo->commit();
+            } catch (Throwable $eDel) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                throw $eDel;
+            }
+
+            margo_sso_log_audit($pdo, 'admin_user_deleted', [
+                'user_id' => $adminId,
+                'detail'  => ['deleted_user_id' => $uid, 'username' => (string)$targetUser['username']],
+            ]);
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Akun @' . $targetUser['username'] . ' berhasil dihapus permanen dari Margo One SSO.',
+            ]);
+            exit;
+        }
+
+        // ---- BULK ACTION PENGGUNA SSO (DELETE / REVOKE SESSIONS / UNLINK GOOGLE) ----
+        if ($act === 'bulk_users_action') {
+            $bulkAction = trim((string)($_POST['bulk_action'] ?? ''));
+            $rawIds     = isset($_POST['user_ids']) ? $_POST['user_ids'] : [];
+            if (!is_array($rawIds)) {
+                $rawIds = explode(',', (string)$rawIds);
+            }
+            $userIds = [];
+            foreach ($rawIds as $rid) {
+                $i = (int)$rid;
+                if ($i > 0 && !in_array($i, $userIds, true)) {
+                    $userIds[] = $i;
+                }
+            }
+
+            if (empty($userIds)) {
+                echo json_encode(['success' => false, 'message' => 'Pilih minimal 1 akun pengguna terlebih dahulu.']);
+                exit;
+            }
+            if (!in_array($bulkAction, ['delete', 'revoke_sessions', 'unlink_google'], true)) {
+                echo json_encode(['success' => false, 'message' => 'Jenis aksi massal tidak dikenali.']);
+                exit;
+            }
+
+            $adminId    = (int)getCurrentUser()['id'];
+            $currentSid = (int)(getCurrentUser()['sso_session_id'] ?? 0);
+            $affected   = 0;
+            $skipped    = 0;
+
+            if ($bulkAction === 'revoke_sessions') {
+                $totalRevoked = 0;
+                foreach ($userIds as $uid) {
+                    $excludeSid = ($uid === $adminId) ? $currentSid : 0;
+                    $totalRevoked += margo_revoke_all_user_sessions($pdo, $uid, $excludeSid, true);
+                    $affected++;
+                }
+                margo_sso_log_audit($pdo, 'admin_users_bulk_slo', [
+                    'user_id' => $adminId,
+                    'detail'  => ['user_ids' => $userIds, 'revoked_sessions' => $totalRevoked],
+                ]);
+                echo json_encode([
+                    'success'  => true,
+                    'affected' => $affected,
+                    'message'  => "Global SLO dijalankan pada {$affected} akun ({$totalRevoked} sesi perangkat aktif dicabut).",
+                ]);
+                exit;
+            }
+
+            if ($bulkAction === 'unlink_google') {
+                $stUpd = $pdo->prepare("UPDATE sso_users SET email_google = NULL, google_id = NULL WHERE id = ?");
+                foreach ($userIds as $uid) {
+                    $stUpd->execute([$uid]);
+                    try {
+                        $pdo->prepare("DELETE FROM sso_google_link_verifications WHERE user_id = ?")->execute([$uid]);
+                    } catch (Throwable $eG) {}
+                    $affected++;
+                }
+                margo_sso_log_audit($pdo, 'admin_users_bulk_unlink_google', [
+                    'user_id' => $adminId,
+                    'detail'  => ['user_ids' => $userIds],
+                ]);
+                echo json_encode([
+                    'success'  => true,
+                    'affected' => $affected,
+                    'message'  => "Tautan Google SSO pada {$affected} akun berhasil diputuskan.",
+                ]);
+                exit;
+            }
+
+            // Bulk DELETE dengan proteksi akun sendiri & admin aktif terakhir
+            $remainingAdmins = (int)$pdo->query("
+                SELECT COUNT(DISTINCT ur.user_id)
+                FROM sso_user_roles ur
+                JOIN sso_roles r ON r.id = ur.role_id
+                JOIN sso_users u ON u.id = ur.user_id
+                WHERE r.code = 'admin' AND (u.is_active = 1 OR u.is_active IS NULL)
+            ")->fetchColumn();
+            $stIsAdm = $pdo->prepare("
+                SELECT COUNT(*) FROM sso_user_roles ur
+                JOIN sso_roles r ON r.id = ur.role_id
+                WHERE ur.user_id = ? AND r.code = 'admin'
+            ");
+
+            $deletedIds = [];
+            foreach ($userIds as $uid) {
+                if ($uid === $adminId) {
+                    $skipped++;
+                    continue;
+                }
+                $stIsAdm->execute([$uid]);
+                $isTargetAdmin = ((int)$stIsAdm->fetchColumn() > 0);
+                if ($isTargetAdmin && $remainingAdmins <= 1) {
+                    $skipped++;
+                    continue;
+                }
+
+                margo_revoke_all_user_sessions($pdo, $uid, 0, true);
+                $pdo->beginTransaction();
+                try {
+                    foreach (['sso_user_roles', 'sso_google_link_verifications', 'sso_refresh_tokens', 'sso_auth_codes', 'sso_sessions'] as $relTbl) {
+                        try {
+                            $pdo->prepare("DELETE FROM `{$relTbl}` WHERE user_id = ?")->execute([$uid]);
+                        } catch (Throwable $eRel) {}
+                    }
+                    $stDelU = $pdo->prepare("DELETE FROM sso_users WHERE id = ?");
+                    $stDelU->execute([$uid]);
+                    $pdo->commit();
+                    if ($stDelU->rowCount() > 0) {
+                        $affected++;
+                        $deletedIds[] = $uid;
+                        if ($isTargetAdmin) {
+                            $remainingAdmins--;
+                        }
+                    }
+                } catch (Throwable $eDelB) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    $skipped++;
+                }
+            }
+
+            if ($affected === 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Tidak ada akun yang dihapus (akun yang sedang login atau admin terakhir dilindungi sistem).',
+                ]);
+                exit;
+            }
+
+            margo_sso_log_audit($pdo, 'admin_users_bulk_deleted', [
+                'user_id' => $adminId,
+                'detail'  => ['deleted_ids' => $deletedIds, 'skipped' => $skipped],
+            ]);
+
+            echo json_encode([
+                'success'     => true,
+                'affected'    => $affected,
+                'skipped'     => $skipped,
+                'deleted_ids' => $deletedIds,
+                'message'     => "{$affected} akun berhasil dihapus dari Margo One SSO" . ($skipped > 0 ? " ({$skipped} akun dilindungi/dilewati)." : '.'),
+            ]);
             exit;
         }
 
@@ -1165,11 +1387,41 @@ require_once BASE_PATH . '/includes/header.php';
             </div>
         </div>
 
+        <div id="usersBulkBar" class="ssoadm-card" style="display:none;margin-bottom:12px;padding:10px 14px;background:linear-gradient(135deg,rgba(29,59,94,0.06),rgba(13,122,135,0.09));border-color:rgba(13,122,135,0.32);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                <div style="display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1D3B5E;">
+                    <iconify-icon icon="solar:checklist-minimalistic-bold" width="18" style="color:#0D7A87;"></iconify-icon>
+                    <span><strong id="lblBulkUsersCount">0</strong> akun dipilih</span>
+                </div>
+                <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.bulkUsersAction('unlink_google')">
+                        <iconify-icon icon="solar:link-broken-bold" width="15"></iconify-icon>
+                        <span>Putus Google</span>
+                    </button>
+                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.bulkUsersAction('revoke_sessions')">
+                        <iconify-icon icon="solar:logout-2-bold" width="15"></iconify-icon>
+                        <span>Paksa Keluar (SLO)</span>
+                    </button>
+                    <button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" onclick="SSOADM.bulkUsersAction('delete')">
+                        <iconify-icon icon="solar:trash-bin-minimalistic-bold" width="15"></iconify-icon>
+                        <span>Hapus Terpilih</span>
+                    </button>
+                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.clearUserSelection()" title="Batalkan pilihan">
+                        <iconify-icon icon="solar:close-circle-linear" width="15"></iconify-icon>
+                        <span>Batal</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div class="ssoadm-card" style="padding:0;overflow:hidden;">
             <div class="table-responsive">
                 <table class="lms-table ilmuna-table-stack">
                     <thead>
                         <tr>
+                            <th style="width:42px;text-align:center;">
+                                <input type="checkbox" id="chkAllUsers" onchange="SSOADM.toggleAllUsers(this.checked)" aria-label="Pilih semua pengguna" style="width:16px;height:16px;accent-color:#0D7A87;cursor:pointer;">
+                            </th>
                             <th>Akun Pengguna</th>
                             <th>Peran Lintas Aplikasi</th>
                             <th>Tautan Google SSO</th>
@@ -1178,7 +1430,7 @@ require_once BASE_PATH . '/includes/header.php';
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
-                        <tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Memuat daftar identitas...</td></tr>
+                        <tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Memuat daftar identitas...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1976,8 +2228,9 @@ require_once BASE_PATH . '/includes/header.php';
 
 <script>
 (function () {
-    var ENDPOINT = <?= json_encode(BASE_URL . '/dashboard/admin/index.php?api=1') ?>;
-    var CSRF     = <?= json_encode($csrfAdmin) ?>;
+    var ENDPOINT         = <?= json_encode(BASE_URL . '/dashboard/admin/index.php?api=1') ?>;
+    var CSRF             = <?= json_encode($csrfAdmin) ?>;
+    var CURRENT_ADMIN_ID = <?= (int)getCurrentUser()['id'] ?>;
     var INITIAL_ADMIN_DATA = <?= json_encode(margo_admin_build_bootstrap_data($pdo), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     var STATE = {
@@ -1987,6 +2240,7 @@ require_once BASE_PATH . '/includes/header.php';
         clientFilter: 'all',
         sessFilter: 'active',
         userFilter: 'all',
+        selectedUserIds: [],
         portalSub: 'agendas'
     };
 
@@ -2215,8 +2469,15 @@ require_once BASE_PATH . '/includes/header.php';
 
         var tb = document.getElementById('usersTableBody');
         if (!tb) return;
+
+        // Sinkronkan STATE.selectedUserIds hanya untuk ID yang masih ada di list
+        var validIdMap = {};
+        list.forEach(function (x) { validIdMap[Number(x.id)] = true; });
+        STATE.selectedUserIds = (STATE.selectedUserIds || []).filter(function (id) { return !!validIdMap[Number(id)]; });
+
         if (!filtered.length) {
-            tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Tidak ada akun ditemukan.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Tidak ada akun ditemukan.</td></tr>';
+            syncUsersBulkBar(filtered);
             return;
         }
         var allClients = (STATE.data && STATE.data.clients) || [];
@@ -2237,6 +2498,8 @@ require_once BASE_PATH . '/includes/header.php';
         }
 
         tb.innerHTML = filtered.map(function (u) {
+            var isSelf = Number(u.id) === Number(CURRENT_ADMIN_ID);
+            var isChecked = STATE.selectedUserIds.indexOf(Number(u.id)) !== -1;
             var roleBadges = (u.roles || []).map(function (r) {
                 var cls = r.code === 'admin' ? 'ssoadm-badge--navy' : (r.code === 'guru' ? 'ssoadm-badge--teal' : 'ssoadm-badge--warn');
                 return '<span class="ssoadm-badge ' + cls + '">' + esc(r.code) + (r.is_primary ? ' ★' : '') + '</span>';
@@ -2254,17 +2517,47 @@ require_once BASE_PATH . '/includes/header.php';
                 ? '<span class="ssoadm-badge ssoadm-badge--ok"><iconify-icon icon="solar:check-circle-bold"></iconify-icon> ' + esc(u.email_google) + '</span> '
                   + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" style="padding:3px 7px;min-height:26px;" onclick="SSOADM.adminUnlinkGoogle(' + u.id + ',\'' + esc(u.username) + '\')" title="Putus Google"><iconify-icon icon="solar:link-broken-bold"></iconify-icon></button>'
                 : '<span style="font-size:12px;color:#94A3B8;">Belum tertaut</span>';
+            var delBtn = isSelf
+                ? '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" disabled title="Akun aktif Anda tidak dapat dihapus" style="opacity:0.45;cursor:not-allowed;"><iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon></button>'
+                : '<button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" onclick="SSOADM.deleteUser(' + u.id + ',\'' + esc(u.username) + '\')" title="Hapus Akun SSO"><iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon></button>';
+            var selfTag = isSelf ? ' <span class="ssoadm-badge ssoadm-badge--teal" style="font-size:10px;">Anda</span>' : '';
             return '<tr id="adm-user-' + u.id + '">'
-                + '<td data-label="Akun"><strong>' + esc(u.full_name) + '</strong><div style="font-size:11.5px;color:#64748B;">@' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + '</div></td>'
+                + '<td data-label="Pilih" style="text-align:center;">'
+                + '<input type="checkbox" class="user-row-chk" data-uid="' + u.id + '" ' + (isChecked ? 'checked' : '') + ' onchange="SSOADM.toggleUserSelect(' + u.id + ', this.checked)" aria-label="Pilih @' + esc(u.username) + '" style="width:16px;height:16px;accent-color:#0D7A87;cursor:pointer;">'
+                + '</td>'
+                + '<td data-label="Akun"><strong>' + esc(u.full_name) + '</strong>' + selfTag + '<div style="font-size:11.5px;color:#64748B;">@' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + '</div></td>'
                 + '<td data-label="Peran & Permission"><div>' + (roleBadges || '<span class="ssoadm-badge ssoadm-badge--err">Tanpa Role</span>') + '</div><div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">' + appPermBadges + '</div></td>'
                 + '<td data-label="Google SSO">' + gBadge + '</td>'
                 + '<td data-label="Login Terakhir">' + esc(u.last_login || 'Belum pernah') + '</td>'
                 + '<td data-label="Kelola" style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'
                 + '<button type="button" class="ssoadm-btn ssoadm-btn--primary ssoadm-btn--sm" onclick="SSOADM.openRolesModal(' + u.id + ')"><iconify-icon icon="solar:users-group-two-rounded-bold"></iconify-icon> Role &amp; Akses Apk</button>'
                 + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.openResetPassModal(' + u.id + ')"><iconify-icon icon="solar:key-bold"></iconify-icon> Sandi</button>'
+                + delBtn
                 + '</div></td>'
                 + '</tr>';
         }).join('');
+
+        syncUsersBulkBar(filtered);
+    }
+
+    function syncUsersBulkBar(visibleFiltered) {
+        var bar = document.getElementById('usersBulkBar');
+        var lbl = document.getElementById('lblBulkUsersCount');
+        var chkAll = document.getElementById('chkAllUsers');
+        var cnt = (STATE.selectedUserIds || []).length;
+        if (lbl) lbl.textContent = cnt;
+        if (bar) bar.style.display = cnt > 0 ? '' : 'none';
+        if (chkAll) {
+            var vis = Array.isArray(visibleFiltered) ? visibleFiltered : [];
+            if (!vis.length) {
+                chkAll.checked = false;
+                chkAll.indeterminate = false;
+            } else {
+                var visChecked = vis.filter(function (u) { return STATE.selectedUserIds.indexOf(Number(u.id)) !== -1; }).length;
+                chkAll.checked = (visChecked === vis.length);
+                chkAll.indeterminate = (visChecked > 0 && visChecked < vis.length);
+            }
+        }
     }
 
     function renderJwksAndLogs() {
@@ -2601,6 +2894,97 @@ require_once BASE_PATH . '/includes/header.php';
             var res = await apiPost('revoke_user_sessions', { user_id: uid });
             if (res.success) { Ilmuna.success('Semua Sesi Dicabut', res.message); SSOADM.load(); }
             else Ilmuna.error('Gagal', res.message);
+        },
+        toggleUserSelect: function (uid, checked) {
+            var idNum = Number(uid);
+            var idx = STATE.selectedUserIds.indexOf(idNum);
+            if (checked && idx === -1) STATE.selectedUserIds.push(idNum);
+            if (!checked && idx !== -1) STATE.selectedUserIds.splice(idx, 1);
+            var vis = Array.from(document.querySelectorAll('.user-row-chk')).map(function (el) { return { id: Number(el.getAttribute('data-uid')) }; });
+            syncUsersBulkBar(vis);
+        },
+        toggleAllUsers: function (checked) {
+            var cbs = document.querySelectorAll('.user-row-chk');
+            cbs.forEach(function (cb) {
+                var idNum = Number(cb.getAttribute('data-uid'));
+                cb.checked = !!checked;
+                var idx = STATE.selectedUserIds.indexOf(idNum);
+                if (checked && idx === -1) STATE.selectedUserIds.push(idNum);
+                if (!checked && idx !== -1) STATE.selectedUserIds.splice(idx, 1);
+            });
+            var vis = Array.from(cbs).map(function (el) { return { id: Number(el.getAttribute('data-uid')) }; });
+            syncUsersBulkBar(vis);
+        },
+        clearUserSelection: function () {
+            STATE.selectedUserIds = [];
+            document.querySelectorAll('.user-row-chk').forEach(function (cb) { cb.checked = false; });
+            syncUsersBulkBar([]);
+        },
+        deleteUser: async function (uid, uname) {
+            var ok = await Ilmuna.confirm(
+                'error',
+                'Hapus Akun @' + uname + '?',
+                'Akun ini beserta seluruh sesi SSO dan perannya akan dihapus permanen dari Margo One SSO (tidak memengaruhi database Ilmuna Learn).',
+                'Ya, Hapus Permanen',
+                'Batal'
+            );
+            if (!ok) return;
+            var res = await apiPost('delete_user', { user_id: uid });
+            if (res && res.success) {
+                var tr = document.getElementById('adm-user-' + uid);
+                if (tr) tr.classList.add('row-smooth-out');
+                STATE.selectedUserIds = STATE.selectedUserIds.filter(function (x) { return Number(x) !== Number(uid); });
+                Ilmuna.success('Akun Dihapus', res.message);
+                setTimeout(function () { SSOADM.load(); }, 260);
+            } else {
+                Ilmuna.error('Gagal Menghapus', (res && res.message) || 'Tidak dapat menghapus akun.');
+            }
+        },
+        bulkUsersAction: async function (bulkAct) {
+            var ids = (STATE.selectedUserIds || []).slice();
+            if (!ids.length) {
+                Ilmuna.warning('Belum Ada Pilihan', 'Centang minimal 1 akun terlebih dahulu.');
+                return;
+            }
+            var cfgMap = {
+                delete: {
+                    type: 'error',
+                    title: 'Hapus ' + ids.length + ' Akun Terpilih?',
+                    text: 'Seluruh akun terpilih (kecuali akun aktif Anda & admin terakhir) akan dihapus permanen dari Margo One SSO beserta sesi aktifnya.',
+                    btn: 'Ya, Hapus ' + ids.length + ' Akun'
+                },
+                revoke_sessions: {
+                    type: 'warning',
+                    title: 'Paksa Keluar ' + ids.length + ' Akun (SLO)?',
+                    text: 'Seluruh sesi perangkat aktif milik akun terpilih akan segera dicabut di semua aplikasi ekosistem Ilmuna.',
+                    btn: 'Ya, Paksa Keluar'
+                },
+                unlink_google: {
+                    type: 'warning',
+                    title: 'Putus Google SSO (' + ids.length + ' Akun)?',
+                    text: 'Tautan Gmail Google SSO pada akun terpilih akan dilepas. Pengguna perlu menautkan ulang di menu Profil.',
+                    btn: 'Ya, Putus Tautan'
+                }
+            };
+            var c = cfgMap[bulkAct];
+            if (!c) return;
+            var ok = await Ilmuna.confirm(c.type, c.title, c.text, c.btn, 'Batal');
+            if (!ok) return;
+
+            var res = await apiPost('bulk_users_action', { bulk_action: bulkAct, user_ids: ids });
+            if (res && res.success) {
+                if (bulkAct === 'delete' && Array.isArray(res.deleted_ids)) {
+                    res.deleted_ids.forEach(function (did) {
+                        var tr = document.getElementById('adm-user-' + did);
+                        if (tr) tr.classList.add('row-smooth-out');
+                    });
+                }
+                STATE.selectedUserIds = [];
+                Ilmuna.success('Aksi Massal Selesai', res.message);
+                setTimeout(function () { SSOADM.load(); }, bulkAct === 'delete' ? 260 : 50);
+            } else {
+                Ilmuna.error('Aksi Massal Gagal', (res && res.message) || 'Gagal menjalankan aksi massal.');
+            }
         },
         openRolesModal: function (uid) {
             var u = (STATE.data.users || []).find(function (x) { return x.id === uid; });
