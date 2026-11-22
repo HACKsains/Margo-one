@@ -568,11 +568,42 @@ function margo_agenda_backfill_from_kaldik(PDO $ssoPdo = null)
     $lpdo = $learnInfo['pdo'];
 
     try {
+        $sourceDbUsed = (string)$learnInfo['db_name'];
         $rows = $lpdo->query("
             SELECT id, tahun_pelajaran, semester, tanggal, hari, status_hari, keterangan
             FROM `kalender_pendidikan`
             ORDER BY tanggal ASC, id ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
+
+        // Jika kalender_pendidikan di DB default kosong, cek apakah ada schema lain yang bisa diakses dengan kalender_pendidikan terisi
+        if (empty($rows)) {
+            try {
+                $altSchemas = $lpdo->query("
+                    SELECT TABLE_SCHEMA
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_NAME = 'kalender_pendidikan'
+                      AND TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                ")->fetchAll(PDO::FETCH_COLUMN);
+                foreach ($altSchemas as $sch) {
+                    $schClean = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$sch);
+                    if ($schClean === '' || $schClean === $sourceDbUsed) {
+                        continue;
+                    }
+                    try {
+                        $candRows = $lpdo->query("
+                            SELECT id, tahun_pelajaran, semester, tanggal, hari, status_hari, keterangan
+                            FROM `{$schClean}`.`kalender_pendidikan`
+                            ORDER BY tanggal ASC, id ASC
+                        ")->fetchAll(PDO::FETCH_ASSOC);
+                        if (!empty($candRows)) {
+                            $rows = $candRows;
+                            $sourceDbUsed = $schClean;
+                            break;
+                        }
+                    } catch (Throwable $eAltQ) {}
+                }
+            } catch (Throwable $eAltS) {}
+        }
 
         $apdo->exec("SET @margo_kaldik_sync_bypass = 1");
         $apdo->beginTransaction();
@@ -653,11 +684,17 @@ function margo_agenda_backfill_from_kaldik(PDO $ssoPdo = null)
         $apdo->commit();
         $apdo->exec("SET @margo_kaldik_sync_bypass = 0");
 
+        $syncedCount = count($rows);
+        $msg = $syncedCount > 0
+            ? ('Seluruh ' . $syncedCount . ' agenda resmi Kaldik (dari ' . $sourceDbUsed . '.kalender_pendidikan) berhasil disinkronkan ke database ' . $agInfo['db_name'] . '.')
+            : ('Sinkronisasi selesai, tetapi tabel ' . $sourceDbUsed . '.kalender_pendidikan masih berisi 0 baris. Pastikan Kaldik di Ilmuna Learn sudah disimpan ke MySQL database ' . $sourceDbUsed . '.');
+
         return [
-            'ok'      => true,
-            'synced'  => count($rows),
-            'deleted' => $deleted,
-            'message' => 'Seluruh ' . count($rows) . ' agenda resmi Kaldik (termasuk KBM, Libur, Ujian & Keagamaan) berhasil disinkronkan ke database ' . $agInfo['db_name'] . '.',
+            'ok'        => true,
+            'synced'    => $syncedCount,
+            'deleted'   => $deleted,
+            'source_db' => $sourceDbUsed,
+            'message'   => $msg,
         ];
     } catch (Throwable $e) {
         try {

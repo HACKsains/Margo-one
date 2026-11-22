@@ -2193,23 +2193,28 @@ require_once BASE_PATH . '/includes/header.php';
         var orphans = (STATE.data && STATE.data.orphan_gurus) || [];
         var cntEl = document.getElementById('cntTabUsers');
         if (cntEl) cntEl.textContent = list.length;
-        document.getElementById('lblOrphanGuru').textContent = orphans.length > 0
-            ? ('Perbaiki ' + orphans.length + ' Orphan Guru')
-            : 'Guru Tersinkron (0 Orphan)';
+        var orphanEl = document.getElementById('lblOrphanGuru');
+        if (orphanEl) {
+            orphanEl.textContent = orphans.length > 0
+                ? ('Perbaiki ' + orphans.length + ' Orphan Guru')
+                : 'Guru Tersinkron (0 Orphan)';
+        }
 
-        var q = (document.getElementById('userSearchInput').value || '').toLowerCase().trim();
+        var searchInp = document.getElementById('userSearchInput');
+        var q = ((searchInp && searchInp.value) || '').toLowerCase().trim();
         var filtered = list.filter(function (u) {
             var codes = (u.roles || []).map(function (r) { return r.code; });
             if (STATE.userFilter === 'google' && !u.email_google) return false;
             if (['admin', 'guru', 'siswa'].indexOf(STATE.userFilter) !== -1 && codes.indexOf(STATE.userFilter) === -1) return false;
             if (q !== '') {
-                var hay = (u.full_name + ' ' + u.username + ' ' + u.email + ' ' + u.email_google + ' ' + u.nisn_nip).toLowerCase();
+                var hay = ((u.full_name || '') + ' ' + (u.username || '') + ' ' + (u.email || '') + ' ' + (u.email_google || '') + ' ' + (u.nisn_nip || '')).toLowerCase();
                 if (hay.indexOf(q) === -1) return false;
             }
             return true;
         });
 
         var tb = document.getElementById('usersTableBody');
+        if (!tb) return;
         if (!filtered.length) {
             tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Tidak ada akun ditemukan.</td></tr>';
             return;
