@@ -2,9 +2,13 @@
     'use strict';
     var deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', function (e) {
+        var btns = document.querySelectorAll('[data-pwa-install]');
+        if (!btns.length) {
+            return;
+        }
         e.preventDefault();
         deferredPrompt = e;
-        document.querySelectorAll('[data-pwa-install]').forEach(function (btn) {
+        btns.forEach(function (btn) {
             btn.classList.add('is-ready');
         });
     });

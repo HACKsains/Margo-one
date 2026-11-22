@@ -286,6 +286,10 @@ function margo_revoke_all_user_sessions(PDO $pdo, $userId, $excludeSessionId = 0
  */
 function isLoggedIn()
 {
+    if (session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() !== 'cli') {
+        session_name('MARGO_ONE_SID');
+        session_start();
+    }
     if (session_status() !== PHP_SESSION_ACTIVE) {
         return false;
     }

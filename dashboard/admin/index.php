@@ -148,6 +148,186 @@ function margo_admin_handle_app_logo_upload($fileKey, $slugPrefix = 'app')
     return 'uploads/apps/' . $fileName;
 }
 
+function margo_admin_build_bootstrap_data(PDO $pdo)
+{
+    // 1. Clients
+    $clientsRaw = $pdo->query("SELECT * FROM sso_clients ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $clientsOut = [];
+    foreach ($clientsRaw as $c) {
+        $priv = margo_sso_decrypt_secret($c['private_key_enc']);
+        $clientsOut[] = [
+            'id'                 => (int)$c['id'],
+            'client_name'        => (string)$c['client_name'],
+            'client_slug'        => (string)$c['client_slug'],
+            'public_key'         => (string)$c['public_key'],
+            'private_key'        => $priv,
+            'private_key_masked' => strlen($priv) > 16 ? (substr($priv, 0, 12) . str_repeat('•', 16) . substr($priv, -6)) : '••••••••',
+            'has_rsa_public'     => !empty($c['rsa_public_pem']),
+            'rsa_fingerprint'    => !empty($c['rsa_public_pem']) ? substr(hash('sha256', trim($c['rsa_public_pem'])), 0, 24) : '',
+            'sig_mode'           => (string)$c['sig_mode'],
+            'app_url'            => (string)$c['app_url'],
+            'app_icon'           => (string)$c['app_icon'],
+            'app_logo'           => (string)($c['app_logo'] ?? ''),
+            'app_logo_url'       => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
+            'redirect_uris'      => (string)$c['redirect_uris'],
+            'logout_webhook_url' => (string)($c['logout_webhook_url'] ?? ''),
+            'allowed_domains'    => (string)$c['allowed_domains'],
+            'allowed_ips'        => (string)($c['allowed_ips'] ?? ''),
+            'allowed_scopes'     => (string)$c['allowed_scopes'],
+            'allowed_roles'      => (string)$c['allowed_roles'],
+            'rate_limit_per_min' => (int)$c['rate_limit_per_min'],
+            'is_active'          => (int)$c['is_active'],
+            'last_used_at'       => $c['last_used_at'],
+            'last_ip'            => $c['last_ip'],
+            'request_count'      => (int)$c['request_count'],
+        ];
+    }
+
+    // 2. Sessions (active + recently revoked)
+    $sessions = $pdo->query("
+        SELECT s.id, s.user_id, s.active_role, s.ip_address, s.user_agent, s.login_method,
+               s.expires_at, s.revoked_at, s.last_activity_at, s.created_at,
+               u.username, u.full_name, u.email
+        FROM sso_sessions s
+        LEFT JOIN users u ON u.id = s.user_id
+        ORDER BY (s.revoked_at IS NULL AND s.expires_at > NOW()) DESC, s.last_activity_at DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    $activeSessionCnt = 0;
+    $nowTs = time();
+    foreach ($sessions as &$sr) {
+        $isAct = ($sr['revoked_at'] === null && strtotime((string)$sr['expires_at']) > $nowTs);
+        $sr['is_active_now'] = $isAct;
+        if ($isAct) {
+            $activeSessionCnt++;
+        }
+    }
+    unset($sr);
+
+    // 3. Users + Roles + Orphan Guru Detection
+    $allRoles = $pdo->query("SELECT id, code, name FROM roles ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $usersRaw = $pdo->query("
+        SELECT u.*
+        FROM users u
+        ORDER BY u.id ASC
+        LIMIT 200
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $urMap = [];
+    $urRows = $pdo->query("
+        SELECT ur.user_id, r.code, r.name, ur.is_primary
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        ORDER BY ur.is_primary DESC, r.id ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($urRows as $ur) {
+        $uid = (int)$ur['user_id'];
+        if (!isset($urMap[$uid])) {
+            $urMap[$uid] = [];
+        }
+        $urMap[$uid][] = [
+            'code'       => (string)$ur['code'],
+            'name'       => (string)$ur['name'],
+            'is_primary' => (int)$ur['is_primary'],
+        ];
+    }
+
+    $orphanGurus = [];
+    try {
+        if ($pdo->query("SHOW TABLES LIKE 'guru'")->fetch()) {
+            $orphanGurus = $pdo->query("SELECT id, nip, nama_guru, email FROM guru WHERE id_user IS NULL ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $eG) {
+        $orphanGurus = [];
+    }
+
+    $usersOut = [];
+    foreach ($usersRaw as $u) {
+        $uid = (int)$u['id'];
+        $uRoles = isset($urMap[$uid]) ? $urMap[$uid] : [];
+        $usersOut[] = [
+            'id'           => $uid,
+            'username'     => (string)$u['username'],
+            'full_name'    => (string)$u['full_name'],
+            'email'        => (string)($u['email'] ?? ''),
+            'email_google' => (string)($u['email_google'] ?? ''),
+            'nisn_nip'     => (string)($u['nisn_nip'] ?? ''),
+            'allowed_apps' => isset($u['allowed_apps']) ? (string)$u['allowed_apps'] : '',
+            'is_active'    => margo_user_is_active($u) ? 1 : 0,
+            'last_login'   => $u['last_login'] ?? null,
+            'roles'        => $uRoles,
+        ];
+    }
+
+    // 4. JWKS Keys & 100 Latest Audit Logs
+    $jwksKeys = $pdo->query("
+        SELECT id, kid, fingerprint, is_primary, is_active, expires_at, created_at
+        FROM sso_jwks_keys
+        ORDER BY is_primary DESC, is_active DESC, id DESC
+        LIMIT 10
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $auditLogs = $pdo->query("
+        SELECT l.id, l.user_id, l.client_id, l.event_type, l.http_status, l.ip_address, l.user_agent, l.detail_json, l.created_at,
+               u.username, c.client_name
+        FROM sso_audit_logs l
+        LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN sso_clients c ON c.id = l.client_id
+        ORDER BY l.id DESC
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    // 5. Portal Content (Agenda, Pengumuman, Layanan Ekosistem Non-SSO)
+    $portalAgendas = $pdo->query("
+        SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active, created_at
+        FROM sso_agendas
+        ORDER BY start_date DESC, id DESC
+        LIMIT 120
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $portalAnnouncements = $pdo->query("
+        SELECT id, title, excerpt, link_url, badge_label, published_at, is_active
+        FROM sso_announcements
+        ORDER BY published_at DESC, id DESC
+        LIMIT 60
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    $portalExternalApps = $pdo->query("
+        SELECT *
+        FROM sso_external_apps
+        ORDER BY sort_order ASC, id ASC
+        LIMIT 60
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($portalExternalApps as &$pea) {
+        $pea['app_logo']     = (string)($pea['app_logo'] ?? '');
+        $pea['app_logo_url'] = margo_resolve_app_logo_url($pea['app_logo'], $pea['app_icon'] ?? '');
+    }
+    unset($pea);
+
+    return [
+        'endpoints' => [
+            'issuer'     => SSO_ISSUER,
+            'authorize'  => BASE_URL . '/authorize',
+            'token'      => BASE_URL . '/api/sso/token.php',
+            'userinfo'   => BASE_URL . '/api/sso/userinfo.php',
+            'introspect' => BASE_URL . '/api/sso/introspect.php',
+            'jwks'       => BASE_URL . '/api/sso/jwks.php',
+            'logout'     => BASE_URL . '/logout',
+        ],
+        'clients'              => $clientsOut,
+        'sessions'             => $sessions,
+        'active_session_count' => $activeSessionCnt,
+        'users'                => $usersOut,
+        'all_roles'            => $allRoles,
+        'orphan_gurus'         => $orphanGurus,
+        'jwks_keys'            => $jwksKeys,
+        'audit_logs'           => $auditLogs,
+        'portal_agendas'       => $portalAgendas,
+        'portal_announcements' => $portalAnnouncements,
+        'portal_external_apps' => $portalExternalApps,
+    ];
+}
+
 if (isset($_GET['api']) && $_GET['api'] === '1') {
     while (ob_get_level()) {
         ob_end_clean();
@@ -158,184 +338,9 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
     try {
         // ---- BOOTSTRAP FULL DASHBOARD DATA ----
         if ($act === 'bootstrap') {
-            // 1. Clients
-            $clientsRaw = $pdo->query("SELECT * FROM sso_clients ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
-            $clientsOut = [];
-            foreach ($clientsRaw as $c) {
-                $priv = margo_sso_decrypt_secret($c['private_key_enc']);
-                $clientsOut[] = [
-                    'id'                 => (int)$c['id'],
-                    'client_name'        => (string)$c['client_name'],
-                    'client_slug'        => (string)$c['client_slug'],
-                    'public_key'         => (string)$c['public_key'],
-                    'private_key'        => $priv,
-                    'private_key_masked' => strlen($priv) > 16 ? (substr($priv, 0, 12) . str_repeat('•', 16) . substr($priv, -6)) : '••••••••',
-                    'has_rsa_public'     => !empty($c['rsa_public_pem']),
-                    'rsa_fingerprint'    => !empty($c['rsa_public_pem']) ? substr(hash('sha256', trim($c['rsa_public_pem'])), 0, 24) : '',
-                    'sig_mode'           => (string)$c['sig_mode'],
-                    'app_url'            => (string)$c['app_url'],
-                    'app_icon'           => (string)$c['app_icon'],
-                    'app_logo'           => (string)($c['app_logo'] ?? ''),
-                    'app_logo_url'       => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
-                    'redirect_uris'      => (string)$c['redirect_uris'],
-                    'logout_webhook_url' => (string)($c['logout_webhook_url'] ?? ''),
-                    'allowed_domains'    => (string)$c['allowed_domains'],
-                    'allowed_ips'        => (string)($c['allowed_ips'] ?? ''),
-                    'allowed_scopes'     => (string)$c['allowed_scopes'],
-                    'allowed_roles'      => (string)$c['allowed_roles'],
-                    'rate_limit_per_min' => (int)$c['rate_limit_per_min'],
-                    'is_active'          => (int)$c['is_active'],
-                    'last_used_at'       => $c['last_used_at'],
-                    'last_ip'            => $c['last_ip'],
-                    'request_count'      => (int)$c['request_count'],
-                ];
-            }
-
-            // 2. Sessions (active + recently revoked)
-            $sessions = $pdo->query("
-                SELECT s.id, s.user_id, s.active_role, s.ip_address, s.user_agent, s.login_method,
-                       s.expires_at, s.revoked_at, s.last_activity_at, s.created_at,
-                       u.username, u.full_name, u.email
-                FROM sso_sessions s
-                LEFT JOIN users u ON u.id = s.user_id
-                ORDER BY (s.revoked_at IS NULL AND s.expires_at > NOW()) DESC, s.last_activity_at DESC
-                LIMIT 100
-            ")->fetchAll(PDO::FETCH_ASSOC);
-            $activeSessionCnt = 0;
-            $nowTs = time();
-            foreach ($sessions as &$sr) {
-                $isAct = ($sr['revoked_at'] === null && strtotime((string)$sr['expires_at']) > $nowTs);
-                $sr['is_active_now'] = $isAct;
-                if ($isAct) {
-                    $activeSessionCnt++;
-                }
-            }
-            unset($sr);
-
-            // 3. Users + Roles + Orphan Guru Detection
-            $allRoles = $pdo->query("SELECT id, code, name FROM roles ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
-            $usersRaw = $pdo->query("
-                SELECT u.*
-                FROM users u
-                ORDER BY u.id ASC
-                LIMIT 200
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            $urMap = [];
-            $urRows = $pdo->query("
-                SELECT ur.user_id, r.code, r.name, ur.is_primary
-                FROM user_roles ur
-                JOIN roles r ON ur.role_id = r.id
-                ORDER BY ur.is_primary DESC, r.id ASC
-            ")->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($urRows as $ur) {
-                $uid = (int)$ur['user_id'];
-                if (!isset($urMap[$uid])) {
-                    $urMap[$uid] = [];
-                }
-                $urMap[$uid][] = [
-                    'code'       => (string)$ur['code'],
-                    'name'       => (string)$ur['name'],
-                    'is_primary' => (int)$ur['is_primary'],
-                ];
-            }
-
-            $orphanGurus = [];
-            try {
-                if ($pdo->query("SHOW TABLES LIKE 'guru'")->fetch()) {
-                    $orphanGurus = $pdo->query("SELECT id, nip, nama_guru, email FROM guru WHERE id_user IS NULL ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
-                }
-            } catch (Throwable $eG) {
-                $orphanGurus = [];
-            }
-
-            $usersOut = [];
-            foreach ($usersRaw as $u) {
-                $uid = (int)$u['id'];
-                $uRoles = isset($urMap[$uid]) ? $urMap[$uid] : [];
-                $usersOut[] = [
-                    'id'           => $uid,
-                    'username'     => (string)$u['username'],
-                    'full_name'    => (string)$u['full_name'],
-                    'email'        => (string)($u['email'] ?? ''),
-                    'email_google' => (string)($u['email_google'] ?? ''),
-                    'nisn_nip'     => (string)($u['nisn_nip'] ?? ''),
-                    'allowed_apps' => isset($u['allowed_apps']) ? (string)$u['allowed_apps'] : '',
-                    'is_active'    => margo_user_is_active($u) ? 1 : 0,
-                    'last_login'   => $u['last_login'] ?? null,
-                    'roles'        => $uRoles,
-                ];
-            }
-
-            // 4. JWKS Keys & 100 Latest Audit Logs
-            $jwksKeys = $pdo->query("
-                SELECT id, kid, fingerprint, is_primary, is_active, expires_at, created_at
-                FROM sso_jwks_keys
-                ORDER BY is_primary DESC, is_active DESC, id DESC
-                LIMIT 10
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            $auditLogs = $pdo->query("
-                SELECT l.id, l.user_id, l.client_id, l.event_type, l.http_status, l.ip_address, l.user_agent, l.detail_json, l.created_at,
-                       u.username, c.client_name
-                FROM sso_audit_logs l
-                LEFT JOIN users u ON u.id = l.user_id
-                LEFT JOIN sso_clients c ON c.id = l.client_id
-                ORDER BY l.id DESC
-                LIMIT 100
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            // 5. Portal Content (Agenda, Pengumuman, Layanan Ekosistem Non-SSO)
-            $portalAgendas = $pdo->query("
-                SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active, created_at
-                FROM sso_agendas
-                ORDER BY start_date DESC, id DESC
-                LIMIT 120
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            $portalAnnouncements = $pdo->query("
-                SELECT id, title, excerpt, link_url, badge_label, published_at, is_active
-                FROM sso_announcements
-                ORDER BY published_at DESC, id DESC
-                LIMIT 60
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            $portalExternalApps = $pdo->query("
-                SELECT *
-                FROM sso_external_apps
-                ORDER BY sort_order ASC, id ASC
-                LIMIT 60
-            ")->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($portalExternalApps as &$pea) {
-                $pea['app_logo']     = (string)($pea['app_logo'] ?? '');
-                $pea['app_logo_url'] = margo_resolve_app_logo_url($pea['app_logo'], $pea['app_icon'] ?? '');
-            }
-            unset($pea);
-
             echo json_encode([
                 'success' => true,
-                'data'    => [
-                    'endpoints' => [
-                        'issuer'     => SSO_ISSUER,
-                        'authorize'  => BASE_URL . '/authorize',
-                        'token'      => BASE_URL . '/api/sso/token.php',
-                        'userinfo'   => BASE_URL . '/api/sso/userinfo.php',
-                        'introspect' => BASE_URL . '/api/sso/introspect.php',
-                        'jwks'       => BASE_URL . '/api/sso/jwks.php',
-                        'logout'     => BASE_URL . '/logout',
-                    ],
-                    'clients'              => $clientsOut,
-                    'sessions'             => $sessions,
-                    'active_session_count' => $activeSessionCnt,
-                    'users'                => $usersOut,
-                    'all_roles'            => $allRoles,
-                    'orphan_gurus'         => $orphanGurus,
-                    'jwks_keys'            => $jwksKeys,
-                    'audit_logs'           => $auditLogs,
-                    'portal_agendas'       => $portalAgendas,
-                    'portal_announcements' => $portalAnnouncements,
-                    'portal_external_apps' => $portalExternalApps,
-                ],
+                'data'    => margo_admin_build_bootstrap_data($pdo),
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -1753,9 +1758,10 @@ require_once BASE_PATH . '/includes/header.php';
 (function () {
     var ENDPOINT = <?= json_encode(BASE_URL . '/dashboard/admin/index.php?api=1') ?>;
     var CSRF     = <?= json_encode($csrfAdmin) ?>;
+    var INITIAL_ADMIN_DATA = <?= json_encode(margo_admin_build_bootstrap_data($pdo), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     var STATE = {
-        data: null,
+        data: INITIAL_ADMIN_DATA,
         selectedClientId: 0,
         showPriv: false,
         clientFilter: 'all',
@@ -1783,7 +1789,12 @@ require_once BASE_PATH . '/includes/header.php';
                 }
             });
         }
-        var r = await fetch(ENDPOINT, { method: 'POST', body: fd, credentials: 'same-origin' });
+        var r = await fetch(ENDPOINT, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
         return await r.json();
     }
 
@@ -2134,11 +2145,22 @@ require_once BASE_PATH . '/includes/header.php';
     }
 
     window.SSOADM = {
-        load: async function () {
+        load: async function (useInitial) {
+            if (useInitial && STATE.data) {
+                renderClients();
+                renderSessions();
+                renderUsers();
+                renderJwksAndLogs();
+                renderPortal();
+                return;
+            }
             try {
-                var r = await fetch(ENDPOINT + '&api_action=bootstrap', { credentials: 'same-origin' });
+                var r = await fetch(ENDPOINT + '&api_action=bootstrap', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
                 var res = await r.json();
-                if (!res.success) { Ilmuna.error('Gagal', res.message || 'Gagal memuat data SSO.'); return; }
+                if (!res || !res.success) { Ilmuna.error('Gagal', (res && res.message) || 'Gagal memuat data SSO.'); return; }
                 STATE.data = res.data;
                 renderClients();
                 renderSessions();
@@ -2146,7 +2168,9 @@ require_once BASE_PATH . '/includes/header.php';
                 renderJwksAndLogs();
                 renderPortal();
             } catch (e) {
-                Ilmuna.error('Kesalahan', 'Gagal menghubungi backend Admin Margo One.');
+                if (!STATE.data) {
+                    Ilmuna.error('Kesalahan', 'Gagal menghubungi backend Admin Margo One.');
+                }
             }
         },
         openManageClient: function (id) {
@@ -2702,7 +2726,7 @@ require_once BASE_PATH . '/includes/header.php';
         document.getElementById('sessSearchInput').addEventListener('input', renderSessions);
         document.getElementById('userSearchInput').addEventListener('input', renderUsers);
         document.getElementById('auditSearchInput').addEventListener('input', renderJwksAndLogs);
-        SSOADM.load();
+        SSOADM.load(true);
     });
 })();
 </script>

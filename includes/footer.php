@@ -8,6 +8,68 @@ if (!defined('BASE_PATH')) {
     exit;
 }
 $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
+
+// Muat data awal Right Sidebar (Agenda Mendatang & Info Ekosistem) langsung di server agar bebas error 401 / gagal fetch saat buka halaman
+$margoInitRightAgenda = [];
+$margoInitRightNews   = [];
+try {
+    $pdoFooter = getDBConnection();
+    $agRowsF = $pdoFooter->query("
+        SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
+        FROM sso_agendas
+        WHERE is_active = 1 AND COALESCE(end_date, start_date) >= CURDATE()
+        ORDER BY start_date ASC, start_time ASC, id ASC
+        LIMIT 12
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    if (empty($agRowsF)) {
+        $agRowsF = $pdoFooter->query("
+            SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
+            FROM sso_agendas
+            WHERE is_active = 1
+            ORDER BY start_date DESC, id DESC
+            LIMIT 6
+        ")->fetchAll(PDO::FETCH_ASSOC);
+    }
+    $bulanIndoF = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    foreach ($agRowsF as $rF) {
+        $tsF = strtotime((string)$rF['start_date']);
+        $mIdxF = $tsF ? (int)date('n', $tsF) : 1;
+        $margoInitRightAgenda[] = [
+            'id'          => (int)$rF['id'],
+            'title'       => (string)$rF['title'],
+            'start_date'  => (string)$rF['start_date'],
+            'year'        => $tsF ? date('Y', $tsF) : '',
+            'month_short' => isset($bulanIndoF[$mIdxF]) ? $bulanIndoF[$mIdxF] : '',
+            'day_num'     => $tsF ? date('d', $tsF) : '',
+        ];
+    }
+
+    $nwRowsF = $pdoFooter->query("
+        SELECT id, title, excerpt, link_url, badge_label, published_at
+        FROM sso_announcements
+        WHERE is_active = 1
+        ORDER BY published_at DESC, id DESC
+        LIMIT 15
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($nwRowsF as $nF) {
+        $tsN = strtotime((string)$nF['published_at']);
+        $rawLnk = trim((string)($nF['link_url'] ?? ''));
+        $resLnk = ($rawLnk === '' || preg_match('#^https?://#i', $rawLnk))
+            ? $rawLnk
+            : (rtrim(BASE_URL, '/') . '/' . ltrim($rawLnk, '/'));
+        $margoInitRightNews[] = [
+            'id'           => (int)$nF['id'],
+            'title'        => (string)$nF['title'],
+            'excerpt'      => (string)($nF['excerpt'] ?? ''),
+            'link_url'     => $resLnk,
+            'badge_label'  => (string)($nF['badge_label'] ?: 'INFO'),
+            'published_at' => (string)$nF['published_at'],
+            'date_human'   => $tsN ? date('d M Y', $tsN) : '',
+        ];
+    }
+} catch (Throwable $eFoot) {
+    // Non-fatal
+}
 ?>
             </div><!-- /.margo-main-inner -->
 
@@ -259,14 +321,11 @@ $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
             }
         };
 
-        // Hydrate instantly from cache, then revalidate live
-        try {
-            var cAg = localStorage.getItem('margo.cache.agenda');
-            if (cAg) renderRightAgenda(JSON.parse(cAg));
-            var cNw = localStorage.getItem('margo.cache.news');
-            if (cNw) renderRightNews(JSON.parse(cNw));
-        } catch (e) {}
-        window.MargoShell.refreshRightWidgets();
+        // Hydrate instantly from server-rendered PHP data (zero extra network calls needed on page load)
+        var INIT_RIGHT_AGENDA = <?= json_encode($margoInitRightAgenda, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        var INIT_RIGHT_NEWS   = <?= json_encode($margoInitRightNews, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        renderRightAgenda(INIT_RIGHT_AGENDA);
+        renderRightNews(INIT_RIGHT_NEWS);
     })();
     </script>
 </body>

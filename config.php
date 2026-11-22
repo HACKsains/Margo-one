@@ -111,10 +111,11 @@ if (!function_exists('margo_mb_strtolower')) {
 }
 
 // ==============================================================================
-// SESSION BOOTSTRAP (AMAN UNTUK BROWSER, DILEWATI UNTUK API & CLI)
+// SESSION BOOTSTRAP (AMAN UNTUK BROWSER & AJAX PORTAL, DILEWATI UNTUK /api/sso/ & CLI)
 // ==============================================================================
-$isApiRequest = defined('ILMUNA_SKIP_GD_WAF_INTERSTITIAL') && ILMUNA_SKIP_GD_WAF_INTERSTITIAL;
-if (!$isApiRequest && session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() !== 'cli') {
+$scriptPathForSess = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? ''));
+$isStatelessSsoApi = (strpos($scriptPathForSess, '/api/sso/') !== false);
+if (!$isStatelessSsoApi && session_status() === PHP_SESSION_NONE && !headers_sent() && php_sapi_name() !== 'cli') {
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
         || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string)$_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');

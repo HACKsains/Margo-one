@@ -25,6 +25,45 @@ if ($isAdmin && empty($_SESSION['csrf_admin_sso'])) {
 $csrfAdmin   = $isAdmin ? $_SESSION['csrf_admin_sso'] : '';
 $focusId     = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
+// Muat seluruh daftar agenda langsung dari server agar bebas error 401 / gagal fetch saat buka halaman
+$initialAgendas = [];
+try {
+    $pdoAg = getDBConnection();
+    $rowsAg = $pdoAg->query("
+        SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
+        FROM sso_agendas
+        WHERE is_active = 1
+        ORDER BY start_date ASC, start_time ASC, id ASC
+        LIMIT 120
+    ")->fetchAll(PDO::FETCH_ASSOC);
+    $bulanIndoAg = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    foreach ($rowsAg as $rAg) {
+        $tsAg = strtotime((string)$rAg['start_date']);
+        $mIdxAg = $tsAg ? (int)date('n', $tsAg) : 1;
+        $rawLnkAg = trim((string)($rAg['link_url'] ?? ''));
+        $resLnkAg = ($rawLnkAg === '' || preg_match('#^https?://#i', $rawLnkAg))
+            ? $rawLnkAg
+            : (rtrim(BASE_URL, '/') . '/' . ltrim($rawLnkAg, '/'));
+        $initialAgendas[] = [
+            'id'          => (int)$rAg['id'],
+            'title'       => (string)$rAg['title'],
+            'description' => (string)($rAg['description'] ?? ''),
+            'start_date'  => (string)$rAg['start_date'],
+            'end_date'    => $rAg['end_date'] ? (string)$rAg['end_date'] : null,
+            'start_time'  => $rAg['start_time'] ? (string)$rAg['start_time'] : '',
+            'location'    => (string)($rAg['location'] ?? ''),
+            'category'    => (string)$rAg['category'],
+            'link_url'    => $resLnkAg,
+            'year'        => $tsAg ? date('Y', $tsAg) : '',
+            'month_short' => isset($bulanIndoAg[$mIdxAg]) ? $bulanIndoAg[$mIdxAg] : '',
+            'day_num'     => $tsAg ? date('d', $tsAg) : '',
+            'source'      => 'sso',
+        ];
+    }
+} catch (Throwable $eAg) {
+    $initialAgendas = [];
+}
+
 $pageTitle = 'Agenda & Jadwal Ekosistem';
 $pageIcon  = 'solar:calendar-mark-bold';
 
@@ -253,7 +292,7 @@ require_once BASE_PATH . '/includes/header.php';
     var MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
     var now = new Date();
     var STATE = {
-        items: [],
+        items: <?= json_encode($initialAgendas, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>,
         year: now.getFullYear(),
         month: now.getMonth(),
         cat: 'all',
@@ -367,9 +406,21 @@ require_once BASE_PATH . '/includes/header.php';
         }).join('');
     }
 
-    async function loadAll(openFocus) {
+    async function loadAll(openFocus, useInitial) {
+        if (useInitial && Array.isArray(STATE.items)) {
+            renderCalendar();
+            renderList();
+            if (openFocus && FOCUS_ID > 0) {
+                var foundInit = STATE.items.find(function (x) { return x.id === FOCUS_ID; });
+                if (foundInit) MARGO_AGENDA.openDetail(foundInit.id);
+            }
+            return;
+        }
         try {
-            var r = await fetch(BASE_URL + '/portal-data.php?resource=agenda&all=1', { credentials: 'same-origin' });
+            var r = await fetch(BASE_URL + '/portal-data.php?resource=agenda&all=1', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            });
             var res = await r.json();
             if (res && res.success) {
                 STATE.items = res.data || [];
@@ -388,7 +439,12 @@ require_once BASE_PATH . '/includes/header.php';
         fd.append('api_action', action);
         fd.append('csrf_token', CSRF_ADMIN);
         Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
-        var r = await fetch(ADMIN_API, { method: 'POST', body: fd, credentials: 'same-origin' });
+        var r = await fetch(ADMIN_API, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
         return await r.json();
     }
 
@@ -515,7 +571,7 @@ require_once BASE_PATH . '/includes/header.php';
             });
         });
         document.getElementById('agendaSearchInput').addEventListener('input', renderList);
-        loadAll(true);
+        loadAll(true, true);
     });
 })();
 </script>

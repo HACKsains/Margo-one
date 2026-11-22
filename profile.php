@@ -55,6 +55,74 @@ function margo_prof_table_columns(PDO $pdo, $tableName)
     }
 }
 
+/**
+ * Bangun payload bootstrap profil pengguna (dipakai baik saat render halaman awal maupun AJAX refresh)
+ */
+function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
+{
+    $identity = margo_resolve_user_identity($pdo, $userId, getActiveRole());
+    $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+    $uStmt->execute([$userId]);
+    $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $rawPhoto = !empty($uRow['foto_profil'])
+        ? (string)$uRow['foto_profil']
+        : (!empty($uRow['avatar'])
+            ? (string)$uRow['avatar']
+            : (!empty($identity['picture']) ? (string)$identity['picture'] : ''));
+    $photoUrl = margo_resolve_avatar_url($rawPhoto);
+    if ($photoUrl) {
+        $_SESSION['user_avatar'] = $photoUrl;
+    }
+
+    $pendingEmailGoogle = '';
+    if (empty($uRow['email_google'])) {
+        try {
+            $pStmt = $pdo->prepare("SELECT email_google FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
+            $pStmt->execute([$userId]);
+            $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+            if ($pRow && !empty($pRow['email_google'])) {
+                $pendingEmailGoogle = (string)$pRow['email_google'];
+            }
+        } catch (Throwable $e) {
+            $pendingEmailGoogle = '';
+        }
+    }
+
+    $sStmt = $pdo->prepare("
+        SELECT id, active_role, ip_address, user_agent, login_method, expires_at, last_activity_at, created_at
+        FROM sso_sessions
+        WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW()
+        ORDER BY last_activity_at DESC
+    ");
+    $sStmt->execute([$userId]);
+    $sessions = $sStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($sessions as &$s) {
+        $s['is_current'] = ((int)$s['id'] === (int)$currentSid);
+    }
+    unset($s);
+
+    return [
+        'user' => [
+            'id'                   => (int)($uRow['id'] ?? $userId),
+            'username'             => (string)($uRow['username'] ?? ''),
+            'full_name'            => (string)($identity['full_name'] ?? $uRow['full_name'] ?? ''),
+            'email'                => (string)($uRow['email'] ?? ''),
+            'email_google'         => !empty($uRow['email_google']) ? (string)$uRow['email_google'] : '',
+            'pending_email_google' => $pendingEmailGoogle,
+            'photo_url'            => $photoUrl ?: '',
+            'nisn_nip'             => (string)($uRow['nisn_nip'] ?? ''),
+            'roles'                => $identity['roles'] ?? [],
+            'primary_role'         => $identity['primary_role'] ?? null,
+            'guru_id'              => $identity['guru_id'] ?? null,
+            'siswa_id'             => $identity['siswa_id'] ?? null,
+            'nama_kelas'           => $identity['nama_kelas'] ?? null,
+            'last_login'           => $uRow['last_login'] ?? null,
+        ],
+        'sessions' => $sessions,
+    ];
+}
+
 /* ==============================================================================
  * AJAX JSON API (?api=1) — ZERO PAGE RELOAD
  * ============================================================================== */
@@ -67,69 +135,9 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
     try {
         if ($act === 'bootstrap') {
-            $identity = margo_resolve_user_identity($pdo, $userId, getActiveRole());
-            $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
-            $uStmt->execute([$userId]);
-            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-
-            $rawPhoto = !empty($uRow['foto_profil'])
-                ? (string)$uRow['foto_profil']
-                : (!empty($uRow['avatar'])
-                    ? (string)$uRow['avatar']
-                    : (!empty($identity['picture']) ? (string)$identity['picture'] : ''));
-            $photoUrl = margo_resolve_avatar_url($rawPhoto);
-            if ($photoUrl) {
-                $_SESSION['user_avatar'] = $photoUrl;
-            }
-
-            $pendingEmailGoogle = '';
-            if (empty($uRow['email_google'])) {
-                try {
-                    $pStmt = $pdo->prepare("SELECT email_google FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
-                    $pStmt->execute([$userId]);
-                    $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
-                    if ($pRow && !empty($pRow['email_google'])) {
-                        $pendingEmailGoogle = (string)$pRow['email_google'];
-                    }
-                } catch (Throwable $e) {
-                    $pendingEmailGoogle = '';
-                }
-            }
-
-            $sStmt = $pdo->prepare("
-                SELECT id, active_role, ip_address, user_agent, login_method, expires_at, last_activity_at, created_at
-                FROM sso_sessions
-                WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW()
-                ORDER BY last_activity_at DESC
-            ");
-            $sStmt->execute([$userId]);
-            $sessions = $sStmt->fetchAll(PDO::FETCH_ASSOC);
-            foreach ($sessions as &$s) {
-                $s['is_current'] = ((int)$s['id'] === $currentSid);
-            }
-            unset($s);
-
             echo json_encode([
                 'success' => true,
-                'data'    => [
-                    'user'     => [
-                        'id'                   => (int)($uRow['id'] ?? $userId),
-                        'username'             => (string)($uRow['username'] ?? ''),
-                        'full_name'            => (string)($identity['full_name'] ?? $uRow['full_name'] ?? ''),
-                        'email'                => (string)($uRow['email'] ?? ''),
-                        'email_google'         => !empty($uRow['email_google']) ? (string)$uRow['email_google'] : '',
-                        'pending_email_google' => $pendingEmailGoogle,
-                        'photo_url'            => $photoUrl ?: '',
-                        'nisn_nip'             => (string)($uRow['nisn_nip'] ?? ''),
-                        'roles'                => $identity['roles'] ?? [],
-                        'primary_role'         => $identity['primary_role'] ?? null,
-                        'guru_id'              => $identity['guru_id'] ?? null,
-                        'siswa_id'             => $identity['siswa_id'] ?? null,
-                        'nama_kelas'           => $identity['nama_kelas'] ?? null,
-                        'last_login'           => $uRow['last_login'] ?? null,
-                    ],
-                    'sessions' => $sessions,
-                ],
+                'data'    => margo_profile_build_bootstrap_data($pdo, $userId, $currentSid),
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
         }
@@ -923,6 +931,7 @@ require_once BASE_PATH . '/includes/header.php';
     var CSRF             = <?= json_encode($csrfToken) ?>;
     var GOOGLE_CLIENT_ID = <?= json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : '') ?>;
     var CURRENT_FULLNAME = <?= json_encode($initFullName) ?>;
+    var INITIAL_PROFILE  = <?= json_encode(margo_profile_build_bootstrap_data($pdo, $userId, $currentSid), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
     var GOOGLE_SVG_24    = '<svg width="24" height="24" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
     var GOOGLE_SVG_16    = '<svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
     var googlePendingInterval = null;
@@ -956,7 +965,12 @@ require_once BASE_PATH . '/includes/header.php';
         fd.append('api_action', action);
         fd.append('csrf_token', CSRF);
         if (data) Object.keys(data).forEach(function (k) { fd.append(k, data[k]); });
-        var r = await fetch(ENDPOINT, { method: 'POST', body: fd, credentials: 'same-origin' });
+        var r = await fetch(ENDPOINT, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
         return await r.json();
     }
 
@@ -1448,30 +1462,47 @@ require_once BASE_PATH . '/includes/header.php';
         }).join('');
     }
 
-    window.MPROF = {
-        load: async function () {
-            try {
-                var r = await fetch(ENDPOINT + '&api_action=bootstrap', { credentials: 'same-origin' });
-                var res = await r.json();
-                if (!res.success) return;
-                var u = res.data.user;
-                if (u.full_name) {
-                    CURRENT_FULLNAME = u.full_name;
-                }
-                syncShellAvatars(u.photo_url || '', CURRENT_FULLNAME);
-                document.getElementById('mprofRolesWrap').innerHTML = (u.roles || []).map(function (rl) {
-                    return '<span class="mprof-badge mprof-badge--teal">' + esc(rl.toUpperCase()) + '</span>';
-                }).join('');
-                document.getElementById('mprofIdentityMeta').innerHTML =
-                    '<span class="mprof-meta-item"><iconify-icon icon="solar:user-bold" style="color:#0D7A87;"></iconify-icon> <strong>' + esc(u.full_name) + '</strong> (@' + esc(u.username) + ')</span>'
-                    + '<span class="mprof-meta-item"><iconify-icon icon="solar:letter-bold" style="color:#0D7A87;"></iconify-icon> ' + esc(u.email || '-') + '</span>'
-                    + (u.nama_kelas ? '<span class="mprof-meta-item"><iconify-icon icon="solar:buildings-2-bold" style="color:#0D7A87;"></iconify-icon> ' + esc(u.nama_kelas) + '</span>' : '')
-                    + '<span class="mprof-meta-item"><iconify-icon icon="solar:clock-circle-linear" style="color:#64748B;"></iconify-icon> Login terakhir: ' + esc(u.last_login || 'Baru saja') + '</span>';
+    function applyProfileData(d) {
+        if (!d || !d.user) return;
+        var u = d.user;
+        if (u.full_name) {
+            CURRENT_FULLNAME = u.full_name;
+        }
+        syncShellAvatars(u.photo_url || '', CURRENT_FULLNAME);
+        var rolesWrap = document.getElementById('mprofRolesWrap');
+        if (rolesWrap) {
+            rolesWrap.innerHTML = (u.roles || []).map(function (rl) {
+                return '<span class="mprof-badge mprof-badge--teal">' + esc(String(rl).toUpperCase()) + '</span>';
+            }).join('');
+        }
+        var metaWrap = document.getElementById('mprofIdentityMeta');
+        if (metaWrap) {
+            metaWrap.innerHTML =
+                '<span class="mprof-meta-item"><iconify-icon icon="solar:user-bold" style="color:#0D7A87;"></iconify-icon> <strong>' + esc(u.full_name) + '</strong> (@' + esc(u.username) + ')</span>'
+                + '<span class="mprof-meta-item"><iconify-icon icon="solar:letter-bold" style="color:#0D7A87;"></iconify-icon> ' + esc(u.email || '-') + '</span>'
+                + (u.nama_kelas ? '<span class="mprof-meta-item"><iconify-icon icon="solar:buildings-2-bold" style="color:#0D7A87;"></iconify-icon> ' + esc(u.nama_kelas) + '</span>' : '')
+                + '<span class="mprof-meta-item"><iconify-icon icon="solar:clock-circle-linear" style="color:#64748B;"></iconify-icon> Login terakhir: ' + esc(u.last_login || 'Baru saja') + '</span>';
+        }
+        renderGoogle(u);
+        renderSessions(d.sessions || []);
+    }
 
-                renderGoogle(u);
-                renderSessions(res.data.sessions || []);
+    window.MPROF = {
+        load: async function (useInitial) {
+            if (useInitial && INITIAL_PROFILE) {
+                applyProfileData(INITIAL_PROFILE);
+                return;
+            }
+            try {
+                var r = await fetch(ENDPOINT + '&api_action=bootstrap', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                var res = await r.json();
+                if (!res || !res.success) return;
+                applyProfileData(res.data);
             } catch (e) {
-                if (window.Ilmuna) Ilmuna.error('Kesalahan', 'Gagal memuat data profil.');
+                if (!INITIAL_PROFILE && window.Ilmuna) Ilmuna.error('Kesalahan', 'Gagal memuat data profil.');
             }
         },
         unlinkGoogle: function () {
@@ -1514,7 +1545,7 @@ require_once BASE_PATH . '/includes/header.php';
 
     document.addEventListener('DOMContentLoaded', function () {
         bindTabs();
-        MPROF.load();
+        MPROF.load(true);
         var formPass = document.getElementById('formChangePassword');
         if (formPass) {
             formPass.addEventListener('submit', async function (e) {
