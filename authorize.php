@@ -76,6 +76,7 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
 
     $clientName = (string)($client['client_name'] ?? 'Aplikasi Ekosistem');
     $clientIcon = !empty($client['app_icon']) ? (string)$client['app_icon'] : 'solar:widget-5-bold';
+    $clientLogo = margo_resolve_app_logo_url($client['app_logo'] ?? '', $client['app_icon'] ?? '');
     $clientHost = parse_url((string)($client['app_url'] ?? ''), PHP_URL_HOST) ?: (string)($client['app_url'] ?? '');
 
     $fullName   = margo_mb_strtoupper(trim((string)($user['full_name'] ?: $user['username'] ?: 'PENGGUNA')));
@@ -494,9 +495,19 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
         <!-- RIGHT ACCOUNT CONFIRMATION PANEL -->
         <div class="form-panel" id="formPanel">
             <span class="collab-badge">
-                <iconify-icon icon="<?= htmlspecialchars($clientIcon, ENT_QUOTES, 'UTF-8') ?>" width="14"></iconify-icon>
+                <?php if (!empty($clientLogo)): ?>
+                    <img src="<?= htmlspecialchars($clientLogo, ENT_QUOTES, 'UTF-8') ?>" alt="" style="width:16px;height:16px;object-fit:contain;border-radius:4px;">
+                <?php else: ?>
+                    <iconify-icon icon="<?= htmlspecialchars($clientIcon, ENT_QUOTES, 'UTF-8') ?>" width="14"></iconify-icon>
+                <?php endif; ?>
                 <span>Konfirmasi Akses SSO</span>
             </span>
+
+            <?php if (!empty($clientLogo)): ?>
+                <div style="width:52px;height:52px;border-radius:14px;background:#FFFFFF;border:1px solid #E2E8F0;box-shadow:0 8px 20px rgba(29,59,94,0.10);display:flex;align-items:center;justify-content:center;padding:6px;margin-bottom:10px;">
+                    <img src="<?= htmlspecialchars($clientLogo, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($clientName, ENT_QUOTES, 'UTF-8') ?>" style="width:100%;height:100%;object-fit:contain;border-radius:9px;">
+                </div>
+            <?php endif; ?>
 
             <h2 class="collab-title">
                 Margo One <span class="x-sep">×</span> <?= htmlspecialchars($clientName, ENT_QUOTES, 'UTF-8') ?>

@@ -52,19 +52,12 @@ if (empty($_SESSION['csrf_login_token']) || !is_string($_SESSION['csrf_login_tok
 }
 $csrfToken = $_SESSION['csrf_login_token'];
 
-$isOAuthRequest = ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['oauth']) && $_GET['oauth'] === '1')
-    || ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oauth_flow']) && $_POST['oauth_flow'] === '1');
-
-if (!$isOAuthRequest) {
-    margo_clear_pending_oauth();
-}
-
-$pendingOAuth = $isOAuthRequest ? margo_get_pending_oauth() : null;
+$pendingOAuth = margo_get_pending_oauth();
 $targetClient = null;
 if ($pendingOAuth && !empty($pendingOAuth['client_db_id'])) {
     try {
         $pdo = getDBConnection();
-        $stC = $pdo->prepare("SELECT id, client_name, client_slug, app_url, app_icon, allowed_domains FROM sso_clients WHERE id = ? AND is_active = 1 LIMIT 1");
+        $stC = $pdo->prepare("SELECT * FROM sso_clients WHERE id = ? AND is_active = 1 LIMIT 1");
         $stC->execute([(int)$pendingOAuth['client_db_id']]);
         $targetClient = $stC->fetch(PDO::FETCH_ASSOC) ?: null;
     } catch (Throwable $e) {
@@ -72,6 +65,7 @@ if ($pendingOAuth && !empty($pendingOAuth['client_db_id'])) {
     }
 }
 
+$postLoginRedirect = $pendingOAuth ? (BASE_URL . '/authorize?resume=1&continue=1') : (BASE_URL . '/gateway');
 $postLoginRedirect = $pendingOAuth ? (BASE_URL . '/authorize?resume=1') : (BASE_URL . '/gateway');
 
 /* ==============================================================================
@@ -277,6 +271,7 @@ $ctxDesc = $targetClient
     ? ('Autentikasi terpusat menuju ' . $targetClient['client_name'] . ' (' . parse_url($targetClient['app_url'], PHP_URL_HOST) . ') dilindungi enkripsi RS256 & PKCE.')
     : 'Satu akun terpadu untuk seluruh ekosistem digital Ilmuna — Ilmuna Learn LMS, Portal ilmuna.my.id, dan layanan akademik lainnya.';
 $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetClient['app_icon'] : 'solar:shield-keyhole-bold';
+$ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] ?? '', $targetClient['app_icon'] ?? '') : null;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -748,7 +743,11 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
                     <p class="slide-desc"><?= htmlspecialchars($ctxDesc, ENT_QUOTES, 'UTF-8') ?></p>
 
                     <div class="client-ctx-pill">
-                        <iconify-icon icon="<?= htmlspecialchars($ctxIcon, ENT_QUOTES, 'UTF-8') ?>" width="16"></iconify-icon>
+                        <?php if (!empty($ctxLogo)): ?>
+                            <img src="<?= htmlspecialchars($ctxLogo, ENT_QUOTES, 'UTF-8') ?>" alt="" style="width:18px;height:18px;object-fit:contain;border-radius:4px;">
+                        <?php else: ?>
+                            <iconify-icon icon="<?= htmlspecialchars($ctxIcon, ENT_QUOTES, 'UTF-8') ?>" width="16"></iconify-icon>
+                        <?php endif; ?>
                         <span><?= htmlspecialchars($targetClient ? ('Tujuan: ' . $targetClient['client_name']) : 'Zero-Trust RS256 · Single Sign-On', ENT_QUOTES, 'UTF-8') ?></span>
                     </div>
                 </div>
@@ -791,7 +790,6 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
 
                 <form method="POST" action="" id="loginForm" autocomplete="on" novalidate>
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
-                    <input type="hidden" name="oauth_flow" value="<?= $pendingOAuth ? '1' : '0' ?>">
 
                     <div class="hp-field" aria-hidden="true">
                         <label for="website">Website</label>
@@ -872,7 +870,6 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             </p>
             <form method="POST" action="" id="googleLoginForm" novalidate>
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
-                <input type="hidden" name="oauth_flow" value="<?= $pendingOAuth ? '1' : '0' ?>">
                 <input type="hidden" name="login_mode" value="google">
                 <div class="hp-field" aria-hidden="true"><input type="text" name="website" tabindex="-1" autocomplete="off"></div>
                 <div class="field" style="margin-bottom: 0;">
@@ -920,7 +917,7 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
 
-            var particleColors = ['#1D3B5E', '#0D7A87', '#52B2DC'];
+            var particleColors = ['#1D3B5E', '#0D7A87', '#52B2DC', '#10B981'];
             var particles = [];
             for (var i = 0; i < 48; i++) {
                 particles.push({
@@ -1017,7 +1014,6 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             }
             var fd = new FormData();
             fd.append('csrf_token', <?= json_encode($csrfToken) ?>);
-            fd.append('oauth_flow', <?= $pendingOAuth ? "'1'" : "'0'" ?>);
             fd.append('login_mode', 'google');
             fd.append('ajax', '1');
             if (payload.accessToken) fd.append('google_access_token', payload.accessToken);

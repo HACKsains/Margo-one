@@ -34,6 +34,67 @@ if (!defined('MARGO_SSO_MAX_SKEW')) {
 require_once __DIR__ . '/sso-jwt.php';
 
 /**
+ * Normalisasi URL Foto/Logo/Icon Aplikasi (mendukung file upload relatif, URL penuh, atau data URI)
+ */
+if (!function_exists('margo_resolve_app_logo_url')) {
+    function margo_resolve_app_logo_url($rawLogo, $rawIcon = '')
+    {
+        foreach ([$rawLogo, $rawIcon] as $cand) {
+            $s = trim((string)$cand);
+            if ($s === '' || stripos($s, 'solar:') === 0) {
+                continue;
+            }
+            if (preg_match('#^https?://#i', $s) || strpos($s, 'data:image/') === 0) {
+                return $s;
+            }
+            $base = defined('BASE_URL') ? rtrim(BASE_URL, '/') : '';
+            return $base . '/' . ltrim($s, '/');
+        }
+        return null;
+    }
+}
+
+/**
+ * Verifikasi apakah pengguna (berdasarkan daftar Role + Izin Aplikasi spesifik user)
+ * memiliki izin (permission) untuk login ke aplikasi klien SSO tertentu.
+ */
+if (!function_exists('margo_user_can_access_client')) {
+    function margo_user_can_access_client(array $client, array $userRoles, $userAllowedApps = null)
+    {
+        // 1. Cek izin berbasis Role pada aplikasi (sso_clients.allowed_roles)
+        $allowedRoles = margo_sso_parse_list($client['allowed_roles'] ?? '');
+        $roleAllowed  = empty($allowedRoles);
+        if (!$roleAllowed) {
+            foreach ($userRoles as $ur) {
+                if (in_array(strtolower(trim((string)$ur)), $allowedRoles, true)) {
+                    $roleAllowed = true;
+                    break;
+                }
+            }
+        }
+        if (!$roleAllowed) {
+            return false;
+        }
+
+        // 2. Cek izin aplikasi spesifik pada pengguna/role (users.allowed_apps) bila diatur
+        $rawAllowedApps = trim((string)$userAllowedApps);
+        if ($rawAllowedApps !== '' && $rawAllowedApps !== '*') {
+            if ($rawAllowedApps === '__none__') {
+                return false;
+            }
+            $allowedSlugs = margo_sso_parse_list($rawAllowedApps);
+            $clientSlug   = strtolower(trim((string)($client['client_slug'] ?? '')));
+            $clientIdStr  = (string)($client['id'] ?? '');
+            if (!in_array($clientSlug, $allowedSlugs, true) && !in_array($clientIdStr, $allowedSlugs, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+/**
  * Kunci master internal untuk enkripsi at-rest (Private Key klien & RSA Private Key IdP)
  * Stabil lintas nama database (uofruaju_margo_one maupun uofruaju_learn_ilmuna)
  */
@@ -271,6 +332,7 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             sig_mode ENUM('HMAC-SHA256','RSA-SHA256','DUAL') NOT NULL DEFAULT 'HMAC-SHA256',
             app_url VARCHAR(255) NOT NULL,
             app_icon VARCHAR(80) NOT NULL DEFAULT 'solar:widget-5-bold',
+            app_logo VARCHAR(255) NULL DEFAULT NULL,
             redirect_uris TEXT NOT NULL,
             logout_webhook_url VARCHAR(255) NULL,
             allowed_domains TEXT NOT NULL,
@@ -287,6 +349,26 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             INDEX idx_sso_clients_active (is_active)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    // Pastikan kolom app_logo ada pada tabel sso_clients eksisting
+    try {
+        $clientCols = $pdo->query("SHOW COLUMNS FROM sso_clients")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('app_logo', $clientCols, true)) {
+            $pdo->exec("ALTER TABLE sso_clients ADD COLUMN app_logo VARCHAR(255) NULL DEFAULT NULL AFTER app_icon");
+        }
+    } catch (Throwable $eColC) {
+        // Non-fatal
+    }
+
+    // Pastikan kolom allowed_apps ada pada tabel users eksisting (untuk permission login per aplikasi)
+    try {
+        $uColsCheck = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
+        if (!empty($uColsCheck) && !in_array('allowed_apps', $uColsCheck, true)) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN allowed_apps TEXT NULL DEFAULT NULL");
+        }
+    } catch (Throwable $eColU) {
+        // Non-fatal
+    }
 
     // 2. sso_sessions
     $pdo->exec("
@@ -558,6 +640,7 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             description VARCHAR(255) NULL,
             app_url VARCHAR(255) NOT NULL,
             app_icon VARCHAR(80) NOT NULL DEFAULT 'solar:widget-4-bold',
+            app_logo VARCHAR(255) NULL DEFAULT NULL,
             badge_label VARCHAR(40) NOT NULL DEFAULT 'EKOSISTEM',
             sort_order INT NOT NULL DEFAULT 10,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -565,6 +648,15 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             INDEX idx_sso_ext_active (is_active, sort_order)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    try {
+        $extCols = $pdo->query("SHOW COLUMNS FROM sso_external_apps")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('app_logo', $extCols, true)) {
+            $pdo->exec("ALTER TABLE sso_external_apps ADD COLUMN app_logo VARCHAR(255) NULL DEFAULT NULL AFTER app_icon");
+        }
+    } catch (Throwable $eColExt) {
+        // Non-fatal
+    }
 
     // Seed agenda awal jika masih kosong
     $agendaCount = (int)$pdo->query("SELECT COUNT(*) FROM sso_agendas")->fetchColumn();

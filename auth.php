@@ -389,6 +389,7 @@ function getCurrentUser()
         'foto_profil'    => margo_resolve_avatar_url($_SESSION['user_avatar'] ?? ''),
         'roles'          => $_SESSION['user_roles'] ?? [],
         'roles_detail'   => $_SESSION['user_roles_detail'] ?? [],
+        'allowed_apps'   => $_SESSION['user_allowed_apps'] ?? null,
         'active_role'    => $_SESSION['active_role'] ?? null,
         'primary_role'   => $_SESSION['primary_role'] ?? null,
         'sso_session_id' => (int)($_SESSION['sso_session_id'] ?? 0),
@@ -759,6 +760,7 @@ function margo_hydrate_php_session(PDO $pdo, array $user, $ssoSessionId, $rawTok
     $_SESSION['user_avatar']       = margo_resolve_avatar_url($user['foto_profil'] ?? $user['avatar'] ?? '');
     $_SESSION['user_roles']        = $roleCodes;
     $_SESSION['user_roles_detail'] = $rolesDetail;
+    $_SESSION['user_allowed_apps'] = isset($user['allowed_apps']) ? $user['allowed_apps'] : null;
     $_SESSION['primary_role']      = $primaryRole;
     $_SESSION['active_role']       = $activeRole;
     $_SESSION['sso_session_id']    = (int)$ssoSessionId;

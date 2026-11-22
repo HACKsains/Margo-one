@@ -165,32 +165,36 @@ function margo_process_authorize_request(PDO $pdo, array $params, array $loggedI
         ];
     }
 
-    // 6. Verifikasi hak role pengguna terhadap client.allowed_roles
+    // 6. Verifikasi hak role & permission aplikasi pengguna terhadap client.allowed_roles & users.allowed_apps
     $userRoles    = isset($loggedInUser['roles']) && is_array($loggedInUser['roles']) ? $loggedInUser['roles'] : [];
     $allowedRoles = margo_sso_parse_list($client['allowed_roles']);
-    $roleAllowed  = empty($allowedRoles);
-    if (!$roleAllowed) {
-        foreach ($userRoles as $ur) {
-            if (in_array(strtolower((string)$ur), $allowedRoles, true)) {
-                $roleAllowed = true;
-                break;
-            }
+    $userAllowedApps = $loggedInUser['allowed_apps'] ?? null;
+    try {
+        $stUa = $pdo->prepare("SELECT allowed_apps FROM users WHERE id = ? LIMIT 1");
+        $stUa->execute([(int)$loggedInUser['id']]);
+        $dbAllowedApps = $stUa->fetchColumn();
+        if ($dbAllowedApps !== false) {
+            $userAllowedApps = $dbAllowedApps;
         }
+    } catch (Throwable $eUa) {
+        // Kolom opsional
     }
+
+    $roleAllowed = margo_user_can_access_client($client, $userRoles, $userAllowedApps);
 
     if (!$roleAllowed) {
         margo_sso_log_audit($pdo, 'authorize_role_denied', [
             'user_id'     => (int)$loggedInUser['id'],
             'client_id'   => (int)$client['id'],
             'http_status' => 403,
-            'detail'      => ['user_roles' => $userRoles, 'allowed_roles' => $allowedRoles],
+            'detail'      => ['user_roles' => $userRoles, 'allowed_roles' => $allowedRoles, 'allowed_apps' => $userAllowedApps],
         ]);
         return [
             'action'      => 'error_page',
             'http_status' => 403,
             'code'        => 'ROLE_FORBIDDEN',
-            'title'       => 'Peran Akun Tidak Diizinkan',
-            'message'     => 'Akun Anda tidak memiliki hak peran yang diizinkan untuk mengakses aplikasi "' . $client['client_name'] . '".',
+            'title'       => 'Akses Aplikasi Tidak Diizinkan',
+            'message'     => 'Akun atau peran Anda tidak memiliki izin (permission) untuk login ke aplikasi "' . $client['client_name'] . '". Hubungi Administrator SSO.',
         ];
     }
 

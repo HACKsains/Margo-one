@@ -247,19 +247,19 @@ try {
             ];
         }
 
+        $freshAllowedApps = $currentUser['allowed_apps'] ?? null;
+        try {
+            $stUa = $pdo->prepare("SELECT allowed_apps FROM users WHERE id = ? LIMIT 1");
+            $stUa->execute([$userId]);
+            $dbUa = $stUa->fetchColumn();
+            if ($dbUa !== false) {
+                $freshAllowedApps = $dbUa;
+            }
+        } catch (Throwable $eUa) {}
+
         $clients = $pdo->query("SELECT * FROM sso_clients WHERE is_active = 1 ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
         foreach ($clients as $c) {
-            $allowedRoles = margo_sso_parse_list($c['allowed_roles']);
-            $canUse = empty($allowedRoles);
-            if (!$canUse) {
-                foreach ($userRoles as $ur) {
-                    if (in_array(strtolower((string)$ur), $allowedRoles, true)) {
-                        $canUse = true;
-                        break;
-                    }
-                }
-            }
-            if (!$canUse) {
+            if (!margo_user_can_access_client($c, $userRoles, $freshAllowedApps)) {
                 continue;
             }
             $rawAppUrl = trim((string)$c['app_url']);
@@ -282,6 +282,7 @@ try {
                 'description' => 'Masuk otomatis ke ' . $hostLbl . ' dengan sesi Margo One SSO',
                 'url'         => $launchUrl,
                 'icon'        => !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold',
+                'logo'        => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
                 'badge'       => 'SSO AKTIF',
                 'is_admin'    => false,
                 'external'    => true,
@@ -289,7 +290,7 @@ try {
         }
 
         $extRows = $pdo->query("
-            SELECT id, app_name, description, app_url, app_icon, badge_label
+            SELECT *
             FROM sso_external_apps
             WHERE is_active = 1
             ORDER BY sort_order ASC, id ASC
@@ -304,6 +305,7 @@ try {
                 'description' => (string)($ex['description'] ?? ''),
                 'url'         => $resolved,
                 'icon'        => !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold',
+                'logo'        => margo_resolve_app_logo_url($ex['app_logo'] ?? '', $ex['app_icon'] ?? ''),
                 'badge'       => (string)($ex['badge_label'] ?: 'EKOSISTEM'),
                 'external'    => $isExtUrl,
             ];

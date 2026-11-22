@@ -114,6 +114,40 @@ if (isset($_GET['download_sdk'])) {
 /* ==============================================================================
  * AJAX JSON API (?api=1) — ZERO PAGE RELOAD
  * ============================================================================== */
+function margo_admin_handle_app_logo_upload($fileKey, $slugPrefix = 'app')
+{
+    if (empty($_FILES[$fileKey]) || !is_array($_FILES[$fileKey])) {
+        return null;
+    }
+    $f = $_FILES[$fileKey];
+    if ((int)($f['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE || empty($f['tmp_name'])) {
+        return null;
+    }
+    if ((int)($f['error'] ?? 0) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException('Gagal mengunggah file gambar/icon aplikasi (kode error: ' . (int)$f['error'] . ').');
+    }
+    if ((int)($f['size'] ?? 0) > 4 * 1024 * 1024) {
+        throw new RuntimeException('Ukuran foto/icon aplikasi maksimal 4 MB.');
+    }
+    $origName = strtolower((string)($f['name'] ?? ''));
+    $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'svg', 'ico', 'gif'], true)) {
+        throw new RuntimeException('Format foto/icon aplikasi harus PNG, JPG, WEBP, SVG, atau ICO.');
+    }
+    $uploadDir = BASE_PATH . '/uploads/apps';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0755, true);
+    }
+    $safeSlug = preg_replace('/[^a-z0-9\-_]+/i', '-', strtolower((string)$slugPrefix));
+    $safeSlug = trim($safeSlug, '-') ?: 'app';
+    $fileName = 'app_' . $safeSlug . '_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 6) . '.' . $ext;
+    $destPath = $uploadDir . '/' . $fileName;
+    if (!@move_uploaded_file($f['tmp_name'], $destPath)) {
+        throw new RuntimeException('Gagal menyimpan file foto/icon aplikasi ke folder uploads/apps.');
+    }
+    return 'uploads/apps/' . $fileName;
+}
+
 if (isset($_GET['api']) && $_GET['api'] === '1') {
     while (ob_get_level()) {
         ob_end_clean();
@@ -141,6 +175,8 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                     'sig_mode'           => (string)$c['sig_mode'],
                     'app_url'            => (string)$c['app_url'],
                     'app_icon'           => (string)$c['app_icon'],
+                    'app_logo'           => (string)($c['app_logo'] ?? ''),
+                    'app_logo_url'       => margo_resolve_app_logo_url($c['app_logo'] ?? '', $c['app_icon'] ?? ''),
                     'redirect_uris'      => (string)$c['redirect_uris'],
                     'logout_webhook_url' => (string)($c['logout_webhook_url'] ?? ''),
                     'allowed_domains'    => (string)$c['allowed_domains'],
@@ -179,7 +215,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             // 3. Users + Roles + Orphan Guru Detection
             $allRoles = $pdo->query("SELECT id, code, name FROM roles ORDER BY id ASC")->fetchAll(PDO::FETCH_ASSOC);
             $usersRaw = $pdo->query("
-                SELECT u.id, u.username, u.full_name, u.email, u.email_google, u.nisn_nip, u.status, u.is_active, u.last_login
+                SELECT u.*
                 FROM users u
                 ORDER BY u.id ASC
                 LIMIT 200
@@ -224,8 +260,9 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                     'email'        => (string)($u['email'] ?? ''),
                     'email_google' => (string)($u['email_google'] ?? ''),
                     'nisn_nip'     => (string)($u['nisn_nip'] ?? ''),
+                    'allowed_apps' => isset($u['allowed_apps']) ? (string)$u['allowed_apps'] : '',
                     'is_active'    => margo_user_is_active($u) ? 1 : 0,
-                    'last_login'   => $u['last_login'],
+                    'last_login'   => $u['last_login'] ?? null,
                     'roles'        => $uRoles,
                 ];
             }
@@ -264,11 +301,16 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             ")->fetchAll(PDO::FETCH_ASSOC);
 
             $portalExternalApps = $pdo->query("
-                SELECT id, app_name, description, app_url, app_icon, badge_label, sort_order, is_active
+                SELECT *
                 FROM sso_external_apps
                 ORDER BY sort_order ASC, id ASC
                 LIMIT 60
             ")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($portalExternalApps as &$pea) {
+                $pea['app_logo']     = (string)($pea['app_logo'] ?? '');
+                $pea['app_logo_url'] = margo_resolve_app_logo_url($pea['app_logo'], $pea['app_icon'] ?? '');
+            }
+            unset($pea);
 
             echo json_encode([
                 'success' => true,
@@ -322,6 +364,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             $allowedRoles   = trim((string)($_POST['allowed_roles'] ?? 'admin,guru,ketua_kelas,siswa'));
             $rateLimit      = max(10, min(2000, (int)($_POST['rate_limit_per_min'] ?? 180)));
             $isActive       = !empty($_POST['is_active']) ? 1 : 0;
+            $removeLogo     = !empty($_POST['remove_app_logo']);
 
             if ($clientName === '' || $clientSlug === '' || $appUrl === '' || $redirectUris === '') {
                 echo json_encode(['success' => false, 'message' => 'Nama klien, slug, URL aplikasi, dan minimal 1 Redirect URI wajib diisi.']);
@@ -330,33 +373,42 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             if (!in_array($sigMode, ['HMAC-SHA256', 'RSA-SHA256', 'DUAL'], true)) {
                 $sigMode = 'HMAC-SHA256';
             }
-            if (strpos($appIcon, 'solar:') !== 0) {
+            if ($appIcon === '') {
                 $appIcon = 'solar:widget-5-bold';
             }
 
+            $uploadedLogoPath = margo_admin_handle_app_logo_upload('app_logo_file', $clientSlug);
+
             if ($id > 0) {
-                if ($sigMode !== 'HMAC-SHA256') {
-                    $stRsa = $pdo->prepare("SELECT rsa_public_pem FROM sso_clients WHERE id = ?");
-                    $stRsa->execute([$id]);
-                    if (trim((string)$stRsa->fetchColumn()) === '') {
-                        echo json_encode(['success' => false, 'message' => 'Generate RSA-2048 PEM terlebih dahulu sebelum mengaktifkan mode ' . $sigMode . '.']);
-                        exit;
-                    }
+                $stExisting = $pdo->prepare("SELECT rsa_public_pem, app_logo FROM sso_clients WHERE id = ? LIMIT 1");
+                $stExisting->execute([$id]);
+                $exRow = $stExisting->fetch(PDO::FETCH_ASSOC);
+                if ($sigMode !== 'HMAC-SHA256' && trim((string)($exRow['rsa_public_pem'] ?? '')) === '') {
+                    echo json_encode(['success' => false, 'message' => 'Generate RSA-2048 PEM terlebih dahulu sebelum mengaktifkan mode ' . $sigMode . '.']);
+                    exit;
                 }
+                $finalAppLogo = $exRow['app_logo'] ?? null;
+                if ($removeLogo) {
+                    $finalAppLogo = null;
+                }
+                if ($uploadedLogoPath !== null) {
+                    $finalAppLogo = $uploadedLogoPath;
+                }
+
                 $stmt = $pdo->prepare("
                     UPDATE sso_clients
-                    SET client_name = ?, client_slug = ?, sig_mode = ?, app_url = ?, app_icon = ?,
+                    SET client_name = ?, client_slug = ?, sig_mode = ?, app_url = ?, app_icon = ?, app_logo = ?,
                         redirect_uris = ?, logout_webhook_url = ?, allowed_domains = ?, allowed_ips = ?,
                         allowed_scopes = ?, allowed_roles = ?, rate_limit_per_min = ?, is_active = ?
                     WHERE id = ?
                 ");
                 $stmt->execute([
-                    $clientName, $clientSlug, $sigMode, $appUrl, $appIcon,
+                    $clientName, $clientSlug, $sigMode, $appUrl, $appIcon, $finalAppLogo,
                     $redirectUris, $logoutWebhook !== '' ? $logoutWebhook : null,
                     $allowedDomains, $allowedIps, $allowedScopes, $allowedRoles, $rateLimit, $isActive, $id,
                 ]);
                 margo_sso_log_audit($pdo, 'admin_client_updated', [
-                    'user_id' => (int)getCurrentUser()['id'], 'client_id' => $id, 'detail' => ['slug' => $clientSlug],
+                    'user_id' => (int)getCurrentUser()['id'], 'client_id' => $id, 'detail' => ['slug' => $clientSlug, 'allowed_roles' => $allowedRoles],
                 ]);
                 echo json_encode(['success' => true, 'message' => 'Konfigurasi klien "' . $clientName . '" berhasil disimpan.', 'data' => ['id' => $id]]);
                 exit;
@@ -364,14 +416,14 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 $pair = margo_sso_generate_keypair();
                 $stmt = $pdo->prepare("
                     INSERT INTO sso_clients
-                    (client_name, client_slug, public_key, private_key_enc, private_key_hash, sig_mode, app_url, app_icon, redirect_uris, logout_webhook_url, allowed_domains, allowed_ips, allowed_scopes, allowed_roles, rate_limit_per_min, is_active)
-                    VALUES (?, ?, ?, ?, ?, 'HMAC-SHA256', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (client_name, client_slug, public_key, private_key_enc, private_key_hash, sig_mode, app_url, app_icon, app_logo, redirect_uris, logout_webhook_url, allowed_domains, allowed_ips, allowed_scopes, allowed_roles, rate_limit_per_min, is_active)
+                    VALUES (?, ?, ?, ?, ?, 'HMAC-SHA256', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $stmt->execute([
                     $clientName, $clientSlug, $pair['public_key'],
                     margo_sso_encrypt_secret($pair['private_key']),
                     hash('sha256', $pair['private_key']),
-                    $appUrl, $appIcon, $redirectUris,
+                    $appUrl, $appIcon, $uploadedLogoPath, $redirectUris,
                     $logoutWebhook !== '' ? $logoutWebhook : null,
                     $allowedDomains, $allowedIps, $allowedScopes, $allowedRoles, $rateLimit, $isActive,
                 ]);
@@ -518,11 +570,12 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             exit;
         }
 
-        // ---- UPDATE MULTI-ROLE USER ----
+        // ---- UPDATE MULTI-ROLE & PERMISSION APLIKASI USER ----
         if ($act === 'update_user_roles') {
-            $uid         = (int)($_POST['user_id'] ?? 0);
-            $roleIdsRaw  = isset($_POST['role_ids']) ? $_POST['role_ids'] : [];
-            $primaryCode = trim((string)($_POST['primary_role'] ?? ''));
+            $uid            = (int)($_POST['user_id'] ?? 0);
+            $roleIdsRaw     = isset($_POST['role_ids']) ? $_POST['role_ids'] : [];
+            $primaryCode    = trim((string)($_POST['primary_role'] ?? ''));
+            $allowedAppsRaw = isset($_POST['allowed_apps']) ? trim((string)$_POST['allowed_apps']) : '';
 
             if (!is_array($roleIdsRaw)) {
                 $roleIdsRaw = explode(',', (string)$roleIdsRaw);
@@ -560,6 +613,10 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 foreach ($validCodes as $vc) {
                     $insUr->execute([$uid, $codeToId[$vc], ($vc === $primaryCode ? 1 : 0)]);
                 }
+                if (isset($_POST['allowed_apps'])) {
+                    $pdo->prepare("UPDATE users SET allowed_apps = ? WHERE id = ?")
+                        ->execute([$allowedAppsRaw !== '' ? $allowedAppsRaw : null, $uid]);
+                }
                 $pdo->commit();
             } catch (Throwable $eTx) {
                 if ($pdo->inTransaction()) {
@@ -568,12 +625,40 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 throw $eTx;
             }
 
+            if ($uid === (int)getCurrentUser()['id']) {
+                $_SESSION['user_allowed_apps'] = ($allowedAppsRaw !== '' ? $allowedAppsRaw : null);
+            }
+
             margo_sso_log_audit($pdo, 'admin_roles_updated', [
                 'user_id' => $uid,
-                'detail'  => ['roles' => $validCodes, 'primary' => $primaryCode, 'by' => (int)getCurrentUser()['id']],
+                'detail'  => ['roles' => $validCodes, 'primary' => $primaryCode, 'allowed_apps' => $allowedAppsRaw, 'by' => (int)getCurrentUser()['id']],
             ]);
 
-            echo json_encode(['success' => true, 'message' => 'Peran multi-aplikasi pengguna berhasil diperbarui.']);
+            echo json_encode(['success' => true, 'message' => 'Peran & izin akses aplikasi (permission) pengguna berhasil diperbarui.']);
+            exit;
+        }
+
+        // ---- SIMPAN MATRIKS PERMISSION ROLE KE APLIKASI SSO ----
+        if ($act === 'save_role_app_permissions') {
+            $matrixJson = (string)($_POST['client_roles_json'] ?? '');
+            $map = json_decode($matrixJson, true);
+            if (!is_array($map)) {
+                echo json_encode(['success' => false, 'message' => 'Data matriks izin role tidak valid.']);
+                exit;
+            }
+            $updSt = $pdo->prepare("UPDATE sso_clients SET allowed_roles = ? WHERE id = ?");
+            foreach ($map as $cid => $rolesCsv) {
+                $cidInt = (int)$cid;
+                if ($cidInt > 0) {
+                    $cleanCsv = implode(',', margo_sso_parse_list((string)$rolesCsv));
+                    $updSt->execute([$cleanCsv, $cidInt]);
+                }
+            }
+            margo_sso_log_audit($pdo, 'admin_role_app_matrix_updated', [
+                'user_id' => (int)getCurrentUser()['id'],
+                'detail'  => $map,
+            ]);
+            echo json_encode(['success' => true, 'message' => 'Permission login Role ke seluruh aplikasi SSO berhasil disimpan!']);
             exit;
         }
 
@@ -754,31 +839,43 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
         // ---- PORTAL CMS: SIMPAN LAYANAN EKOSISTEM NON-SSO ----
         if ($act === 'save_external_app') {
-            $id        = (int)($_POST['id'] ?? 0);
-            $appName   = trim((string)($_POST['app_name'] ?? ''));
-            $desc      = trim((string)($_POST['description'] ?? ''));
-            $appUrl    = trim((string)($_POST['app_url'] ?? ''));
-            $appIcon   = trim((string)($_POST['app_icon'] ?? 'solar:widget-4-bold'));
-            $badge     = strtoupper(trim((string)($_POST['badge_label'] ?? 'EKOSISTEM')));
-            $sortOrder = (int)($_POST['sort_order'] ?? 10);
-            $isActive  = !empty($_POST['is_active']) ? 1 : 0;
+            $id         = (int)($_POST['id'] ?? 0);
+            $appName    = trim((string)($_POST['app_name'] ?? ''));
+            $desc       = trim((string)($_POST['description'] ?? ''));
+            $appUrl     = trim((string)($_POST['app_url'] ?? ''));
+            $appIcon    = trim((string)($_POST['app_icon'] ?? 'solar:widget-4-bold'));
+            $badge      = strtoupper(trim((string)($_POST['badge_label'] ?? 'EKOSISTEM')));
+            $sortOrder  = (int)($_POST['sort_order'] ?? 10);
+            $isActive   = !empty($_POST['is_active']) ? 1 : 0;
+            $removeLogo = !empty($_POST['remove_app_logo']);
 
             if ($appName === '' || $appUrl === '') {
                 echo json_encode(['success' => false, 'message' => 'Nama layanan dan URL tujuan wajib diisi.']);
                 exit;
             }
-            if (strpos($appIcon, 'solar:') !== 0) {
+            if ($appIcon === '') {
                 $appIcon = 'solar:widget-4-bold';
             }
 
+            $uploadedLogoPath = margo_admin_handle_app_logo_upload('app_logo_file', $appName);
+
             if ($id > 0) {
-                $pdo->prepare("UPDATE sso_external_apps SET app_name = ?, description = ?, app_url = ?, app_icon = ?, badge_label = ?, sort_order = ?, is_active = ? WHERE id = ?")
-                    ->execute([$appName, $desc !== '' ? $desc : null, $appUrl, $appIcon, $badge ?: 'EKOSISTEM', $sortOrder, $isActive, $id]);
+                $stEx = $pdo->prepare("SELECT app_logo FROM sso_external_apps WHERE id = ? LIMIT 1");
+                $stEx->execute([$id]);
+                $finalLogo = $stEx->fetchColumn() ?: null;
+                if ($removeLogo) {
+                    $finalLogo = null;
+                }
+                if ($uploadedLogoPath !== null) {
+                    $finalLogo = $uploadedLogoPath;
+                }
+                $pdo->prepare("UPDATE sso_external_apps SET app_name = ?, description = ?, app_url = ?, app_icon = ?, app_logo = ?, badge_label = ?, sort_order = ?, is_active = ? WHERE id = ?")
+                    ->execute([$appName, $desc !== '' ? $desc : null, $appUrl, $appIcon, $finalLogo, $badge ?: 'EKOSISTEM', $sortOrder, $isActive, $id]);
                 echo json_encode(['success' => true, 'message' => 'Layanan ekosistem berhasil diperbarui.', 'data' => ['id' => $id]]);
                 exit;
             } else {
-                $pdo->prepare("INSERT INTO sso_external_apps (app_name, description, app_url, app_icon, badge_label, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$appName, $desc !== '' ? $desc : null, $appUrl, $appIcon, $badge ?: 'EKOSISTEM', $sortOrder, $isActive]);
+                $pdo->prepare("INSERT INTO sso_external_apps (app_name, description, app_url, app_icon, app_logo, badge_label, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    ->execute([$appName, $desc !== '' ? $desc : null, $appUrl, $appIcon, $uploadedLogoPath, $badge ?: 'EKOSISTEM', $sortOrder, $isActive]);
                 echo json_encode(['success' => true, 'message' => 'Layanan ekosistem baru berhasil ditambahkan.', 'data' => ['id' => (int)$pdo->lastInsertId()]]);
                 exit;
             }
@@ -964,7 +1061,11 @@ require_once BASE_PATH . '/includes/header.php';
                     <iconify-icon icon="solar:magnifer-linear"></iconify-icon>
                     <input type="text" id="userSearchInput" class="ilmuna-search-input" placeholder="Cari nama, username, email, NISN...">
                 </div>
-                <div class="ilmuna-filter-actions">
+                <div class="ilmuna-filter-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--primary" onclick="SSOADM.openRoleMatrixModal()">
+                        <iconify-icon icon="solar:shield-user-bold" width="16"></iconify-icon>
+                        <span>Izin Role ke Aplikasi</span>
+                    </button>
                     <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" id="btnHealOrphan" onclick="SSOADM.healOrphanGuru()">
                         <iconify-icon icon="solar:health-bold" width="16" style="color:#0D7A87;"></iconify-icon>
                         <span id="lblOrphanGuru">Cek Orphan Guru</span>
@@ -1254,8 +1355,21 @@ require_once BASE_PATH . '/includes/header.php';
                         <input type="url" id="edAppUrl" class="ssoadm-input" required>
                     </div>
                     <div class="ssoadm-field">
-                        <label for="edAppIcon">Ikon Solar Icons (solar:*)</label>
-                        <input type="text" id="edAppIcon" class="ssoadm-input" value="solar:widget-5-bold">
+                        <label>Foto / Icon Aplikasi &amp; Ikon Solar Fallback</label>
+                        <input type="hidden" id="edRemoveAppLogo" value="0">
+                        <input type="file" id="edAppLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" style="display:none;" onchange="SSOADM.previewEditClientLogo(this)">
+                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                            <div id="edAppLogoPreview" style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#FFFFFF;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1px solid #E2E8F0;">
+                                <iconify-icon icon="solar:widget-5-bold" width="20"></iconify-icon>
+                            </div>
+                            <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="document.getElementById('edAppLogoFile').click()">
+                                <iconify-icon icon="solar:gallery-send-bold"></iconify-icon> Unggah Foto/Icon
+                            </button>
+                            <button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" id="btnEdClearLogo" style="display:none;" onclick="SSOADM.clearEditClientLogo()">
+                                <iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon> Hapus Foto
+                            </button>
+                            <input type="text" id="edAppIcon" class="ssoadm-input" value="solar:widget-5-bold" placeholder="solar:widget-5-bold" style="flex:1;min-width:150px;">
+                        </div>
                     </div>
                     <div class="ssoadm-field">
                         <label for="edSigMode">Mode Tanda Tangan Server-to-Server</label>
@@ -1282,8 +1396,14 @@ require_once BASE_PATH . '/includes/header.php';
                         <input type="url" id="edLogoutWebhook" class="ssoadm-input" placeholder="https://.../sso-logout-webhook.php">
                     </div>
                     <div class="ssoadm-field">
-                        <label for="edAllowedRoles">Hak Role Diizinkan (koma)</label>
-                        <input type="text" id="edAllowedRoles" class="ssoadm-input" value="admin,guru,ketua_kelas,siswa">
+                        <label>Permission Role yang Diizinkan Login ke Aplikasi Ini</label>
+                        <input type="hidden" id="edAllowedRoles" value="admin,guru,ketua_kelas,siswa">
+                        <div id="edRolePermsCheckboxes" style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;">
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="admin" checked onchange="SSOADM.syncEdAllowedRoles()"> Admin</label>
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="guru" checked onchange="SSOADM.syncEdAllowedRoles()"> Guru</label>
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="ketua_kelas" checked onchange="SSOADM.syncEdAllowedRoles()"> Ketua Kelas</label>
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="siswa" checked onchange="SSOADM.syncEdAllowedRoles()"> Siswa</label>
+                        </div>
                     </div>
                 </div>
                 <div class="ssoadm-grid-2">
@@ -1338,9 +1458,22 @@ require_once BASE_PATH . '/includes/header.php';
                     <div class="ssoadm-field"><label>Nama Aplikasi</label><input type="text" id="ncName" class="ssoadm-input" placeholder="Perpustakaan Ilmuna" required></div>
                     <div class="ssoadm-field"><label>Slug Unik</label><input type="text" id="ncSlug" class="ssoadm-input" placeholder="ilmuna-perpus" required></div>
                     <div class="ssoadm-field"><label>URL Aplikasi</label><input type="url" id="ncAppUrl" class="ssoadm-input" placeholder="https://perpus.ilmuna.my.id" required></div>
-                    <div class="ssoadm-field"><label>Ikon Solar (solar:*)</label><input type="text" id="ncIcon" class="ssoadm-input" value="solar:widget-5-bold"></div>
+                    <div class="ssoadm-field">
+                        <label>Foto / Icon Aplikasi (PNG/JPG/WEBP/SVG/ICO)</label>
+                        <input type="file" id="ncLogoFile" class="ssoadm-input" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" style="padding:6px;">
+                        <input type="hidden" id="ncIcon" value="solar:widget-5-bold">
+                    </div>
                     <div class="ssoadm-field"><label>Whitelist Domain (koma)</label><input type="text" id="ncDomains" class="ssoadm-input" placeholder="perpus.ilmuna.my.id" required></div>
                     <div class="ssoadm-field"><label>Webhook SLO (opsional)</label><input type="url" id="ncWebhook" class="ssoadm-input" placeholder="https://perpus.ilmuna.my.id/sso-logout.php"></div>
+                </div>
+                <div class="ssoadm-field" style="margin-bottom:10px;">
+                    <label>Permission Role yang Diizinkan Login</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 0;">
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="admin" checked> Admin</label>
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="guru" checked> Guru</label>
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="ketua_kelas" checked> Ketua Kelas</label>
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="siswa" checked> Siswa</label>
+                    </div>
                 </div>
                 <div class="ssoadm-field">
                     <label>Whitelist Redirect URIs (1 per baris)</label>
@@ -1358,16 +1491,16 @@ require_once BASE_PATH . '/includes/header.php';
 </div>
 
 <!-- ======================================================================= -->
-<!-- UNIVERSAL MODAL 2: KELOLA MULTI-ROLE PENGGUNA                           -->
+<!-- UNIVERSAL MODAL 2: KELOLA MULTI-ROLE & PERMISSION APLIKASI PENGGUNA     -->
 <!-- ======================================================================= -->
 <div class="ilm-modal-backdrop" id="modalEditRoles">
-    <div class="ilm-modal-dialog" style="max-width:480px;">
+    <div class="ilm-modal-dialog" style="max-width:560px;">
         <div class="ilm-modal-header">
             <div class="ilm-modal-header__brand">
                 <div class="ilm-modal-header__icon"><iconify-icon icon="solar:users-group-two-rounded-bold"></iconify-icon></div>
                 <div>
-                    <h3 class="ilm-modal-header__title" id="mdlRoleTitle">Kelola Multi-Role</h3>
-                    <p class="ilm-modal-header__subtitle">Atur hak peran lintas aplikasi Ilmuna</p>
+                    <h3 class="ilm-modal-header__title" id="mdlRoleTitle">Kelola Multi-Role &amp; Permission Aplikasi</h3>
+                    <p class="ilm-modal-header__subtitle">Atur hak peran serta aplikasi mana saja yang diizinkan untuk login</p>
                 </div>
             </div>
             <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('modalEditRoles')">
@@ -1376,17 +1509,64 @@ require_once BASE_PATH . '/includes/header.php';
         </div>
         <form onsubmit="SSOADM.saveUserRoles(event)">
             <input type="hidden" id="mdlRoleUserId" value="0">
-            <div class="ilm-modal-body">
-                <div id="mdlRoleCheckboxes" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
-                <div class="ssoadm-field">
+            <div class="ilm-modal-body" style="max-height:calc(85vh - 150px);">
+                <div style="font-size:12px;font-weight:800;color:#1D3B5E;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">
+                    1. Hak Peran Akun (Multi-Role)
+                </div>
+                <div id="mdlRoleCheckboxes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px;"></div>
+                <div class="ssoadm-field" style="margin-bottom:16px;">
                     <label for="mdlPrimaryRole">Peran Utama (Primary Role)</label>
                     <select id="mdlPrimaryRole" class="ssoadm-input"></select>
+                </div>
+
+                <div style="border-top:1px solid #E2E8F0;padding-top:14px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+                        <div style="font-size:12px;font-weight:800;color:#0D7A87;text-transform:uppercase;letter-spacing:0.04em;">
+                            2. Permission Login Aplikasi SSO (Bisa Login ke Aplikasi Mana Saja)
+                        </div>
+                        <span class="ssoadm-badge ssoadm-badge--teal">Akses Klien</span>
+                    </div>
+                    <p style="font-size:12px;color:#64748B;margin-bottom:10px;">
+                        Centang aplikasi klien SSO yang boleh diakses oleh akun ini saat login melalui Margo One SSO:
+                    </p>
+                    <div id="mdlAppPermsCheckboxes" style="display:flex;flex-direction:column;gap:8px;"></div>
                 </div>
             </div>
             <div class="ilm-modal-footer">
                 <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('modalEditRoles')">Batal</button>
                 <button type="submit" class="ilm-modal-btn ilm-modal-btn--primary">
-                    <iconify-icon icon="solar:diskette-bold"></iconify-icon><span>Simpan Peran</span>
+                    <iconify-icon icon="solar:diskette-bold"></iconify-icon><span>Simpan Peran &amp; Permission</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- UNIVERSAL MODAL 2B: MATRIKS PERMISSION ROLE KE APLIKASI SSO             -->
+<!-- ======================================================================= -->
+<div class="ilm-modal-backdrop" id="modalRoleAppMatrix">
+    <div class="ilm-modal-dialog" style="max-width:720px;">
+        <div class="ilm-modal-header">
+            <div class="ilm-modal-header__brand">
+                <div class="ilm-modal-header__icon"><iconify-icon icon="solar:shield-user-bold"></iconify-icon></div>
+                <div>
+                    <h3 class="ilm-modal-header__title">Permission Role Login ke Aplikasi SSO</h3>
+                    <p class="ilm-modal-header__subtitle">Atur setiap Role (Admin, Guru, Ketua Kelas, Siswa) bisa login ke aplikasi mana saja</p>
+                </div>
+            </div>
+            <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('modalRoleAppMatrix')">
+                <iconify-icon icon="solar:close-circle-bold"></iconify-icon>
+            </button>
+        </div>
+        <form onsubmit="SSOADM.saveRoleMatrix(event)">
+            <div class="ilm-modal-body" style="max-height:calc(85vh - 150px);">
+                <div id="roleMatrixContainer" style="display:flex;flex-direction:column;gap:12px;"></div>
+            </div>
+            <div class="ilm-modal-footer">
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('modalRoleAppMatrix')">Batal</button>
+                <button type="submit" class="ilm-modal-btn ilm-modal-btn--primary">
+                    <iconify-icon icon="solar:diskette-bold"></iconify-icon><span>Simpan Permission Role</span>
                 </button>
             </div>
         </form>
@@ -1547,7 +1727,11 @@ require_once BASE_PATH . '/includes/header.php';
                     <div class="ssoadm-field"><label>Nama Layanan</label><input type="text" id="pExtName" class="ssoadm-input" required></div>
                     <div class="ssoadm-field"><label>Label Badge</label><input type="text" id="pExtBadge" class="ssoadm-input" value="EKOSISTEM"></div>
                     <div class="ssoadm-field"><label>URL Tujuan</label><input type="text" id="pExtUrl" class="ssoadm-input" placeholder="https://... atau /agenda" required></div>
-                    <div class="ssoadm-field"><label>Ikon Solar (solar:*)</label><input type="text" id="pExtIcon" class="ssoadm-input" value="solar:widget-4-bold"></div>
+                    <div class="ssoadm-field">
+                        <label>Foto / Icon Layanan &amp; Ikon Solar Fallback</label>
+                        <input type="file" id="pExtLogoFile" class="ssoadm-input" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/x-icon" style="padding:5px;margin-bottom:4px;">
+                        <input type="text" id="pExtIcon" class="ssoadm-input" value="solar:widget-4-bold" placeholder="solar:widget-4-bold">
+                    </div>
                 </div>
                 <div class="ssoadm-grid-2" style="margin-bottom:10px;">
                     <div class="ssoadm-field"><label>Deskripsi Singkat</label><input type="text" id="pExtDesc" class="ssoadm-input"></div>
@@ -1627,12 +1811,30 @@ require_once BASE_PATH . '/includes/header.php';
         document.getElementById('edClientSlug').value = c.client_slug;
         document.getElementById('edAppUrl').value = c.app_url;
         document.getElementById('edAppIcon').value = c.app_icon;
+        document.getElementById('edRemoveAppLogo').value = '0';
+        var logoFileInp = document.getElementById('edAppLogoFile');
+        if (logoFileInp) logoFileInp.value = '';
+        var prevBox = document.getElementById('edAppLogoPreview');
+        var btnClearLogo = document.getElementById('btnEdClearLogo');
+        if (prevBox) {
+            if (c.app_logo_url) {
+                prevBox.innerHTML = '<img src="' + esc(c.app_logo_url) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:10px;background:#FFF;">';
+                if (btnClearLogo) btnClearLogo.style.display = '';
+            } else {
+                prevBox.innerHTML = '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="20"></iconify-icon>';
+                if (btnClearLogo) btnClearLogo.style.display = 'none';
+            }
+        }
         document.getElementById('edSigMode').value = c.sig_mode;
         document.getElementById('edRateLimit').value = c.rate_limit_per_min;
         document.getElementById('edAllowedDomains').value = c.allowed_domains;
         document.getElementById('edAllowedIps').value = c.allowed_ips;
         document.getElementById('edLogoutWebhook').value = c.logout_webhook_url;
         document.getElementById('edAllowedRoles').value = c.allowed_roles;
+        var allowedRolesArr = String(c.allowed_roles || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+        document.querySelectorAll('input[name="edClientRolePerm"]').forEach(function (cb) {
+            cb.checked = allowedRolesArr.length === 0 || allowedRolesArr.indexOf(cb.value) !== -1;
+        });
         document.getElementById('edRedirectUris').value = c.redirect_uris;
         document.getElementById('edAllowedScopes').value = c.allowed_scopes;
         document.getElementById('edIsActive').checked = Number(c.is_active) === 1;
@@ -1672,12 +1874,20 @@ require_once BASE_PATH . '/includes/header.php';
                     var rsaInfo = c.has_rsa_public
                         ? ' <span class="ssoadm-badge ssoadm-badge--teal">RSA-2048</span>'
                         : '';
+                    var iconBoxInner = c.app_logo_url
+                        ? '<img src="' + esc(c.app_logo_url) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:9px;background:#FFF;">'
+                        : '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="18"></iconify-icon>';
+                    var rolePills = String(c.allowed_roles || '').split(/[\s,]+/).filter(Boolean).map(function (rc) {
+                        return '<span class="ssoadm-badge ssoadm-badge--teal" style="font-size:10px;padding:1px 6px;">' + esc(rc) + '</span>';
+                    }).join(' ');
                     return '<tr id="adm-client-' + c.id + '">'
                         + '<td data-label="Aplikasi Klien">'
                         + '<div style="display:flex;align-items:center;gap:10px;">'
-                        + '<div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="18"></iconify-icon></div>'
+                        + '<div style="width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1px solid #E2E8F0;">' + iconBoxInner + '</div>'
                         + '<div><strong>' + esc(c.client_name) + '</strong> <span class="ssoadm-badge ssoadm-badge--navy">' + esc(c.client_slug) + '</span>'
-                        + '<div style="font-size:11.5px;color:#64748B;">' + esc(c.app_url) + '</div></div>'
+                        + '<div style="font-size:11.5px;color:#64748B;">' + esc(c.app_url) + '</div>'
+                        + (rolePills ? '<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">' + rolePills + '</div>' : '')
+                        + '</div>'
                         + '</div></td>'
                         + '<td data-label="Public Key">'
                         + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
@@ -1773,22 +1983,48 @@ require_once BASE_PATH . '/includes/header.php';
             tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Tidak ada akun ditemukan.</td></tr>';
             return;
         }
+        var allClients = (STATE.data && STATE.data.clients) || [];
+        function userCanAccessClientJS(u, c) {
+            var uRoleCodes = (u.roles || []).map(function (r) { return String(r.code || '').toLowerCase(); });
+            var cRoles = String(c.allowed_roles || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+            var roleOk = cRoles.length === 0 || uRoleCodes.some(function (rc) { return cRoles.indexOf(rc) !== -1; });
+            if (!roleOk) return false;
+            var rawApps = String(u.allowed_apps || '').trim();
+            if (rawApps !== '' && rawApps !== '*') {
+                if (rawApps === '__none__') return false;
+                var appList = rawApps.toLowerCase().split(/[\s,]+/).filter(Boolean);
+                if (appList.indexOf(String(c.client_slug || '').toLowerCase()) === -1 && appList.indexOf(String(c.id)) === -1) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         tb.innerHTML = filtered.map(function (u) {
             var roleBadges = (u.roles || []).map(function (r) {
                 var cls = r.code === 'admin' ? 'ssoadm-badge--navy' : (r.code === 'guru' ? 'ssoadm-badge--teal' : 'ssoadm-badge--warn');
                 return '<span class="ssoadm-badge ' + cls + '">' + esc(r.code) + (r.is_primary ? ' ★' : '') + '</span>';
             }).join(' ');
+            var permittedClients = allClients.filter(function (c) { return Number(c.is_active) === 1 && userCanAccessClientJS(u, c); });
+            var appPermBadges = permittedClients.length
+                ? permittedClients.map(function (c) {
+                    var miniIcon = c.app_logo_url
+                        ? '<img src="' + esc(c.app_logo_url) + '" alt="" style="width:12px;height:12px;object-fit:contain;border-radius:3px;">'
+                        : '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="12"></iconify-icon>';
+                    return '<span class="ssoadm-badge ssoadm-badge--ok" style="font-size:10.5px;display:inline-flex;align-items:center;gap:4px;">' + miniIcon + ' ' + esc(c.client_name) + '</span>';
+                }).join(' ')
+                : '<span class="ssoadm-badge ssoadm-badge--err" style="font-size:10.5px;">Tidak Ada Akses Apk</span>';
             var gBadge = u.email_google
                 ? '<span class="ssoadm-badge ssoadm-badge--ok"><iconify-icon icon="solar:check-circle-bold"></iconify-icon> ' + esc(u.email_google) + '</span> '
                   + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" style="padding:3px 7px;min-height:26px;" onclick="SSOADM.adminUnlinkGoogle(' + u.id + ',\'' + esc(u.username) + '\')" title="Putus Google"><iconify-icon icon="solar:link-broken-bold"></iconify-icon></button>'
                 : '<span style="font-size:12px;color:#94A3B8;">Belum tertaut</span>';
             return '<tr id="adm-user-' + u.id + '">'
                 + '<td data-label="Akun"><strong>' + esc(u.full_name) + '</strong><div style="font-size:11.5px;color:#64748B;">@' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + '</div></td>'
-                + '<td data-label="Peran">' + (roleBadges || '<span class="ssoadm-badge ssoadm-badge--err">Tanpa Role</span>') + '</td>'
+                + '<td data-label="Peran & Permission"><div>' + (roleBadges || '<span class="ssoadm-badge ssoadm-badge--err">Tanpa Role</span>') + '</div><div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">' + appPermBadges + '</div></td>'
                 + '<td data-label="Google SSO">' + gBadge + '</td>'
                 + '<td data-label="Login Terakhir">' + esc(u.last_login || 'Belum pernah') + '</td>'
                 + '<td data-label="Kelola" style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">'
-                + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.openRolesModal(' + u.id + ')"><iconify-icon icon="solar:users-group-two-rounded-bold"></iconify-icon> Role</button>'
+                + '<button type="button" class="ssoadm-btn ssoadm-btn--primary ssoadm-btn--sm" onclick="SSOADM.openRolesModal(' + u.id + ')"><iconify-icon icon="solar:users-group-two-rounded-bold"></iconify-icon> Role &amp; Akses Apk</button>'
                 + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.openResetPassModal(' + u.id + ')"><iconify-icon icon="solar:key-bold"></iconify-icon> Sandi</button>'
                 + '</div></td>'
                 + '</tr>';
@@ -1881,8 +2117,11 @@ require_once BASE_PATH . '/includes/header.php';
         if (tbEx) {
             tbEx.innerHTML = exts.length ? exts.map(function (e) {
                 var stB = Number(e.is_active) === 1 ? '<span class="ssoadm-badge ssoadm-badge--ok">Aktif</span>' : '<span class="ssoadm-badge ssoadm-badge--err">Nonaktif</span>';
+                var exIconHtml = e.app_logo_url
+                    ? '<img src="' + esc(e.app_logo_url) + '" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:7px;border:1px solid #E2E8F0;background:#FFF;">'
+                    : '<iconify-icon icon="' + esc(e.app_icon || 'solar:widget-4-bold') + '" width="18" style="color:#0D7A87;"></iconify-icon>';
                 return '<tr id="p-ex-' + e.id + '">'
-                    + '<td data-label="Layanan"><div style="display:flex;align-items:center;gap:8px;"><iconify-icon icon="' + esc(e.app_icon || 'solar:widget-4-bold') + '" width="18" style="color:#0D7A87;"></iconify-icon><div><strong>' + esc(e.app_name) + '</strong><div style="font-size:11.5px;color:#64748B;">' + esc(e.description || '') + '</div></div></div></td>'
+                    + '<td data-label="Layanan"><div style="display:flex;align-items:center;gap:8px;">' + exIconHtml + '<div><strong>' + esc(e.app_name) + '</strong><div style="font-size:11.5px;color:#64748B;">' + esc(e.description || '') + '</div></div></div></td>'
                     + '<td data-label="URL" style="font-family:var(--font-mono);font-size:11.5px;">' + esc(e.app_url) + '</td>'
                     + '<td data-label="Badge"><span class="ssoadm-badge ssoadm-badge--navy">' + esc(e.badge_label || 'EKOSISTEM') + '</span></td>'
                     + '<td data-label="Status">' + stB + '</td>'
@@ -1935,14 +2174,43 @@ require_once BASE_PATH . '/includes/header.php';
             var c = list.find(function (x) { return x.id === STATE.selectedClientId; });
             if (c) MargoUI.copyText(c.private_key, 'Private Key');
         },
+        syncEdAllowedRoles: function () {
+            var checked = Array.from(document.querySelectorAll('input[name="edClientRolePerm"]:checked')).map(function (el) { return el.value; });
+            document.getElementById('edAllowedRoles').value = checked.join(',');
+        },
+        previewEditClientLogo: function (input) {
+            if (!input || !input.files || !input.files[0]) return;
+            var file = input.files[0];
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                var prevBox = document.getElementById('edAppLogoPreview');
+                if (prevBox) prevBox.innerHTML = '<img src="' + esc(ev.target.result) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:10px;background:#FFF;">';
+                document.getElementById('edRemoveAppLogo').value = '0';
+                var btnClear = document.getElementById('btnEdClearLogo');
+                if (btnClear) btnClear.style.display = '';
+            };
+            reader.readAsDataURL(file);
+        },
+        clearEditClientLogo: function () {
+            document.getElementById('edRemoveAppLogo').value = '1';
+            var logoFileInp = document.getElementById('edAppLogoFile');
+            if (logoFileInp) logoFileInp.value = '';
+            var prevBox = document.getElementById('edAppLogoPreview');
+            var ic = document.getElementById('edAppIcon').value || 'solar:widget-5-bold';
+            if (prevBox) prevBox.innerHTML = '<iconify-icon icon="' + esc(ic) + '" width="20"></iconify-icon>';
+            var btnClear = document.getElementById('btnEdClearLogo');
+            if (btnClear) btnClear.style.display = 'none';
+        },
         saveClient: async function (e) {
             e.preventDefault();
-            var res = await apiPost('save_client', {
+            SSOADM.syncEdAllowedRoles();
+            var payload = {
                 id: document.getElementById('edClientId').value,
                 client_name: document.getElementById('edClientName').value.trim(),
                 client_slug: document.getElementById('edClientSlug').value.trim(),
                 app_url: document.getElementById('edAppUrl').value.trim(),
                 app_icon: document.getElementById('edAppIcon').value.trim(),
+                remove_app_logo: document.getElementById('edRemoveAppLogo').value === '1' ? '1' : '',
                 sig_mode: document.getElementById('edSigMode').value,
                 rate_limit_per_min: document.getElementById('edRateLimit').value,
                 allowed_domains: document.getElementById('edAllowedDomains').value.trim(),
@@ -1952,7 +2220,12 @@ require_once BASE_PATH . '/includes/header.php';
                 redirect_uris: document.getElementById('edRedirectUris').value.trim(),
                 allowed_scopes: document.getElementById('edAllowedScopes').value.trim(),
                 is_active: document.getElementById('edIsActive').checked ? '1' : '0'
-            });
+            };
+            var logoFileInp = document.getElementById('edAppLogoFile');
+            if (logoFileInp && logoFileInp.files && logoFileInp.files[0]) {
+                payload.app_logo_file = logoFileInp.files[0];
+            }
+            var res = await apiPost('save_client', payload);
             if (res.success) { Ilmuna.success('Tersimpan', res.message); SSOADM.load(); }
             else Ilmuna.error('Gagal', res.message || 'Gagal menyimpan klien.');
         },
@@ -1962,7 +2235,8 @@ require_once BASE_PATH . '/includes/header.php';
         },
         createClient: async function (e) {
             e.preventDefault();
-            var res = await apiPost('save_client', {
+            var ncRoles = Array.from(document.querySelectorAll('input[name="ncClientRolePerm"]:checked')).map(function (el) { return el.value; }).join(',');
+            var payload = {
                 id: 0,
                 client_name: document.getElementById('ncName').value.trim(),
                 client_slug: document.getElementById('ncSlug').value.trim(),
@@ -1970,9 +2244,15 @@ require_once BASE_PATH . '/includes/header.php';
                 app_icon: document.getElementById('ncIcon').value.trim(),
                 allowed_domains: document.getElementById('ncDomains').value.trim(),
                 logout_webhook_url: document.getElementById('ncWebhook').value.trim(),
+                allowed_roles: ncRoles || 'admin,guru,ketua_kelas,siswa',
                 redirect_uris: document.getElementById('ncRedirects').value.trim(),
                 is_active: '1'
-            });
+            };
+            var ncLogoInp = document.getElementById('ncLogoFile');
+            if (ncLogoInp && ncLogoInp.files && ncLogoInp.files[0]) {
+                payload.app_logo_file = ncLogoInp.files[0];
+            }
+            var res = await apiPost('save_client', payload);
             if (res.success) {
                 closeIlmunaModal('modalNewClient');
                 if (res.data && res.data.id) STATE.selectedClientId = res.data.id;
@@ -2044,14 +2324,14 @@ require_once BASE_PATH . '/includes/header.php';
             var u = (STATE.data.users || []).find(function (x) { return x.id === uid; });
             if (!u) return;
             document.getElementById('mdlRoleUserId').value = uid;
-            document.getElementById('mdlRoleTitle').textContent = 'Peran: ' + u.full_name;
+            document.getElementById('mdlRoleTitle').textContent = 'Peran & Permission: ' + u.full_name;
             var userCodes = (u.roles || []).map(function (r) { return r.code; });
             var primary = (u.roles || []).find(function (r) { return r.is_primary === 1; });
             var primCode = primary ? primary.code : (userCodes[0] || 'siswa');
 
             document.getElementById('mdlRoleCheckboxes').innerHTML = (STATE.data.all_roles || []).map(function (rl) {
                 var chk = userCodes.indexOf(rl.code) !== -1 ? 'checked' : '';
-                return '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #E2E8F0;border-radius:10px;cursor:pointer;font-size:13.5px;font-weight:600;">'
+                return '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #E2E8F0;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;background:#F8FAFC;">'
                     + '<input type="checkbox" name="mdlRoleItem" value="' + esc(rl.code) + '" ' + chk + '> '
                     + '<span>' + esc(rl.name) + ' <code style="font-size:11px;color:#0D7A87;">(' + esc(rl.code) + ')</code></span>'
                     + '</label>';
@@ -2061,24 +2341,106 @@ require_once BASE_PATH . '/includes/header.php';
                 return '<option value="' + esc(rl.code) + '" ' + (rl.code === primCode ? 'selected' : '') + '>' + esc(rl.name) + ' (' + esc(rl.code) + ')</option>';
             }).join('');
 
+            var clients = (STATE.data.clients || []);
+            var rawApps = String(u.allowed_apps || '').trim();
+            var explicitSlugs = (rawApps !== '' && rawApps !== '*')
+                ? rawApps.toLowerCase().split(/[\s,]+/).filter(Boolean)
+                : null;
+
+            document.getElementById('mdlAppPermsCheckboxes').innerHTML = clients.map(function (c) {
+                var slugLower = String(c.client_slug || '').toLowerCase();
+                var cRoles = String(c.allowed_roles || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+                var roleMatches = cRoles.length === 0 || userCodes.some(function (rc) { return cRoles.indexOf(String(rc).toLowerCase()) !== -1; });
+                var isChecked = explicitSlugs !== null
+                    ? (rawApps !== '__none__' && (explicitSlugs.indexOf(slugLower) !== -1 || explicitSlugs.indexOf(String(c.id)) !== -1))
+                    : roleMatches;
+                var appIconHtml = c.app_logo_url
+                    ? '<img src="' + esc(c.app_logo_url) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:8px;background:#FFF;">'
+                    : '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="18"></iconify-icon>';
+                return '<label style="display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid #E2E8F0;border-radius:12px;cursor:pointer;background:#FFFFFF;">'
+                    + '<input type="checkbox" name="mdlUserAppPerm" value="' + esc(c.client_slug) + '" ' + (isChecked ? 'checked' : '') + '>'
+                    + '<div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#FFF;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;border:1px solid #E2E8F0;">' + appIconHtml + '</div>'
+                    + '<div style="flex:1;min-width:0;">'
+                    + '<div style="font-size:13px;font-weight:700;color:#1D3B5E;">' + esc(c.client_name) + ' <span class="ssoadm-badge ssoadm-badge--navy" style="font-size:10px;">' + esc(c.client_slug) + '</span></div>'
+                    + '<div style="font-size:11.5px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(c.app_url) + ' · Role Diizinkan: ' + esc(c.allowed_roles || 'semua') + '</div>'
+                    + '</div>'
+                    + '</label>';
+            }).join('');
+
             openIlmunaModal('modalEditRoles');
         },
         saveUserRoles: async function (e) {
             e.preventDefault();
             var uid = document.getElementById('mdlRoleUserId').value;
             var checked = Array.from(document.querySelectorAll('input[name="mdlRoleItem"]:checked')).map(function (el) { return el.value; });
+            var checkedApps = Array.from(document.querySelectorAll('input[name="mdlUserAppPerm"]:checked')).map(function (el) { return el.value; });
+            var allowedAppsVal = checkedApps.length > 0 ? checkedApps.join(',') : '__none__';
             var res = await apiPost('update_user_roles', {
                 user_id: uid,
                 role_ids: checked,
-                primary_role: document.getElementById('mdlPrimaryRole').value
+                primary_role: document.getElementById('mdlPrimaryRole').value,
+                allowed_apps: allowedAppsVal
             });
             if (res.success) {
                 closeIlmunaModal('modalEditRoles');
-                Ilmuna.success('Peran Diperbarui', res.message);
+                Ilmuna.success('Peran & Permission Diperbarui', res.message);
                 await SSOADM.load();
                 var tr = document.getElementById('adm-user-' + uid);
                 if (tr) tr.classList.add('row-flash');
             } else Ilmuna.error('Gagal', res.message);
+        },
+        openRoleMatrixModal: function () {
+            var roles = (STATE.data && STATE.data.all_roles) || [];
+            var clients = (STATE.data && STATE.data.clients) || [];
+            var box = document.getElementById('roleMatrixContainer');
+            if (!box) return;
+            box.innerHTML = roles.map(function (rl) {
+                var rCode = String(rl.code || '').toLowerCase();
+                var appsHtml = clients.map(function (c) {
+                    var cRoles = String(c.allowed_roles || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+                    var isAllowed = cRoles.length === 0 || cRoles.indexOf(rCode) !== -1;
+                    var appIconHtml = c.app_logo_url
+                        ? '<img src="' + esc(c.app_logo_url) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:7px;background:#FFF;">'
+                        : '<iconify-icon icon="' + esc(c.app_icon || 'solar:widget-5-bold') + '" width="16"></iconify-icon>';
+                    return '<label style="display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid #E2E8F0;border-radius:10px;cursor:pointer;background:#FFFFFF;">'
+                        + '<input type="checkbox" class="role-matrix-cb" data-role="' + esc(rCode) + '" data-client-id="' + esc(c.id) + '" ' + (isAllowed ? 'checked' : '') + '>'
+                        + '<div style="width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#1D3B5E,#0D7A87);color:#FFF;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">' + appIconHtml + '</div>'
+                        + '<span style="font-size:12.5px;font-weight:700;color:#1D3B5E;">' + esc(c.client_name) + '</span>'
+                        + '</label>';
+                }).join('');
+                return '<div style="padding:12px 14px;border:1px solid #E2E8F0;border-radius:14px;background:#F8FAFC;">'
+                    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">'
+                    + '<strong style="font-size:13.5px;color:#1D3B5E;">' + esc(rl.name) + ' <code style="font-size:11px;color:#0D7A87;">(' + esc(rl.code) + ')</code></strong>'
+                    + '<span class="ssoadm-badge ssoadm-badge--navy">Permission Login Aplikasi</span>'
+                    + '</div>'
+                    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;">' + appsHtml + '</div>'
+                    + '</div>';
+            }).join('');
+            openIlmunaModal('modalRoleAppMatrix');
+        },
+        saveRoleMatrix: async function (e) {
+            e.preventDefault();
+            var clients = (STATE.data && STATE.data.clients) || [];
+            var map = {};
+            clients.forEach(function (c) { map[c.id] = []; });
+            document.querySelectorAll('.role-matrix-cb:checked').forEach(function (cb) {
+                var cid = cb.getAttribute('data-client-id');
+                var rCode = cb.getAttribute('data-role');
+                if (cid && rCode) {
+                    if (!map[cid]) map[cid] = [];
+                    if (map[cid].indexOf(rCode) === -1) map[cid].push(rCode);
+                }
+            });
+            var out = {};
+            Object.keys(map).forEach(function (cid) { out[cid] = map[cid].join(','); });
+            var res = await apiPost('save_role_app_permissions', { client_roles_json: JSON.stringify(out) });
+            if (res.success) {
+                closeIlmunaModal('modalRoleAppMatrix');
+                Ilmuna.success('Permission Role Tersimpan', res.message);
+                await SSOADM.load();
+            } else {
+                Ilmuna.error('Gagal', res.message || 'Gagal menyimpan permission role.');
+            }
         },
         openResetPassModal: function (uid) {
             var u = (STATE.data.users || []).find(function (x) { return x.id === uid; });
@@ -2264,7 +2626,7 @@ require_once BASE_PATH . '/includes/header.php';
         },
         savePortalExtApp: async function (ev) {
             ev.preventDefault();
-            var res = await apiPost('save_external_app', {
+            var payload = {
                 id: document.getElementById('pExtId').value,
                 app_name: document.getElementById('pExtName').value.trim(),
                 badge_label: document.getElementById('pExtBadge').value.trim(),
@@ -2273,7 +2635,12 @@ require_once BASE_PATH . '/includes/header.php';
                 description: document.getElementById('pExtDesc').value.trim(),
                 sort_order: document.getElementById('pExtSort').value,
                 is_active: document.getElementById('pExtActive').checked ? '1' : '0'
-            });
+            };
+            var extLogoInp = document.getElementById('pExtLogoFile');
+            if (extLogoInp && extLogoInp.files && extLogoInp.files[0]) {
+                payload.app_logo_file = extLogoInp.files[0];
+            }
+            var res = await apiPost('save_external_app', payload);
             if (res.success) {
                 closeIlmunaModal('modalPortalExtApp');
                 Ilmuna.success('Tersimpan', res.message);
