@@ -17,6 +17,10 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 
+$googleOAuthCfg           = getGoogleOAuthConfig();
+$activeGoogleClientId     = (string)($googleOAuthCfg['client_id'] ?? '');
+$activeGoogleClientSecret = (string)($googleOAuthCfg['client_secret'] ?? '');
+
 /* ==============================================================================
  * 1. SECURITY HEADERS
  * ============================================================================== */
@@ -134,15 +138,15 @@ function margoFetchGoogleApi($url, $postFields = null)
 }
 
 // Callback redirect Google OAuth 2.0
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['code']) && defined('GOOGLE_CLIENT_ID') && GOOGLE_CLIENT_ID !== '') {
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_GET['code']) && $activeGoogleClientId !== '' && $activeGoogleClientSecret !== '') {
     $stateOk = !empty($_GET['state']) && hash_equals($csrfToken, (string)$_GET['state']);
     if (!$stateOk) {
         $error = 'Sesi autentikasi Google tidak valid. Silakan coba lagi.';
     } else {
         $tokenData = margoFetchGoogleApi('https://oauth2.googleapis.com/token', [
             'code'          => (string)$_GET['code'],
-            'client_id'     => GOOGLE_CLIENT_ID,
-            'client_secret' => GOOGLE_CLIENT_SECRET,
+            'client_id'     => $activeGoogleClientId,
+            'client_secret' => $activeGoogleClientSecret,
             'redirect_uri'  => BASE_URL . '/login.php',
             'grant_type'    => 'authorization_code',
         ]);
@@ -195,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 is_array($info)
                 && !empty($info['email'])
                 && ($info['email_verified'] === true || $info['email_verified'] === 'true')
-                && (GOOGLE_CLIENT_ID === '' || ($info['aud'] ?? '') === GOOGLE_CLIENT_ID)
+                && ($activeGoogleClientId === '' || ($info['aud'] ?? '') === $activeGoogleClientId)
             ) {
                 $googleEmail = strtolower(trim((string)$info['email']));
                 $googleSub   = trim((string)($info['sub'] ?? ''));
@@ -891,7 +895,7 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
         </div>
     </div>
 
-    <?php if (defined('GOOGLE_CLIENT_ID') && GOOGLE_CLIENT_ID !== ''): ?>
+    <?php if ($activeGoogleClientId !== ''): ?>
         <script src="https://accounts.google.com/gsi/client" async defer></script>
     <?php endif; ?>
     <script src="<?= htmlspecialchars(BASE_URL . '/assets/js/alert.js', ENT_QUOTES, 'UTF-8') ?>"></script>
@@ -989,7 +993,7 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
         }
 
         // 5. Google OAuth 2.0 Handler (strict linked-only via window.Ilmuna)
-        var GOOGLE_CLIENT_ID = <?= json_encode(defined('GOOGLE_CLIENT_ID') ? GOOGLE_CLIENT_ID : '') ?>;
+        var GOOGLE_CLIENT_ID = <?= json_encode($activeGoogleClientId) ?>;
         var btnGoogleLogin   = document.getElementById('btnGoogleLogin');
         var googleModal      = document.getElementById('googleLoginModal');
         var btnCloseGoogle   = document.getElementById('btnCloseGoogleModal');

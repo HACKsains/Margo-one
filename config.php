@@ -357,12 +357,36 @@ if (!defined('ILMUNA_SMTP_FROM'))      define('ILMUNA_SMTP_FROM', 'noreply@ilmun
 if (!defined('ILMUNA_SMTP_FROM_NAME')) define('ILMUNA_SMTP_FROM_NAME', 'Margo One — Ilmuna SSO');
 if (!defined('ILMUNA_SMTP_ENABLED'))   define('ILMUNA_SMTP_ENABLED', true);
 
-function getGoogleOAuthConfig() {
-    return [
-        'client_id'     => GOOGLE_CLIENT_ID,
-        'client_secret' => GOOGLE_CLIENT_SECRET,
+function getGoogleOAuthConfig($forceRefresh = false) {
+    static $cached = null;
+    if ($cached !== null && !$forceRefresh) {
+        return $cached;
+    }
+    $cid = defined('GOOGLE_CLIENT_ID') ? trim((string)GOOGLE_CLIENT_ID) : '';
+    $sec = defined('GOOGLE_CLIENT_SECRET') ? trim((string)GOOGLE_CLIENT_SECRET) : '';
+
+    try {
+        $pdoG = getDBConnection();
+        if (function_exists('margo_sso_get_setting')) {
+            $dbCid = trim((string)margo_sso_get_setting($pdoG, 'google_client_id', ''));
+            $dbSec = trim((string)margo_sso_get_setting($pdoG, 'google_client_secret', ''));
+            if ($dbCid !== '') {
+                $cid = $dbCid;
+            }
+            if ($dbSec !== '') {
+                $sec = $dbSec;
+            }
+        }
+    } catch (Throwable $eG) {
+        // Fallback ke config.local.php / env
+    }
+
+    $cached = [
+        'client_id'     => $cid,
+        'client_secret' => $sec,
         'redirect_uri'  => BASE_URL . '/login.php',
     ];
+    return $cached;
 }
 
 // ==============================================================================

@@ -685,10 +685,66 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         // Non-fatal
     }
 
+    // 12. sso_settings (Konfigurasi Terenkripsi di Database — misal Google OAuth Client ID/Secret)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS sso_settings (
+            setting_key VARCHAR(80) PRIMARY KEY,
+            setting_value TEXT NULL,
+            is_encrypted TINYINT(1) NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     // Catatan: Tidak ada auto-seed data dummy hardcode untuk sso_agendas, sso_announcements,
     // maupun sso_external_apps. Seluruh data agenda (termasuk sinkronisasi Kaldik), pengumuman,
     // dan layanan ekosistem 100% bersumber murni dari database.
     $ensured = true;
+}
+
+/**
+ * Ambil nilai pengaturan dari tabel sso_settings (mendukung dekripsi AES-256-CBC+HMAC otomatis)
+ */
+if (!function_exists('margo_sso_get_setting')) {
+    function margo_sso_get_setting(PDO $pdo, $key, $default = '')
+    {
+        try {
+            $st = $pdo->prepare("SELECT setting_value, is_encrypted FROM sso_settings WHERE setting_key = ? LIMIT 1");
+            $st->execute([(string)$key]);
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$row || $row['setting_value'] === null || $row['setting_value'] === '') {
+                return $default;
+            }
+            if ((int)$row['is_encrypted'] === 1) {
+                $dec = margo_sso_decrypt_secret((string)$row['setting_value']);
+                return $dec !== '' ? $dec : $default;
+            }
+            return (string)$row['setting_value'];
+        } catch (Throwable $e) {
+            return $default;
+        }
+    }
+}
+
+/**
+ * Simpan pengaturan ke tabel sso_settings (dengan opsi enkripsi at-rest AES-256-CBC+HMAC)
+ */
+if (!function_exists('margo_sso_set_setting')) {
+    function margo_sso_set_setting(PDO $pdo, $key, $value, $encrypt = false)
+    {
+        margo_sso_ensure_schema($pdo);
+        $valStr = trim((string)$value);
+        $stored = ($encrypt && $valStr !== '') ? margo_sso_encrypt_secret($valStr) : $valStr;
+        $st = $pdo->prepare("
+            INSERT INTO sso_settings (setting_key, setting_value, is_encrypted)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                setting_value = VALUES(setting_value),
+                is_encrypted  = VALUES(is_encrypted),
+                updated_at    = CURRENT_TIMESTAMP
+        ");
+        $st->execute([(string)$key, $stored, $encrypt ? 1 : 0]);
+        return true;
+    }
 }
 
 /**
