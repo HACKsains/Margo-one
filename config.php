@@ -309,6 +309,16 @@ if (!defined('DB_USER'))    define('DB_USER', 'uofruaju_margo_one');
 if (!defined('DB_PASS'))    define('DB_PASS', 'Ilmuna28@');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
+// Dedicated Agenda Database (terpisah dari DB SSO & tersinkron otomatis via MySQL Trigger dengan Kaldik Learn)
+if (!defined('AGENDA_DB_NAME')) define('AGENDA_DB_NAME', 'uofruaju_margo_agenda');
+if (!defined('AGENDA_DB_USER')) define('AGENDA_DB_USER', DB_USER);
+if (!defined('AGENDA_DB_PASS')) define('AGENDA_DB_PASS', DB_PASS);
+
+// Database Ilmuna Learn (sumber Kaldik, kelas, guru, siswa untuk sinkronisasi trigger & audiens kelas)
+if (!defined('LEARN_DB_NAME')) define('LEARN_DB_NAME', 'uofruaju_learn_ilmuna');
+if (!defined('LEARN_DB_USER')) define('LEARN_DB_USER', 'uofruaju_Learn_Ilmuna');
+if (!defined('LEARN_DB_PASS')) define('LEARN_DB_PASS', DB_PASS);
+
 // ==============================================================================
 // GOOGLE OAUTH 2.0 CONFIGURATION (STRICT LINKED-ONLY MODE)
 // Atur kredensial asli di config.local.php (tidak di-commit ke Git) atau env server
@@ -462,8 +472,17 @@ function autoInitializeSsoDatabase(PDO $pdo) {
                 }
                 margo_sso_ensure_schema($pdo);
 
+                // Inisialisasi database khusus Agenda & sinkronisasi Trigger Kaldik (idempoten, aman cPanel)
+                $agendaEngineFile = BASE_PATH . '/includes/agenda-engine.php';
+                if (file_exists($agendaEngineFile)) {
+                    require_once $agendaEngineFile;
+                    if (function_exists('margo_agenda_bootstrap')) {
+                        @margo_agenda_bootstrap($pdo, false);
+                    }
+                }
+
                 // Auto-sync sekali ke folder sibling /home/uofruaju/learn.ilmuna.my.id di cPanel bila belum tersinkron
-                $syncFlagFile = sys_get_temp_dir() . '/margo_learn_slo_synced_v4.flag';
+                $syncFlagFile = sys_get_temp_dir() . '/margo_learn_slo_synced_v5.flag';
                 if (!file_exists($syncFlagFile) && is_dir('/home/uofruaju/learn.ilmuna.my.id')) {
                     if (file_exists(BASE_PATH . '/database.php')) {
                         require_once BASE_PATH . '/database.php';

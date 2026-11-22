@@ -9,39 +9,30 @@ if (!defined('BASE_PATH')) {
 }
 $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
 
-// Muat data awal Right Sidebar (Agenda Mendatang & Info Ekosistem) langsung di server agar bebas error 401 / gagal fetch saat buka halaman
+// Muat data awal Right Sidebar (Agenda Mendatang terfilter sesuai Role + Kaldik & Info Ekosistem) langsung di server
 $margoInitRightAgenda = [];
 $margoInitRightNews   = [];
 try {
     $pdoFooter = getDBConnection();
-    $agRowsF = $pdoFooter->query("
-        SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-        FROM sso_agendas
-        WHERE is_active = 1 AND COALESCE(end_date, start_date) >= CURDATE()
-        ORDER BY start_date ASC, start_time ASC, id ASC
-        LIMIT 12
-    ")->fetchAll(PDO::FETCH_ASSOC);
-    if (empty($agRowsF)) {
-        $agRowsF = $pdoFooter->query("
-            SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-            FROM sso_agendas
-            WHERE is_active = 1
-            ORDER BY start_date DESC, id DESC
-            LIMIT 6
-        ")->fetchAll(PDO::FETCH_ASSOC);
+    $agendaEngPath = BASE_PATH . '/includes/agenda-engine.php';
+    if (file_exists($agendaEngPath)) {
+        require_once $agendaEngPath;
     }
-    $bulanIndoF = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    foreach ($agRowsF as $rF) {
-        $tsF = strtotime((string)$rF['start_date']);
-        $mIdxF = $tsF ? (int)date('n', $tsF) : 1;
-        $margoInitRightAgenda[] = [
-            'id'          => (int)$rF['id'],
-            'title'       => (string)$rF['title'],
-            'start_date'  => (string)$rF['start_date'],
-            'year'        => $tsF ? date('Y', $tsF) : '',
-            'month_short' => isset($bulanIndoF[$mIdxF]) ? $bulanIndoF[$mIdxF] : '',
-            'day_num'     => $tsF ? date('d', $tsF) : '',
-        ];
+    $footUser = function_exists('getCurrentUser') ? getCurrentUser() : null;
+    if ($footUser && function_exists('margo_agenda_fetch_visible')) {
+        $agListF = margo_agenda_fetch_visible($pdoFooter, $footUser, ['upcoming' => true, 'limit' => 12]);
+        foreach ($agListF as $rF) {
+            $margoInitRightAgenda[] = [
+                'id'               => (int)$rF['id'],
+                'title'            => (string)$rF['title'],
+                'start_date'       => (string)$rF['start_date'],
+                'year'             => (string)$rF['year'],
+                'month_short'      => (string)$rF['month_short'],
+                'day_num'          => (string)$rF['day_num'],
+                'source'           => (string)$rF['source'],
+                'visibility_label' => (string)$rF['visibility_label'],
+            ];
+        }
     }
 
     $nwRowsF = $pdoFooter->query("

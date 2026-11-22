@@ -17,6 +17,7 @@
 require_once __DIR__ . '/../../config.php';
 require_once __DIR__ . '/../../auth.php';
 require_once __DIR__ . '/../../database.php';
+require_once BASE_PATH . '/includes/agenda-engine.php';
 
 requireRole('admin');
 
@@ -277,13 +278,12 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
         LIMIT 100
     ")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5. Portal Content (Agenda, Pengumuman, Layanan Ekosistem Non-SSO)
-    $portalAgendas = $pdo->query("
-        SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active, created_at
-        FROM sso_agendas
-        ORDER BY start_date DESC, id DESC
-        LIMIT 120
-    ")->fetchAll(PDO::FETCH_ASSOC);
+    // 5. Portal Content (Agenda dari Dedicated Agenda DB + Kaldik Sync, Pengumuman, Layanan Ekosistem Non-SSO)
+    $portalAgendas = margo_agenda_fetch_visible($pdo, getCurrentUser(), [
+        'include_inactive_admin' => true,
+        'limit'                  => 300,
+    ]);
+    $agendaDbStatus = margo_agenda_get_status($pdo);
 
     $portalAnnouncements = $pdo->query("
         SELECT id, title, excerpt, link_url, badge_label, published_at, is_active
@@ -323,6 +323,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
         'jwks_keys'            => $jwksKeys,
         'audit_logs'           => $auditLogs,
         'portal_agendas'       => $portalAgendas,
+        'agenda_db_status'     => $agendaDbStatus,
         'portal_announcements' => $portalAnnouncements,
         'portal_external_apps' => $portalExternalApps,
     ];
@@ -742,66 +743,42 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             exit;
         }
 
-        // ---- PORTAL CMS: SIMPAN AGENDA EKOSISTEM ----
+        // ---- PORTAL CMS: SIMPAN AGENDA EKOSISTEM (DEDICATED AGENDA DB + AUDIENS + LOCK KALDIK) ----
         if ($act === 'save_agenda') {
-            $id        = (int)($_POST['id'] ?? 0);
-            $title     = trim((string)($_POST['title'] ?? ''));
-            $desc      = trim((string)($_POST['description'] ?? ''));
-            $startDate = trim((string)($_POST['start_date'] ?? ''));
-            $endDate   = trim((string)($_POST['end_date'] ?? ''));
-            $startTime = trim((string)($_POST['start_time'] ?? ''));
-            $location  = trim((string)($_POST['location'] ?? ''));
-            $category  = strtolower(trim((string)($_POST['category'] ?? 'akademik')));
-            $linkUrl   = trim((string)($_POST['link_url'] ?? ''));
-            $isActive  = !empty($_POST['is_active']) ? 1 : 0;
-
-            if ($title === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
-                echo json_encode(['success' => false, 'message' => 'Judul agenda dan tanggal mulai (YYYY-MM-DD) wajib diisi.']);
-                exit;
-            }
-            if ($endDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
-                $endDate = '';
-            }
-            if (!in_array($category, ['akademik', 'sistem', 'rapat', 'kegiatan', 'pengumuman'], true)) {
-                $category = 'akademik';
-            }
-
-            if ($id > 0) {
-                $st = $pdo->prepare("
-                    UPDATE sso_agendas
-                    SET title = ?, description = ?, start_date = ?, end_date = ?, start_time = ?, location = ?, category = ?, link_url = ?, is_active = ?
-                    WHERE id = ?
-                ");
-                $st->execute([
-                    $title, $desc !== '' ? $desc : null, $startDate,
-                    $endDate !== '' ? $endDate : null,
-                    $startTime !== '' ? $startTime : null,
-                    $location !== '' ? $location : null,
-                    $category, $linkUrl !== '' ? $linkUrl : null, $isActive, $id,
-                ]);
-                echo json_encode(['success' => true, 'message' => 'Agenda "' . $title . '" berhasil diperbarui.', 'data' => ['id' => $id]]);
-                exit;
-            } else {
-                $st = $pdo->prepare("
-                    INSERT INTO sso_agendas (title, description, start_date, end_date, start_time, location, category, link_url, is_active, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $st->execute([
-                    $title, $desc !== '' ? $desc : null, $startDate,
-                    $endDate !== '' ? $endDate : null,
-                    $startTime !== '' ? $startTime : null,
-                    $location !== '' ? $location : null,
-                    $category, $linkUrl !== '' ? $linkUrl : null, $isActive, (int)getCurrentUser()['id'],
-                ]);
-                echo json_encode(['success' => true, 'message' => 'Agenda baru "' . $title . '" berhasil ditambahkan.', 'data' => ['id' => (int)$pdo->lastInsertId()]]);
-                exit;
-            }
+            $resAg = margo_agenda_save($pdo, getCurrentUser(), [
+                'id'               => (int)($_POST['id'] ?? 0),
+                'title'            => (string)($_POST['title'] ?? ''),
+                'description'      => (string)($_POST['description'] ?? ''),
+                'start_date'       => (string)($_POST['start_date'] ?? ''),
+                'end_date'         => (string)($_POST['end_date'] ?? ''),
+                'start_time'       => (string)($_POST['start_time'] ?? ''),
+                'location'         => (string)($_POST['location'] ?? ''),
+                'category'         => (string)($_POST['category'] ?? 'akademik'),
+                'link_url'         => (string)($_POST['link_url'] ?? ''),
+                'visibility_scope' => (string)($_POST['visibility_scope'] ?? 'all'),
+                'target_kelas_id'  => (int)($_POST['target_kelas_id'] ?? 0),
+                'is_active'        => !empty($_POST['is_active']) ? 1 : 0,
+            ]);
+            echo json_encode($resAg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
         }
 
         if ($act === 'delete_agenda') {
             $id = (int)($_POST['id'] ?? 0);
-            $pdo->prepare("DELETE FROM sso_agendas WHERE id = ?")->execute([$id]);
-            echo json_encode(['success' => true, 'message' => 'Agenda berhasil dihapus.']);
+            $resDel = margo_agenda_delete($pdo, getCurrentUser(), $id);
+            echo json_encode($resDel, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        if ($act === 'sync_kaldik_agendas') {
+            $trgRes  = margo_agenda_install_kaldik_triggers($pdo);
+            $syncRes = margo_agenda_backfill_from_kaldik($pdo);
+            $status  = margo_agenda_get_status($pdo);
+            echo json_encode([
+                'success' => !empty($syncRes['ok']),
+                'message' => $syncRes['message'] . (!empty($trgRes['kaldik_triggers_ok']) ? ' (MySQL Trigger Real-Time Aktif)' : ''),
+                'data'    => ['status' => $status, 'triggers' => $trgRes],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             exit;
         }
 
@@ -1195,7 +1172,15 @@ require_once BASE_PATH . '/includes/header.php';
                     <button type="button" class="ilmuna-pill-btn" data-psub="announcements">Info &amp; Pengumuman</button>
                     <button type="button" class="ilmuna-pill-btn" data-psub="external_apps">Layanan Non-SSO</button>
                 </div>
-                <div class="ilmuna-filter-actions" style="margin-left:auto;">
+                <div class="ilmuna-filter-actions" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <a href="<?= htmlspecialchars(BASE_URL . '/agenda', ENT_QUOTES, 'UTF-8') ?>" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" id="btnPortalOpenCal" style="text-decoration:none;">
+                        <iconify-icon icon="solar:calendar-mark-bold" width="16"></iconify-icon>
+                        <span>Buka Kalender Drag</span>
+                    </a>
+                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" id="btnPortalSyncKaldik" onclick="SSOADM.syncKaldikAgendas()">
+                        <iconify-icon icon="solar:refresh-circle-bold" width="16"></iconify-icon>
+                        <span>Sinkron Kaldik</span>
+                    </button>
                     <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--primary" id="btnPortalAdd" onclick="SSOADM.openPortalAdd()">
                         <iconify-icon icon="solar:add-circle-bold" width="17"></iconify-icon>
                         <span id="lblPortalAdd">Tambah Agenda</span>
@@ -1206,13 +1191,17 @@ require_once BASE_PATH . '/includes/header.php';
 
         <!-- Sub-panel 5A: Agenda -->
         <div class="ssoadm-card" id="portalBox_agendas" style="padding:0;overflow:hidden;">
+            <div id="portalAgendaDbBanner" style="padding:10px 16px;background:rgba(13,122,135,0.06);border-bottom:1px solid #E2E8F0;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:#1D3B5E;">
+                <span><iconify-icon icon="solar:database-bold" style="vertical-align:middle;color:#0D7A87;"></iconify-icon> <strong id="portalAgendaDbLabel">Memuat status database agenda...</strong></span>
+                <span style="color:#475569;">Agenda dari <strong>Kaldik Ilmuna Learn</strong> tersinkron otomatis &amp; terkunci permanen (read-only).</span>
+            </div>
             <div class="table-responsive">
                 <table class="lms-table ilmuna-table-stack">
                     <thead>
                         <tr>
                             <th>Tanggal &amp; Jam</th>
                             <th>Judul &amp; Lokasi</th>
-                            <th>Kategori</th>
+                            <th>Audiens &amp; Sumber</th>
                             <th>Status</th>
                             <th style="text-align:right;">Aksi</th>
                         </tr>
@@ -1654,6 +1643,14 @@ require_once BASE_PATH . '/includes/header.php';
                             <option value="pengumuman">Pengumuman</option>
                         </select>
                     </div>
+                    <div class="ssoadm-field"><label>Target Audiens (Siapa yang Dapat Melihat)</label>
+                        <select id="pAgScope" class="ssoadm-input">
+                            <option value="all">Semua Orang (Admin, Guru &amp; Siswa)</option>
+                            <option value="guru">Khusus Guru Saja</option>
+                            <option value="siswa">Khusus Siswa Saja</option>
+                            <option value="private">Pribadi (Admin Pembuat Saja)</option>
+                        </select>
+                    </div>
                     <div class="ssoadm-field"><label>Lokasi / Media</label><input type="text" id="pAgLoc" class="ssoadm-input" placeholder="Aula / Zoom"></div>
                     <div class="ssoadm-field"><label>Tautan Terkait (opsional)</label><input type="text" id="pAgLink" class="ssoadm-input" placeholder="/profile atau https://..."></div>
                 </div>
@@ -2092,19 +2089,34 @@ require_once BASE_PATH . '/includes/header.php';
         var cntEl   = document.getElementById('cntTabPortal');
         if (cntEl) cntEl.textContent = agendas.length + anns.length + exts.length;
 
+        var dbSt = STATE.data && STATE.data.agenda_db_status;
+        var dbLbl = document.getElementById('portalAgendaDbLabel');
+        if (dbLbl && dbSt) {
+            dbLbl.textContent = 'Database Khusus: ' + dbSt.db_name
+                + ' · Trigger Kaldik: ' + (dbSt.kaldik_triggers_ok ? 'AKTIF (Real-Time)' : 'Mode Backfill')
+                + ' · Total: ' + (dbSt.counts ? dbSt.counts.total : agendas.length) + ' agenda (' + (dbSt.counts ? dbSt.counts.kaldik : 0) + ' Kaldik)';
+        }
+
         var tbAg = document.getElementById('portalAgendasBody');
         if (tbAg) {
             tbAg.innerHTML = agendas.length ? agendas.map(function (a) {
+                var isKaldik = (a.source === 'kaldik' || Number(a.is_locked) === 1);
                 var stB = Number(a.is_active) === 1 ? '<span class="ssoadm-badge ssoadm-badge--ok">Aktif</span>' : '<span class="ssoadm-badge ssoadm-badge--err">Draft</span>';
+                var srcBadge = isKaldik
+                    ? '<span class="ssoadm-badge ssoadm-badge--navy"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> KALDIK · TERKUNCI</span>'
+                    : '<span class="ssoadm-badge ssoadm-badge--teal">' + esc(a.visibility_label || 'Semua Orang') + '</span> <span class="ssoadm-badge ssoadm-badge--navy">' + esc(a.category || 'akademik') + '</span>';
+                var actBtns = isKaldik
+                    ? '<span style="font-size:11.5px;font-weight:700;color:#64748B;display:inline-flex;align-items:center;gap:4px;"><iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon> Read-Only (Kaldik)</span>'
+                    : '<div style="display:flex;gap:6px;justify-content:flex-end;">'
+                      + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.editPortalAgenda(' + a.id + ')"><iconify-icon icon="solar:pen-bold"></iconify-icon> Edit</button>'
+                      + '<button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" onclick="SSOADM.deletePortalAgenda(' + a.id + ')"><iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon></button>'
+                      + '</div>';
                 return '<tr id="p-ag-' + a.id + '">'
-                    + '<td data-label="Tanggal"><strong>' + esc(a.start_date) + '</strong>' + (a.end_date ? '<div style="font-size:11px;color:#64748B;">s/d ' + esc(a.end_date) + '</div>' : '') + (a.start_time ? '<div style="font-size:11px;color:#0D7A87;">' + esc(a.start_time) + ' WIB</div>' : '') + '</td>'
+                    + '<td data-label="Tanggal"><strong>' + esc(a.start_date) + '</strong>' + (a.end_date && a.end_date !== a.start_date ? '<div style="font-size:11px;color:#64748B;">s/d ' + esc(a.end_date) + '</div>' : '') + (a.start_time ? '<div style="font-size:11px;color:#0D7A87;">' + esc(a.start_time) + ' WIB</div>' : '') + '</td>'
                     + '<td data-label="Agenda"><strong>' + esc(a.title) + '</strong>' + (a.location ? '<div style="font-size:11.5px;color:#64748B;">' + esc(a.location) + '</div>' : '') + '</td>'
-                    + '<td data-label="Kategori"><span class="ssoadm-badge ssoadm-badge--teal">' + esc(a.category) + '</span></td>'
+                    + '<td data-label="Audiens">' + srcBadge + '</td>'
                     + '<td data-label="Status">' + stB + '</td>'
-                    + '<td data-label="Aksi" style="text-align:right;"><div style="display:flex;gap:6px;justify-content:flex-end;">'
-                    + '<button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.editPortalAgenda(' + a.id + ')"><iconify-icon icon="solar:pen-bold"></iconify-icon> Edit</button>'
-                    + '<button type="button" class="ssoadm-btn ssoadm-btn--danger ssoadm-btn--sm" onclick="SSOADM.deletePortalAgenda(' + a.id + ')"><iconify-icon icon="solar:trash-bin-minimalistic-bold"></iconify-icon></button>'
-                    + '</div></td></tr>';
+                    + '<td data-label="Aksi" style="text-align:right;">' + actBtns + '</td></tr>';
             }).join('') : '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Belum ada agenda.</td></tr>';
         }
 
@@ -2519,6 +2531,8 @@ require_once BASE_PATH . '/includes/header.php';
             if (STATE.portalSub === 'agendas') {
                 document.getElementById('formPortalAgenda').reset();
                 document.getElementById('pAgId').value = '0';
+                var scEl = document.getElementById('pAgScope');
+                if (scEl) scEl.value = 'all';
                 document.getElementById('pAgActive').checked = true;
                 document.getElementById('mdlPAgTitle').textContent = 'Tambah Agenda Ekosistem';
                 openIlmunaModal('modalPortalAgenda');
@@ -2543,6 +2557,10 @@ require_once BASE_PATH . '/includes/header.php';
         editPortalAgenda: function (id) {
             var a = (STATE.data.portal_agendas || []).find(function (x) { return Number(x.id) === Number(id); });
             if (!a) return;
+            if (a.source === 'kaldik' || Number(a.is_locked) === 1) {
+                Ilmuna.warning('Agenda Kaldik Terkunci', 'Agenda resmi dari Kalender Pendidikan (Kaldik) tidak dapat diubah dari portal SSO.');
+                return;
+            }
             document.getElementById('mdlPAgTitle').textContent = 'Edit Agenda Ekosistem';
             document.getElementById('pAgId').value = a.id;
             document.getElementById('pAgTitle').value = a.title || '';
@@ -2550,14 +2568,17 @@ require_once BASE_PATH . '/includes/header.php';
             document.getElementById('pAgEnd').value = a.end_date || '';
             document.getElementById('pAgTime').value = a.start_time || '';
             document.getElementById('pAgCat').value = a.category || 'akademik';
+            var scEl = document.getElementById('pAgScope');
+            if (scEl) scEl.value = a.visibility_scope || 'all';
             document.getElementById('pAgLoc').value = a.location || '';
-            document.getElementById('pAgLink').value = a.link_url || '';
+            document.getElementById('pAgLink').value = a.link_url_raw || a.link_url || '';
             document.getElementById('pAgDesc').value = a.description || '';
             document.getElementById('pAgActive').checked = Number(a.is_active) === 1;
             openIlmunaModal('modalPortalAgenda');
         },
         savePortalAgenda: async function (e) {
             e.preventDefault();
+            var scEl = document.getElementById('pAgScope');
             var res = await apiPost('save_agenda', {
                 id: document.getElementById('pAgId').value,
                 title: document.getElementById('pAgTitle').value.trim(),
@@ -2565,6 +2586,7 @@ require_once BASE_PATH . '/includes/header.php';
                 end_date: document.getElementById('pAgEnd').value,
                 start_time: document.getElementById('pAgTime').value.trim(),
                 category: document.getElementById('pAgCat').value,
+                visibility_scope: scEl ? scEl.value : 'all',
                 location: document.getElementById('pAgLoc').value.trim(),
                 link_url: document.getElementById('pAgLink').value.trim(),
                 description: document.getElementById('pAgDesc').value.trim(),
@@ -2576,6 +2598,16 @@ require_once BASE_PATH . '/includes/header.php';
                 await SSOADM.load();
                 if (window.MargoShell) window.MargoShell.refreshRightWidgets();
             } else Ilmuna.error('Gagal', res.message);
+        },
+        syncKaldikAgendas: async function () {
+            var res = await apiPost('sync_kaldik_agendas', {});
+            if (res.success) {
+                Ilmuna.success('Sinkronisasi Kaldik Selesai', res.message);
+                await SSOADM.load();
+                if (window.MargoShell) window.MargoShell.refreshRightWidgets();
+            } else {
+                Ilmuna.error('Gagal Sinkron Kaldik', res.message || 'Gagal menghubungi database Kaldik.');
+            }
         },
         deletePortalAgenda: async function (id) {
             var ok = await Ilmuna.confirm('error', 'Hapus Agenda?', 'Agenda akan dihapus dari seluruh kalender & widget portal.', 'Ya, Hapus', 'Batal');
@@ -2698,6 +2730,10 @@ require_once BASE_PATH . '/includes/header.php';
                 });
                 var lblMap = { agendas: 'Tambah Agenda', announcements: 'Tambah Pengumuman', external_apps: 'Tambah Layanan' };
                 document.getElementById('lblPortalAdd').textContent = lblMap[STATE.portalSub] || 'Tambah Data';
+                var btnCal = document.getElementById('btnPortalOpenCal');
+                var btnSync = document.getElementById('btnPortalSyncKaldik');
+                if (btnCal) btnCal.style.display = (STATE.portalSub === 'agendas') ? '' : 'none';
+                if (btnSync) btnSync.style.display = (STATE.portalSub === 'agendas') ? '' : 'none';
             });
         });
         document.querySelectorAll('#sessFilterPills .ilmuna-pill-btn').forEach(function (btn) {

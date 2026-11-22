@@ -19,6 +19,7 @@ if (!defined('ILMUNA_SKIP_GD_WAF_INTERSTITIAL')) {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
+require_once BASE_PATH . '/includes/agenda-engine.php';
 
 while (ob_get_level()) {
     ob_end_clean();
@@ -124,75 +125,17 @@ function margo_portal_event_label($eventType)
 
 try {
     // ------------------------------------------------------------------
-    // 1. AGENDA EKOSISTEM
+    // 1. AGENDA EKOSISTEM (DEDICATED AGENDA DB + KALDIK SYNC + ROLE SCOPING)
     // ------------------------------------------------------------------
     if ($resource === 'agenda') {
-        $showAll = isset($_GET['all']) && $_GET['all'] === '1';
+        $showAll     = isset($_GET['all']) && $_GET['all'] === '1';
         $monthFilter = trim((string)($_GET['month'] ?? '')); // format YYYY-MM opsional
 
-        if ($showAll) {
-            if ($monthFilter !== '' && preg_match('/^\d{4}-\d{2}$/', $monthFilter)) {
-                $stmt = $pdo->prepare("
-                    SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-                    FROM sso_agendas
-                    WHERE is_active = 1
-                      AND (DATE_FORMAT(start_date, '%Y-%m') = ? OR (end_date IS NOT NULL AND DATE_FORMAT(end_date, '%Y-%m') = ?))
-                    ORDER BY start_date ASC, start_time ASC, id ASC
-                ");
-                $stmt->execute([$monthFilter, $monthFilter]);
-                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } else {
-                $rows = $pdo->query("
-                    SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-                    FROM sso_agendas
-                    WHERE is_active = 1
-                    ORDER BY start_date ASC, start_time ASC, id ASC
-                    LIMIT 120
-                ")->fetchAll(PDO::FETCH_ASSOC);
-            }
-        } else {
-            // Upcoming untuk right sidebar widget (termasuk agenda hari ini dan 12 agenda berikutnya)
-            $rows = $pdo->query("
-                SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-                FROM sso_agendas
-                WHERE is_active = 1 AND COALESCE(end_date, start_date) >= CURDATE()
-                ORDER BY start_date ASC, start_time ASC, id ASC
-                LIMIT 12
-            ")->fetchAll(PDO::FETCH_ASSOC);
-
-            // Jika seluruh agenda sudah lewat, tampilkan 6 agenda terbaru agar widget tidak kosong
-            if (empty($rows)) {
-                $rows = $pdo->query("
-                    SELECT id, title, description, start_date, end_date, start_time, location, category, link_url, is_active
-                    FROM sso_agendas
-                    WHERE is_active = 1
-                    ORDER BY start_date DESC, id DESC
-                    LIMIT 6
-                ")->fetchAll(PDO::FETCH_ASSOC);
-            }
-        }
-
-        $bulanIndo = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-        $out = [];
-        foreach ($rows as $r) {
-            $ts = strtotime((string)$r['start_date']);
-            $mIdx = $ts ? (int)date('n', $ts) : 1;
-            $out[] = [
-                'id'          => (int)$r['id'],
-                'title'       => (string)$r['title'],
-                'description' => (string)($r['description'] ?? ''),
-                'start_date'  => (string)$r['start_date'],
-                'end_date'    => $r['end_date'] ? (string)$r['end_date'] : null,
-                'start_time'  => $r['start_time'] ? (string)$r['start_time'] : '',
-                'location'    => (string)($r['location'] ?? ''),
-                'category'    => (string)$r['category'],
-                'link_url'    => margo_portal_resolve_url($r['link_url'] ?? ''),
-                'year'        => $ts ? date('Y', $ts) : '',
-                'month_short' => isset($bulanIndo[$mIdx]) ? $bulanIndo[$mIdx] : '',
-                'day_num'     => $ts ? date('d', $ts) : '',
-                'source'      => 'sso',
-            ];
-        }
+        $out = margo_agenda_fetch_visible($pdo, $currentUser, [
+            'upcoming' => !$showAll,
+            'month'    => $monthFilter,
+            'limit'    => $showAll ? 600 : 12,
+        ]);
 
         echo json_encode(['success' => true, 'data' => $out], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;

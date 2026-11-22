@@ -18,6 +18,7 @@
 
 require_once __DIR__ . '/config.php';
 require_once BASE_PATH . '/includes/sso-security.php';
+require_once BASE_PATH . '/includes/agenda-engine.php';
 
 /**
  * Daftar tabel resmi milik ekosistem Margo One SSO
@@ -277,6 +278,16 @@ function margo_sso_sync_sibling_learn()
         return ['synced' => false, 'message' => 'Folder sibling learn.ilmuna.my.id tidak ditemukan di server ini.'];
     }
 
+    // Hindari menimpa repo pengembangan lokal (Laragon/Windows); sinkronisasi otomatis sibling khusus server produksi Linux/cPanel (/home/...)
+    if (strpos($learnDir, '/home/') !== 0) {
+        return [
+            'synced'    => false,
+            'learn_dir' => $learnDir,
+            'actions'   => [],
+            'message'   => 'Sinkronisasi sibling dilewati pada lingkungan pengembangan lokal (' . $learnDir . ').',
+        ];
+    }
+
     $actions = [];
 
     // 2. Bersihkan URL remote .git/config di learn.ilmuna.my.id agar cPanel Git Version Control tidak error
@@ -294,8 +305,9 @@ function margo_sso_sync_sibling_learn()
         }
     }
 
-    // 3. Jika fungsi shell_exec tersedia di PHP cPanel, sinkronkan dulu git working tree learn.ilmuna.my.id
-    if (is_dir($learnDir . '/.git') && function_exists('shell_exec')) {
+    // 3. Jika fungsi shell_exec tersedia di PHP cPanel (HANYA di server cPanel /home/, bukan di dev lokal Laragon!), sinkronkan dulu git working tree learn.ilmuna.my.id
+    $isCpanelPath = (strpos($learnDir, '/home/') === 0);
+    if ($isCpanelPath && is_dir($learnDir . '/.git') && function_exists('shell_exec')) {
         $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
         if (!in_array('shell_exec', $disabled, true)) {
             $cmd = 'cd ' . escapeshellarg($learnDir) . ' && git fetch origin main 2>&1 && git reset --hard origin/main 2>&1';
@@ -360,14 +372,20 @@ function runSsoDatabaseMigration(PDO $pdo)
 {
     margo_sso_ensure_identity_tables($pdo);
     margo_sso_ensure_schema($pdo, true);
-    $learnSync = margo_sso_sync_sibling_learn();
-    $stats = margo_sso_get_table_stats($pdo);
+    $agendaTrg  = margo_agenda_install_kaldik_triggers($pdo);
+    $agendaSync = margo_agenda_backfill_from_kaldik($pdo);
+    $agendaInfo = margo_agenda_get_status($pdo);
+    $learnSync  = margo_sso_sync_sibling_learn();
+    $stats      = margo_sso_get_table_stats($pdo);
 
     return [
-        'status'     => 'success',
-        'message'    => 'Seluruh skema tabel Margo One SSO, klien default, kunci RSA-2048 JWKS, portal agenda, akun admin utama, serta integrasi learn.ilmuna.my.id berhasil disinkronisasi.',
-        'learn_sync' => $learnSync,
-        'tables'     => $stats,
+        'status'      => 'success',
+        'message'     => 'Seluruh skema tabel Margo One SSO, Database Khusus Agenda (' . $agendaInfo['db_name'] . '), Trigger Otomatis Kaldik, klien default, kunci RSA-2048 JWKS, akun admin utama, serta integrasi learn.ilmuna.my.id berhasil disinkronisasi.',
+        'agenda_db'   => $agendaInfo,
+        'agenda_trg'  => $agendaTrg,
+        'agenda_sync' => $agendaSync,
+        'learn_sync'  => $learnSync,
+        'tables'      => $stats,
     ];
 }
 
