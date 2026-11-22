@@ -723,7 +723,7 @@ function margo_agenda_get_guru_classes(PDO $ssoPdo, array $userSession)
 
     // Cari user.id padanan di Learn DB (jika ID berbeda antara DB SSO dan DB Learn)
     $learnUserId = (int)($uRow['id'] ?? 0);
-    if ($lpdo) {
+    if ($learnInfo && $lpdo !== $ssoPdo) {
         try {
             $stLu = $lpdo->prepare("
                 SELECT id FROM `users`
