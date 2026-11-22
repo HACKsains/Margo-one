@@ -294,13 +294,27 @@ function margo_sso_sync_sibling_learn()
         }
     }
 
-    // 3. Salin paket berkas SSO & Global SLO terbaru ke learn.ilmuna.my.id
+    // 3. Jika fungsi shell_exec tersedia di PHP cPanel, sinkronkan dulu git working tree learn.ilmuna.my.id
+    if (is_dir($learnDir . '/.git') && function_exists('shell_exec')) {
+        $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+        if (!in_array('shell_exec', $disabled, true)) {
+            $cmd = 'cd ' . escapeshellarg($learnDir) . ' && git fetch origin main 2>&1 && git reset --hard origin/main 2>&1';
+            $gitOut = @shell_exec($cmd);
+            if (is_string($gitOut) && $gitOut !== '') {
+                $actions[] = 'git_reset_hard_origin_main';
+            }
+        }
+    }
+
+    // 4. Salin paket berkas SSO & Global SLO terbaru ke learn.ilmuna.my.id (menimpa setelah git reset agar selalu paling mutakhir)
     $fileMap = [
         BASE_PATH . '/sdk/ilmuna-sso-client.php'                     => $learnDir . '/sdk/ilmuna-sso-client.php',
         BASE_PATH . '/sdk/learn-integration/sso-callback.php'        => $learnDir . '/sso-callback.php',
         BASE_PATH . '/sdk/learn-integration/sso-logout-webhook.php'  => $learnDir . '/sso-logout-webhook.php',
         BASE_PATH . '/sdk/learn-integration/logout.php'              => $learnDir . '/logout.php',
         BASE_PATH . '/sdk/learn-integration/auth.php'                => $learnDir . '/auth.php',
+        BASE_PATH . '/sdk/learn-integration/index.php'               => $learnDir . '/index.php',
+        BASE_PATH . '/sdk/learn-integration/login.php'               => $learnDir . '/login.php',
         BASE_PATH . '/sdk/learn-integration/cpanel.yml'              => $learnDir . '/.cpanel.yml',
     ];
 
@@ -316,7 +330,7 @@ function margo_sso_sync_sibling_learn()
         }
     }
 
-    // 4. Pastikan ILMUNA_SSO_ENABLED = true di learn.ilmuna.my.id/config.php
+    // 5. Pastikan ILMUNA_SSO_ENABLED = true di learn.ilmuna.my.id/config.php
     $learnCfgFile = $learnDir . '/config.php';
     if (file_exists($learnCfgFile) && is_writable($learnCfgFile)) {
         $cfgRaw = (string)@file_get_contents($learnCfgFile);
@@ -328,18 +342,6 @@ function margo_sso_sync_sibling_learn()
         if ($cfgUpd && $cfgUpd !== $cfgRaw) {
             @file_put_contents($learnCfgFile, $cfgUpd);
             $actions[] = 'enabled_sso_in_config';
-        }
-    }
-
-    // 5. Jika fungsi shell_exec tersedia di PHP cPanel, sinkronkan juga git working tree learn.ilmuna.my.id
-    if (is_dir($learnDir . '/.git') && function_exists('shell_exec')) {
-        $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
-        if (!in_array('shell_exec', $disabled, true)) {
-            $cmd = 'cd ' . escapeshellarg($learnDir) . ' && git fetch origin main 2>&1 && git reset --hard origin/main 2>&1';
-            $gitOut = @shell_exec($cmd);
-            if (is_string($gitOut) && $gitOut !== '') {
-                $actions[] = 'git_reset_hard_origin_main';
-            }
         }
     }
 

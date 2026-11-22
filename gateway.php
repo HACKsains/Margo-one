@@ -57,6 +57,9 @@ try {
 $forbiddenAlert = (isset($_GET['error']) && $_GET['error'] === 'forbidden');
 $loginMethodLabel = ($currentUser['login_method'] === 'google_oauth') ? 'Google OAuth 2.0' : 'Kata Sandi Terpusat';
 $gununganUrl = BASE_URL . '/assets/img/gunungan.png';
+$hostNowHero = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+$isLocalHero = (strpos($hostNowHero, 'localhost') === 0 || strpos($hostNowHero, '127.0.0.1') === 0);
+$learnLaunchUrl = $isLocalHero ? 'http://localhost/learn/login.php?sso_login=1' : 'https://learn.ilmuna.my.id/login.php?sso_login=1';
 
 $pageTitle = 'Beranda Portal';
 $pageIcon  = 'solar:home-smile-bold';
@@ -83,7 +86,7 @@ require_once BASE_PATH . '/includes/header.php';
             Akses seluruh layanan ekosistem digital Ilmuna cukup dengan satu autentikasi terpusat yang dilindungi enkripsi JWT RS256 &amp; Single Logout Global.
         </p>
         <div class="margo-hero-actions">
-            <a href="https://learn.ilmuna.my.id" target="_blank" rel="noopener noreferrer" class="margo-hero-btn margo-hero-btn--white">
+            <a href="<?= htmlspecialchars($learnLaunchUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer" class="margo-hero-btn margo-hero-btn--white">
                 <iconify-icon icon="solar:square-academic-cap-2-bold" width="17"></iconify-icon>
                 <span>Buka Ilmuna Learn</span>
             </a>

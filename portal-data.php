@@ -254,13 +254,25 @@ try {
             if (!$canUse) {
                 continue;
             }
-            $hostLbl = parse_url((string)$c['app_url'], PHP_URL_HOST) ?: (string)$c['app_url'];
+            $rawAppUrl = trim((string)$c['app_url']);
+            $hostLbl = parse_url($rawAppUrl, PHP_URL_HOST) ?: $rawAppUrl;
+            $hostNowPortal = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+            $isLocalPortal = (strpos($hostNowPortal, 'localhost') === 0 || strpos($hostNowPortal, '127.0.0.1') === 0);
+            if ((string)$c['client_slug'] === 'ilmuna-learn') {
+                $launchUrl = $isLocalPortal
+                    ? 'http://localhost/learn/login.php?sso_login=1'
+                    : (rtrim($rawAppUrl, '/') . '/login.php?sso_login=1');
+            } else {
+                $launchUrl = (strpos($rawAppUrl, 'sso_login=') === false)
+                    ? ($rawAppUrl . (strpos($rawAppUrl, '?') === false ? '?' : '&') . 'sso_login=1')
+                    : $rawAppUrl;
+            }
             $integrated[] = [
                 'id'          => (int)$c['id'],
                 'slug'        => (string)$c['client_slug'],
                 'name'        => (string)$c['client_name'],
                 'description' => 'Masuk otomatis ke ' . $hostLbl . ' dengan sesi Margo One SSO',
-                'url'         => (string)$c['app_url'],
+                'url'         => $launchUrl,
                 'icon'        => !empty($c['app_icon']) ? (string)$c['app_icon'] : 'solar:widget-5-bold',
                 'badge'       => 'SSO AKTIF',
                 'is_admin'    => false,

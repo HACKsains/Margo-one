@@ -120,6 +120,14 @@ function margo_create_sso_session(PDO $pdo, $userId, $activeRole = null, $loginM
     $stmt->execute([$tokenHash, (int)$userId, $activeRole, $ip, $ua, $loginMethod, $expiresAt]);
     $sessionId = (int)$pdo->lastInsertId();
 
+    // Bersihkan catatan pencabutan SLO lama milik user ini agar sesi baru di aplikasi klien tidak tercabut
+    try {
+        @$pdo->prepare("DELETE FROM margo_slo_revocations WHERE user_id = ?")->execute([(int)$userId]);
+        @$pdo->prepare("DELETE FROM `uofruaju_learn_ilmuna`.`margo_slo_revocations` WHERE user_id = ?")->execute([(int)$userId]);
+    } catch (Throwable $eCleanRev) {
+        // Non-fatal
+    }
+
     if (session_status() === PHP_SESSION_ACTIVE) {
         $_SESSION['sso_session_id']    = $sessionId;
         $_SESSION['sso_session_token'] = $rawToken;
