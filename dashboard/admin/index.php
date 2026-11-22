@@ -804,8 +804,15 @@ if (!in_array($initialTab, ['clients', 'sessions', 'users', 'jwks', 'portal'], t
     $initialTab = 'clients';
 }
 
-$pageTitle = 'Kontrol Admin Margo One';
-$pageIcon  = 'solar:shield-keyhole-bold';
+$adminPageMeta = [
+    'clients'  => ['title' => 'Aplikasi Klien & Kunci SSO', 'icon' => 'solar:key-minimalistic-square-2-bold'],
+    'sessions' => ['title' => 'Sesi Aktif Global',          'icon' => 'solar:devices-bold'],
+    'users'    => ['title' => 'Identitas & Multi-Role',     'icon' => 'solar:users-group-rounded-bold'],
+    'jwks'     => ['title' => 'JWKS, SDK & Audit Log',      'icon' => 'solar:history-bold'],
+    'portal'   => ['title' => 'Kelola Portal & Agenda',     'icon' => 'solar:calendar-add-bold'],
+];
+$pageTitle = $adminPageMeta[$initialTab]['title'];
+$pageIcon  = $adminPageMeta[$initialTab]['icon'];
 $margoDefaultRightClosed = true;
 
 $extraHead = '<style>
@@ -850,37 +857,8 @@ require_once BASE_PATH . '/includes/header.php';
 ?>
 
 <div class="ssoadm-app">
-    <!-- DATA-FIRST ZERO TITLE: LANGSUNG SEGMENTED TABS (.curriculum-main-tabs) -->
-    <div class="curriculum-main-tabs" id="ssoAdminTabs" role="tablist">
-        <button type="button" class="curriculum-tab-btn <?= $initialTab === 'clients' ? 'is-active' : '' ?>" data-tab="clients" role="tab">
-            <iconify-icon icon="solar:shield-keyhole-bold"></iconify-icon>
-            <span class="curriculum-tab-label">Aplikasi Klien</span>
-            <span class="curriculum-tab-counter" id="cntTabClients">0</span>
-        </button>
-        <button type="button" class="curriculum-tab-btn <?= $initialTab === 'sessions' ? 'is-active' : '' ?>" data-tab="sessions" role="tab">
-            <iconify-icon icon="solar:devices-bold"></iconify-icon>
-            <span class="curriculum-tab-label">Sesi Aktif Global</span>
-            <span class="curriculum-tab-counter" id="cntTabSessions">0</span>
-        </button>
-        <button type="button" class="curriculum-tab-btn <?= $initialTab === 'users' ? 'is-active' : '' ?>" data-tab="users" role="tab">
-            <iconify-icon icon="solar:users-group-rounded-bold"></iconify-icon>
-            <span class="curriculum-tab-label">Identitas &amp; Multi-Role</span>
-            <span class="curriculum-tab-counter" id="cntTabUsers">0</span>
-        </button>
-        <button type="button" class="curriculum-tab-btn <?= $initialTab === 'jwks' ? 'is-active' : '' ?>" data-tab="jwks" role="tab">
-            <iconify-icon icon="solar:history-bold"></iconify-icon>
-            <span class="curriculum-tab-label">JWKS, SDK &amp; Audit</span>
-            <span class="curriculum-tab-counter" id="cntTabLogs">0</span>
-        </button>
-        <button type="button" class="curriculum-tab-btn <?= $initialTab === 'portal' ? 'is-active' : '' ?>" data-tab="portal" role="tab">
-            <iconify-icon icon="solar:calendar-add-bold"></iconify-icon>
-            <span class="curriculum-tab-label">Portal &amp; Agenda</span>
-            <span class="curriculum-tab-counter" id="cntTabPortal">0</span>
-        </button>
-    </div>
-
     <!-- ======================================================================= -->
-    <!-- TAB 1: APLIKASI KLIEN (sso_clients)                                     -->
+    <!-- HALAMAN 1: APLIKASI KLIEN (sso_clients)                                 -->
     <!-- ======================================================================= -->
     <section class="ssoadm-pane <?= $initialTab === 'clients' ? 'is-active' : '' ?>" id="ssoPane_clients">
         <div class="ilmuna-filter-box">
@@ -1597,7 +1575,8 @@ require_once BASE_PATH . '/includes/header.php';
 
     function renderClients() {
         var list = (STATE.data && STATE.data.clients) || [];
-        document.getElementById('cntTabClients').textContent = list.length;
+        var cntEl = document.getElementById('cntTabClients');
+        if (cntEl) cntEl.textContent = list.length;
         if (!list.length) return;
         if (!STATE.selectedClientId || !list.some(function (c) { return c.id === STATE.selectedClientId; })) {
             STATE.selectedClientId = list[0].id;
@@ -1642,7 +1621,8 @@ require_once BASE_PATH . '/includes/header.php';
 
     function renderSessions() {
         var list = (STATE.data && STATE.data.sessions) || [];
-        document.getElementById('cntTabSessions').textContent = STATE.data ? STATE.data.active_session_count : 0;
+        var cntEl = document.getElementById('cntTabSessions');
+        if (cntEl) cntEl.textContent = STATE.data ? STATE.data.active_session_count : 0;
         var q = (document.getElementById('sessSearchInput').value || '').toLowerCase().trim();
         var filtered = list.filter(function (s) {
             if (STATE.sessFilter === 'active' && !s.is_active_now) return false;
@@ -1686,7 +1666,8 @@ require_once BASE_PATH . '/includes/header.php';
     function renderUsers() {
         var list = (STATE.data && STATE.data.users) || [];
         var orphans = (STATE.data && STATE.data.orphan_gurus) || [];
-        document.getElementById('cntTabUsers').textContent = list.length;
+        var cntEl = document.getElementById('cntTabUsers');
+        if (cntEl) cntEl.textContent = list.length;
         document.getElementById('lblOrphanGuru').textContent = orphans.length > 0
             ? ('Perbaiki ' + orphans.length + ' Orphan Guru')
             : 'Guru Tersinkron (0 Orphan)';
@@ -1733,7 +1714,8 @@ require_once BASE_PATH . '/includes/header.php';
     function renderJwksAndLogs() {
         var keys = (STATE.data && STATE.data.jwks_keys) || [];
         var logs = (STATE.data && STATE.data.audit_logs) || [];
-        document.getElementById('cntTabLogs').textContent = logs.length;
+        var cntEl = document.getElementById('cntTabLogs');
+        if (cntEl) cntEl.textContent = logs.length;
         document.getElementById('txtJwksUrl').textContent = (STATE.data && STATE.data.endpoints && STATE.data.endpoints.jwks) || '';
 
         document.getElementById('jwksKeysList').innerHTML = keys.map(function (k) {

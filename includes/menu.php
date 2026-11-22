@@ -58,33 +58,33 @@ if (function_exists('hasRole') && hasRole('admin')) {
         'items'    => [
             [
                 'label' => 'Aplikasi Klien & Kunci',
-                'href'  => BASE_URL . '/dashboard/admin/?tab=clients',
+                'href'  => BASE_URL . '/dashboard/admin/clients',
                 'icon'  => 'solar:key-minimalistic-square-2-bold',
                 'route' => 'clients',
                 'badge' => ['text' => 'SSO', 'variant' => 'teal'],
             ],
             [
                 'label' => 'Sesi Aktif Global',
-                'href'  => BASE_URL . '/dashboard/admin/?tab=sessions',
+                'href'  => BASE_URL . '/dashboard/admin/sessions',
                 'icon'  => 'solar:devices-bold',
                 'route' => 'sessions',
             ],
             [
                 'label' => 'Identitas & Multi-Role',
-                'href'  => BASE_URL . '/dashboard/admin/?tab=users',
+                'href'  => BASE_URL . '/dashboard/admin/users',
                 'icon'  => 'solar:users-group-rounded-bold',
                 'route' => 'users',
             ],
             [
                 'label' => 'JWKS, SDK & Audit Log',
-                'href'  => BASE_URL . '/dashboard/admin/?tab=jwks',
+                'href'  => BASE_URL . '/dashboard/admin/audit-logs',
                 'icon'  => 'solar:history-bold',
                 'route' => 'jwks',
                 'badge' => ['text' => 'RS256', 'variant' => 'gold'],
             ],
             [
                 'label' => 'Kelola Portal & Agenda',
-                'href'  => BASE_URL . '/dashboard/admin/?tab=portal',
+                'href'  => BASE_URL . '/dashboard/admin/portal',
                 'icon'  => 'solar:calendar-add-bold',
                 'route' => 'portal',
                 'badge' => ['text' => 'CMS', 'variant' => 'gold'],

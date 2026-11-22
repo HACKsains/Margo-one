@@ -126,7 +126,7 @@ $rRoleIcon  = function_exists('margo_role_icon') ? margo_role_icon($rActiveRole)
                 <span>Info Ekosistem</span>
             </h3>
             <?php if (hasRole('admin')): ?>
-                <a href="<?= htmlspecialchars(BASE_URL . '/dashboard/admin/?tab=portal', ENT_QUOTES, 'UTF-8') ?>" class="margo-rwidget-link">
+                <a href="<?= htmlspecialchars(BASE_URL . '/dashboard/admin/portal', ENT_QUOTES, 'UTF-8') ?>" class="margo-rwidget-link">
                     <span>Kelola</span>
                     <iconify-icon icon="solar:pen-new-square-linear" width="13"></iconify-icon>
                 </a>

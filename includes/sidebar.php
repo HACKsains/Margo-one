@@ -12,8 +12,12 @@ $currentScript = basename($_SERVER['PHP_SELF'] ?? '');
 $currentRoute  = preg_replace('/\.php$/i', '', $currentScript);
 $activeTabReq  = isset($_GET['tab']) ? strtolower(trim((string)$_GET['tab'])) : '';
 $isAdminPath   = strpos(str_replace('\\', '/', $_SERVER['PHP_SELF'] ?? ''), '/dashboard/admin') !== false;
-if ($isAdminPath && $currentRoute === 'index') {
-    $currentRoute = $activeTabReq !== '' ? $activeTabReq : 'clients';
+if ($isAdminPath) {
+    if ($currentRoute === 'audit-logs') {
+        $currentRoute = 'jwks';
+    } elseif ($currentRoute === 'index') {
+        $currentRoute = $activeTabReq !== '' ? $activeTabReq : 'clients';
+    }
 }
 
 require __DIR__ . '/menu.php';
