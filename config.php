@@ -294,7 +294,7 @@ function loadCentralTemplates(array $templates = ['modal', 'calendar', 'table'])
 }
 
 // ==============================================================================
-// DATABASE CREDENTIALS (SHARED IDENTITY DB: uofruaju_learn_ilmuna)
+// DATABASE CREDENTIALS (DEDICATED ISOLATED SSO DB: uofruaju_margo_one)
 // ==============================================================================
 // Mendukung override opsional dari file lokal config.local.php (tidak di-commit ke Git)
 if (file_exists(__DIR__ . '/config.local.php')) {
@@ -443,6 +443,8 @@ function getDBConnection() {
         }
 
         // 3. Fallback cPanel: DB_NAME (uofruaju_margo_one) menggunakan user MySQL cPanel eksisting (uofruaju_Learn_Ilmuna)
+        // CATATAN: Margo One SSO WAJIB terpisah total di DB_NAME (uofruaju_margo_one) dan TIDAK BOLEH
+        // terhubung langsung ke tabel users milik uofruaju_learn_ilmuna.
         if ($pdo === null) {
             try {
                 $dsnCpDedicated = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
@@ -453,19 +455,8 @@ function getDBConnection() {
             }
         }
 
-        // 4. Fallback cPanel Shared Identity DB (uofruaju_learn_ilmuna) agar produksi langsung hidup tanpa HTTP 500
         if ($pdo === null) {
-            try {
-                $dsnCpShared = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=uofruaju_learn_ilmuna;charset=" . DB_CHARSET;
-                $pdo = new PDO($dsnCpShared, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
-                $pdo->exec("SET time_zone = '+07:00'");
-            } catch (PDOException $e4) {
-                $errors[] = 'cPanel Shared DB: ' . $e4->getMessage();
-            }
-        }
-
-        if ($pdo === null) {
-            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO: ' . implode(' | ', $errors));
+            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO (' . DB_NAME . '): ' . implode(' | ', $errors));
         }
     }
 

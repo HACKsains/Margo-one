@@ -710,6 +710,54 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             exit;
         }
 
+        // ---- PREVIEW KANDIDAT SINKRON USER DARI ILMUNA LEARN (READ-ONLY: HANYA GMAIL & NO REF) ----
+        if ($act === 'preview_learn_sync') {
+            require_once BASE_PATH . '/includes/sso-learn-sync.php';
+            $candidates = margo_learn_sync_fetch_candidates($pdo);
+            $counts = ['total' => count($candidates), 'ready_new' => 0, 'already_in_sso' => 0, 'no_email' => 0];
+            foreach ($candidates as $c) {
+                if (empty($c['has_email'])) {
+                    $counts['no_email']++;
+                } elseif (!empty($c['already_in_sso'])) {
+                    $counts['already_in_sso']++;
+                } else {
+                    $counts['ready_new']++;
+                }
+            }
+            echo json_encode([
+                'success'    => true,
+                'counts'     => $counts,
+                'candidates' => $candidates,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
+        // ---- EKSEKUSI SINKRON 1 USER DARI LEARN -> BUAT USERNAME & PASSWORD ACAK SSO + KIRIM GMAIL ----
+        if ($act === 'sync_learn_user_one') {
+            require_once BASE_PATH . '/includes/sso-learn-sync.php';
+            $learnId        = (int)($_POST['learn_id'] ?? 0);
+            $resendIfExists = !empty($_POST['resend_if_exists']) && (string)$_POST['resend_if_exists'] === '1';
+            if ($learnId <= 0) {
+                echo json_encode(['success' => false, 'message' => 'ID pengguna Learn tidak valid.']);
+                exit;
+            }
+            $allCand = margo_learn_sync_fetch_candidates($pdo);
+            $target  = null;
+            foreach ($allCand as $c) {
+                if ((int)$c['learn_id'] === $learnId) {
+                    $target = $c;
+                    break;
+                }
+            }
+            if (!$target) {
+                echo json_encode(['success' => false, 'message' => 'Pengguna Learn #' . $learnId . ' tidak ditemukan atau tidak aktif.']);
+                exit;
+            }
+            $resSync = margo_learn_sync_execute_one($pdo, $target, $resendIfExists, (int)getCurrentUser()['id']);
+            echo json_encode($resSync, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+
         // ---- AUTO-HEAL ORPHAN GURU.ID_USER ----
         if ($act === 'heal_orphan_guru') {
             $healed = 0;
@@ -1105,13 +1153,13 @@ require_once BASE_PATH . '/includes/header.php';
                     <input type="text" id="userSearchInput" class="ilmuna-search-input" placeholder="Cari nama, username, email, NISN...">
                 </div>
                 <div class="ilmuna-filter-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--primary" onclick="SSOADM.openRoleMatrixModal()">
-                        <iconify-icon icon="solar:shield-user-bold" width="16"></iconify-icon>
-                        <span>Izin Role ke Aplikasi</span>
+                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--primary" onclick="SSOADM.openLearnSyncModal()">
+                        <iconify-icon icon="solar:cloud-download-bold" width="16"></iconify-icon>
+                        <span>Sinkron Gmail dari Learn</span>
                     </button>
-                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" id="btnHealOrphan" onclick="SSOADM.healOrphanGuru()">
-                        <iconify-icon icon="solar:health-bold" width="16" style="color:#0D7A87;"></iconify-icon>
-                        <span id="lblOrphanGuru">Cek Orphan Guru</span>
+                    <button type="button" class="ilmuna-nav-btn ilmuna-nav-btn--ghost" onclick="SSOADM.openRoleMatrixModal()">
+                        <iconify-icon icon="solar:shield-user-bold" width="16" style="color:#0D7A87;"></iconify-icon>
+                        <span>Izin Role ke Aplikasi</span>
                     </button>
                 </div>
             </div>
@@ -1699,6 +1747,86 @@ require_once BASE_PATH . '/includes/header.php';
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- UNIVERSAL MODAL 3B: SINKRON USER DARI LEARN (TERPISAH + KIRIM GMAIL)    -->
+<!-- ======================================================================= -->
+<div class="ilm-modal-backdrop" id="modalLearnSync">
+    <div class="ilm-modal-dialog" style="max-width:860px;">
+        <div class="ilm-modal-header">
+            <div class="ilm-modal-header__brand">
+                <div class="ilm-modal-header__icon"><iconify-icon icon="solar:cloud-download-bold"></iconify-icon></div>
+                <div>
+                    <h3 class="ilm-modal-header__title">Sinkron Gmail dari Ilmuna Learn (Akun SSO Terpisah)</h3>
+                    <p class="ilm-modal-header__subtitle">Hanya mengambil Gmail &amp; nomor ID/NISN/NIS/NIP. Username &amp; sandi acak SSO dibuat baru lalu dikirim ke Gmail user.</p>
+                </div>
+            </div>
+            <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('modalLearnSync')">
+                <iconify-icon icon="solar:close-circle-bold"></iconify-icon>
+            </button>
+        </div>
+        <div class="ilm-modal-body" style="max-height:calc(84vh - 165px);display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                <div class="ilmuna-pill-group" id="learnSyncFilterPills">
+                    <button type="button" class="ilmuna-pill-btn is-active" data-lsfilter="new">Belum di SSO (<span id="lsCntNew">0</span>)</button>
+                    <button type="button" class="ilmuna-pill-btn" data-lsfilter="all_email">Semua Ada Gmail (<span id="lsCntEmail">0</span>)</button>
+                    <button type="button" class="ilmuna-pill-btn" data-lsfilter="no_email">Tanpa Gmail (<span id="lsCntNoEmail">0</span>)</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px;max-width:300px;">
+                    <input type="text" id="learnSyncSearch" class="ssoadm-input" style="min-height:36px;padding:6px 10px;" placeholder="Cari nama, Gmail, NISN/NIP...">
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;border-radius:10px;background:#F8FAFC;border:1px solid #E2E8F0;font-size:12.5px;">
+                <label style="display:inline-flex;align-items:center;gap:7px;font-weight:700;color:#1D3B5E;cursor:pointer;">
+                    <input type="checkbox" id="learnSyncCheckAll" onchange="SSOADM.toggleLearnSyncAll(this.checked)">
+                    <span>Pilih Semua yang Ditampilkan</span>
+                </label>
+                <label style="display:inline-flex;align-items:center;gap:7px;font-weight:600;color:#475569;cursor:pointer;">
+                    <input type="checkbox" id="learnSyncResendExisting">
+                    <span>Reset &amp; kirim ulang sandi acak jika akun sudah ada di SSO</span>
+                </label>
+            </div>
+
+            <div id="learnSyncProgressWrap" style="display:none;padding:10px 12px;border-radius:10px;background:#F0F9FF;border:1px solid #BAE6FD;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#1D3B5E;margin-bottom:6px;">
+                    <span id="learnSyncProgressText">Menyiapkan pengiriman...</span>
+                    <span id="learnSyncProgressPct">0%</span>
+                </div>
+                <div style="height:8px;border-radius:999px;background:#E2E8F0;overflow:hidden;">
+                    <div id="learnSyncProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#0D7A87,#52B2DC);transition:width .25s ease;"></div>
+                </div>
+            </div>
+
+            <div class="table-responsive" style="border:1px solid #E2E8F0;border-radius:12px;overflow:auto;max-height:360px;">
+                <table class="lms-table" style="margin:0;">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;"></th>
+                            <th>Nama &amp; Peran</th>
+                            <th>No. Ref (ID/NISN/NIP)</th>
+                            <th>Gmail Tujuan</th>
+                            <th>Status SSO</th>
+                        </tr>
+                    </thead>
+                    <tbody id="learnSyncTableBody">
+                        <tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Klik Sinkron Gmail dari Learn untuk memuat daftar...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="ilm-modal-footer" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <span id="learnSyncSelectedInfo" style="font-size:12.5px;font-weight:700;color:#475569;">0 pengguna dipilih</span>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('modalLearnSync')">Tutup</button>
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--primary" id="btnRunLearnSync" onclick="SSOADM.runLearnSyncSelected()">
+                    <iconify-icon icon="solar:letter-opened-bold"></iconify-icon>
+                    <span>Buat Akun Acak &amp; Kirim ke Gmail</span>
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -2627,6 +2755,178 @@ require_once BASE_PATH . '/includes/header.php';
             var res = await apiPost('admin_unlink_google', { user_id: uid });
             if (res.success) { Ilmuna.success('Diputuskan', res.message); SSOADM.load(); }
             else Ilmuna.error('Gagal', res.message);
+        },
+        _learnSyncCandidates: [],
+        _learnSyncFilter: 'new',
+        _learnSyncBound: false,
+        openLearnSyncModal: async function () {
+            openIlmunaModal('modalLearnSync');
+            var tb = document.getElementById('learnSyncTableBody');
+            var progWrap = document.getElementById('learnSyncProgressWrap');
+            if (progWrap) progWrap.style.display = 'none';
+            if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Memuat daftar Gmail dari Ilmuna Learn (Read-Only)...</td></tr>';
+
+            if (!SSOADM._learnSyncBound) {
+                SSOADM._learnSyncBound = true;
+                var pills = document.getElementById('learnSyncFilterPills');
+                if (pills) {
+                    pills.addEventListener('click', function (ev) {
+                        var b = ev.target.closest('[data-lsfilter]');
+                        if (!b) return;
+                        SSOADM._learnSyncFilter = b.getAttribute('data-lsfilter') || 'new';
+                        pills.querySelectorAll('[data-lsfilter]').forEach(function (x) {
+                            x.classList.toggle('is-active', x === b);
+                        });
+                        SSOADM.renderLearnSyncTable();
+                    });
+                }
+                var srch = document.getElementById('learnSyncSearch');
+                if (srch) {
+                    srch.addEventListener('input', function () { SSOADM.renderLearnSyncTable(); });
+                }
+            }
+
+            try {
+                var res = await apiPost('preview_learn_sync', {});
+                if (!res || !res.success) {
+                    if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#B91C1C;">' + esc((res && res.message) || 'Gagal membaca database Ilmuna Learn.') + '</td></tr>';
+                    return;
+                }
+                SSOADM._learnSyncCandidates = res.candidates || [];
+                var cnts = res.counts || {};
+                var elNew = document.getElementById('lsCntNew');
+                var elEm = document.getElementById('lsCntEmail');
+                var elNo = document.getElementById('lsCntNoEmail');
+                if (elNew) elNew.textContent = cnts.ready_new || 0;
+                if (elEm) elEm.textContent = (cnts.ready_new || 0) + (cnts.already_in_sso || 0);
+                if (elNo) elNo.textContent = cnts.no_email || 0;
+                SSOADM.renderLearnSyncTable();
+            } catch (err) {
+                if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#B91C1C;">Kesalahan koneksi saat memuat kandidat Learn.</td></tr>';
+            }
+        },
+        renderLearnSyncTable: function () {
+            var tb = document.getElementById('learnSyncTableBody');
+            if (!tb) return;
+            var flt = SSOADM._learnSyncFilter || 'new';
+            var q = ((document.getElementById('learnSyncSearch') && document.getElementById('learnSyncSearch').value) || '').trim().toLowerCase();
+            var list = (SSOADM._learnSyncCandidates || []).filter(function (c) {
+                if (flt === 'new' && (!c.has_email || c.already_in_sso)) return false;
+                if (flt === 'all_email' && !c.has_email) return false;
+                if (flt === 'no_email' && c.has_email) return false;
+                if (q) {
+                    var hay = (String(c.full_name || '') + ' ' + String(c.gmail || '') + ' ' + String(c.ref_number || '') + ' ' + String(c.sso_username || '') + ' ' + (c.roles || []).join(' ')).toLowerCase();
+                    if (hay.indexOf(q) === -1) return false;
+                }
+                return true;
+            });
+            var chkAll = document.getElementById('learnSyncCheckAll');
+            if (chkAll) chkAll.checked = false;
+
+            if (!list.length) {
+                tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B;">Tidak ada pengguna pada filter ini.</td></tr>';
+                SSOADM.updateLearnSyncSelectedCount();
+                return;
+            }
+            tb.innerHTML = list.map(function (c) {
+                var canCheck = !!c.has_email;
+                var roleBadges = (c.roles || []).map(function (r) {
+                    return '<span class="ssoadm-badge ssoadm-badge--navy" style="font-size:10px;padding:2px 6px;">' + esc(String(r).toUpperCase()) + '</span>';
+                }).join(' ');
+                var statusHtml = !c.has_email
+                    ? '<span class="ssoadm-badge" style="background:#FEE2E2;color:#B91C1C;">Tanpa Gmail</span>'
+                    : (c.already_in_sso
+                        ? '<span class="ssoadm-badge ssoadm-badge--teal">Ada di SSO (@' + esc(c.sso_username) + ')</span>'
+                        : '<span class="ssoadm-badge" style="background:#FEF3C7;color:#B45309;">Baru (Siap Kirim)</span>');
+                return '<tr id="ls-row-' + c.learn_id + '">'
+                    + '<td><input type="checkbox" class="learn-sync-cb" data-lid="' + c.learn_id + '" ' + (canCheck ? '' : 'disabled') + ' onchange="SSOADM.updateLearnSyncSelectedCount()"></td>'
+                    + '<td><strong>' + esc(c.full_name) + '</strong><div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap;">' + roleBadges + '</div></td>'
+                    + '<td><code style="font-size:12px;color:#1D3B5E;font-weight:700;">' + esc(c.ref_type) + ': ' + esc(c.ref_number) + '</code></td>'
+                    + '<td>' + (c.gmail ? ('<span style="font-weight:600;color:#0D7A87;">' + esc(c.gmail) + '</span>') : '<span style="color:#94A3B8;">-</span>') + '</td>'
+                    + '<td class="ls-status-cell">' + statusHtml + '</td>'
+                    + '</tr>';
+            }).join('');
+            SSOADM.updateLearnSyncSelectedCount();
+        },
+        toggleLearnSyncAll: function (checked) {
+            document.querySelectorAll('.learn-sync-cb:not(:disabled)').forEach(function (cb) {
+                cb.checked = !!checked;
+            });
+            SSOADM.updateLearnSyncSelectedCount();
+        },
+        updateLearnSyncSelectedCount: function () {
+            var n = document.querySelectorAll('.learn-sync-cb:checked').length;
+            var el = document.getElementById('learnSyncSelectedInfo');
+            if (el) el.textContent = n + ' pengguna dipilih';
+        },
+        runLearnSyncSelected: async function () {
+            var cbs = Array.prototype.slice.call(document.querySelectorAll('.learn-sync-cb:checked'));
+            if (!cbs.length) {
+                Ilmuna.warning('Belum Ada Pilihan', 'Centang minimal 1 pengguna yang memiliki Gmail untuk disinkronkan.');
+                return;
+            }
+            var resend = !!(document.getElementById('learnSyncResendExisting') && document.getElementById('learnSyncResendExisting').checked);
+            var ok = await Ilmuna.confirm(
+                'info',
+                'Sinkron & Kirim ' + cbs.length + ' Akun SSO?',
+                'Sistem akan membuatkan username acak & kata sandi acak terpisah di Margo One SSO berdasarkan ID/NISN/NIS/NIP lalu mengirimkannya ke Gmail masing-masing via EmailRelay.',
+                'Ya, Buat & Kirim Sekarang',
+                'Batal'
+            );
+            if (!ok) return;
+
+            var btn = document.getElementById('btnRunLearnSync');
+            var progWrap = document.getElementById('learnSyncProgressWrap');
+            var progText = document.getElementById('learnSyncProgressText');
+            var progPct  = document.getElementById('learnSyncProgressPct');
+            var progBar  = document.getElementById('learnSyncProgressBar');
+            if (btn) btn.disabled = true;
+            if (progWrap) progWrap.style.display = 'block';
+
+            var sent = 0, skipped = 0, failed = 0;
+            for (var i = 0; i < cbs.length; i++) {
+                var lid = cbs[i].getAttribute('data-lid');
+                var row = document.getElementById('ls-row-' + lid);
+                var stCell = row ? row.querySelector('.ls-status-cell') : null;
+                if (stCell) stCell.innerHTML = '<span class="ssoadm-badge ssoadm-badge--navy">Membuat &amp; Mengirim...</span>';
+
+                var pct = Math.round(((i) / cbs.length) * 100);
+                if (progText) progText.textContent = 'Memproses ' + (i + 1) + ' / ' + cbs.length + ' pengguna...';
+                if (progPct) progPct.textContent = pct + '%';
+                if (progBar) progBar.style.width = pct + '%';
+
+                try {
+                    var res = await apiPost('sync_learn_user_one', {
+                        learn_id: lid,
+                        resend_if_exists: resend ? '1' : '0'
+                    });
+                    if (res && res.status === 'already_exists') {
+                        skipped++;
+                        if (stCell) stCell.innerHTML = '<span class="ssoadm-badge ssoadm-badge--teal">Sudah Ada (@' + esc(res.sso_username) + ')</span>';
+                    } else if (res && res.success) {
+                        sent++;
+                        if (stCell) stCell.innerHTML = '<span class="ssoadm-badge" style="background:#D1FAE5;color:#065F46;">Terkirim (@' + esc(res.sso_username) + ')</span>';
+                    } else {
+                        failed++;
+                        if (stCell) stCell.innerHTML = '<span class="ssoadm-badge" style="background:#FEE2E2;color:#B91C1C;" title="' + esc((res && res.message) || 'Gagal') + '">Gagal Kirim</span>';
+                    }
+                } catch (eOne) {
+                    failed++;
+                    if (stCell) stCell.innerHTML = '<span class="ssoadm-badge" style="background:#FEE2E2;color:#B91C1C;">Error Koneksi</span>';
+                }
+            }
+
+            if (progText) progText.textContent = 'Selesai: ' + sent + ' terkirim, ' + skipped + ' sudah ada, ' + failed + ' gagal.';
+            if (progPct) progPct.textContent = '100%';
+            if (progBar) progBar.style.width = '100%';
+            if (btn) btn.disabled = false;
+
+            await SSOADM.load();
+            if (failed === 0) {
+                Ilmuna.success('Sinkronisasi Selesai', sent + ' akun acak berhasil dibuat & dikirim ke Gmail (' + skipped + ' dilewati karena sudah ada).');
+            } else {
+                Ilmuna.warning('Sinkronisasi Selesai Sebagian', sent + ' terkirim, ' + skipped + ' sudah ada, ' + failed + ' gagal dikirim.');
+            }
         },
         healOrphanGuru: async function () {
             var res = await apiPost('heal_orphan_guru', {});

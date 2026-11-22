@@ -75,21 +75,10 @@ if ($token === '' || strlen($token) < 20) {
                 $updUser = $pdo->prepare("UPDATE users SET email_google = ?, google_id = ? WHERE id = ?");
                 $updUser->execute([$emailGoogle, $googleId, $userId]);
 
-                try {
-                    $sStmt = $pdo->prepare("UPDATE siswa SET gmail = ? WHERE id_user = ? OR nisn = ? OR nis = ?");
-                    $sStmt->execute([$emailGoogle, $userId, $verif['username'], $verif['username']]);
-                } catch (Throwable $e) {
-                    // Abaikan jika tabel siswa tidak memiliki baris terkait
-                }
-
                 $updToken = $pdo->prepare("UPDATE google_link_verifications SET verified_at = ? WHERE id = ?");
                 $updToken->execute([date('Y-m-d H:i:s'), (int)$verif['id']]);
 
                 $pdo->commit();
-
-                if (function_exists('margo_sync_google_link_to_learn')) {
-                    margo_sync_google_link_to_learn($pdo, $userId, (string)($verif['username'] ?? ''), $emailGoogle, $googleId);
-                }
 
                 margo_sso_log_audit($pdo, 'google_linked', [
                     'user_id'     => $userId,

@@ -69,16 +69,6 @@ function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
     $uStmt->execute([$userId]);
     $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-    // Jika belum tertaut di DB SSO, cek apakah akun dengan username sama sudah tertaut di Ilmuna Learn
-    if (empty($uRow['email_google']) && !empty($uRow['username']) && function_exists('margo_hydrate_google_link_from_learn')) {
-        $hydratedG = margo_hydrate_google_link_from_learn($pdo, $userId, (string)$uRow['username']);
-        if ($hydratedG && !empty($hydratedG['email_google'])) {
-            $uRow['email_google'] = $hydratedG['email_google'];
-            $uRow['google_id']    = $hydratedG['google_id'];
-            $_SESSION['user_email_google'] = $hydratedG['email_google'];
-        }
-    }
-
     $rawPhoto = !empty($uRow['foto_profil'])
         ? (string)$uRow['foto_profil']
         : (!empty($uRow['avatar'])
@@ -250,24 +240,10 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            // Salin otomatis ke folder learn/uploads/profiles jika berada di server yang sama
-            $siblingLearnDirs = [
-                dirname(BASE_PATH) . '/learn/uploads/profiles',
-                dirname(BASE_PATH) . '/learn.ilmuna.my.id/uploads/profiles',
-            ];
-            foreach ($siblingLearnDirs as $sDir) {
-                if (is_dir(dirname($sDir))) {
-                    if (!is_dir($sDir)) {
-                        @mkdir($sDir, 0755, true);
-                    }
-                    @copy($destPath, $sDir . '/' . $fileName);
-                }
-            }
-
             $photoRelativeUrl = 'uploads/profiles/' . $fileName;
             $photoFullUrl     = rtrim(BASE_URL, '/') . '/' . $photoRelativeUrl;
 
-            // 1. Update tabel users
+            // Update hanya tabel users milik Margo One SSO (100% terpisah dari Learn/aplikasi lain)
             $userCols        = margo_prof_table_columns($pdo, 'users');
             $userPhotoSets   = [];
             $userPhotoParams = [];
@@ -284,50 +260,24 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 $pdo->prepare("UPDATE `users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute($userPhotoParams);
             }
 
-            $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
-            $uStmt->execute([$userId]);
-            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: $currentUser;
-
-            // 2. Sinkronkan ke tabel siswa jika ada record terkait
-            $syncedTo  = ['users'];
-            $siswaCols = margo_prof_table_columns($pdo, 'siswa');
-            if (in_array('foto', $siswaCols, true)) {
-                $sInfo = margo_resolve_logged_siswa($pdo, $uRow);
-                if (!empty($sInfo['siswa_id'])) {
-                    $pdo->prepare("UPDATE `siswa` SET `foto` = ? WHERE `id` = ?")->execute([$photoRelativeUrl, (int)$sInfo['siswa_id']]);
-                    $syncedTo[] = 'siswa';
-                }
-            }
-
-            // 3. Sinkronkan ke tabel guru jika ada record terkait
-            $guruCols = margo_prof_table_columns($pdo, 'guru');
-            if (in_array('foto', $guruCols, true)) {
-                $gInfo = margo_resolve_logged_guru($pdo, $uRow);
-                if (!empty($gInfo['id_guru'])) {
-                    $pdo->prepare("UPDATE `guru` SET `foto` = ? WHERE `id` = ?")->execute([$photoRelativeUrl, (int)$gInfo['id_guru']]);
-                    $syncedTo[] = 'guru';
-                }
-            }
-
             $_SESSION['user_avatar'] = $photoFullUrl;
 
             margo_sso_log_audit($pdo, 'profile_photo_updated', [
                 'user_id'     => $userId,
                 'http_status' => 200,
-                'detail'      => ['photo' => $photoRelativeUrl, 'synced_to' => $syncedTo],
+                'detail'      => ['photo' => $photoRelativeUrl],
             ]);
 
             echo json_encode([
                 'success'   => true,
-                'message'   => 'Foto profil berhasil diperbarui dan disinkronkan ke ' . implode(' & ', $syncedTo) . '!',
+                'message'   => 'Foto profil Margo One SSO berhasil diperbarui!',
                 'photo_url' => $photoFullUrl,
-                'synced_to' => $syncedTo,
             ]);
             exit;
         }
 
         // =====================================================================
-        // 2. HAPUS FOTO PROFIL (Sync hapus di users, siswa, dan guru)
+        // 2. HAPUS FOTO PROFIL (Khusus tabel users Margo One SSO)
         // =====================================================================
         if ($act === 'delete_photo') {
             $userCols      = margo_prof_table_columns($pdo, 'users');
@@ -342,26 +292,6 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 $pdo->prepare("UPDATE `users` SET " . implode(", ", $userPhotoSets) . " WHERE `id` = ?")->execute([$userId]);
             }
 
-            $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
-            $uStmt->execute([$userId]);
-            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC) ?: $currentUser;
-
-            $siswaCols = margo_prof_table_columns($pdo, 'siswa');
-            if (in_array('foto', $siswaCols, true)) {
-                $sInfo = margo_resolve_logged_siswa($pdo, $uRow);
-                if (!empty($sInfo['siswa_id'])) {
-                    $pdo->prepare("UPDATE `siswa` SET `foto` = NULL WHERE `id` = ?")->execute([(int)$sInfo['siswa_id']]);
-                }
-            }
-
-            $guruCols = margo_prof_table_columns($pdo, 'guru');
-            if (in_array('foto', $guruCols, true)) {
-                $gInfo = margo_resolve_logged_guru($pdo, $uRow);
-                if (!empty($gInfo['id_guru'])) {
-                    $pdo->prepare("UPDATE `guru` SET `foto` = NULL WHERE `id` = ?")->execute([(int)$gInfo['id_guru']]);
-                }
-            }
-
             $_SESSION['user_avatar'] = null;
 
             margo_sso_log_audit($pdo, 'profile_photo_deleted', [
@@ -371,7 +301,7 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
 
             echo json_encode([
                 'success' => true,
-                'message' => 'Foto profil berhasil dihapus dari seluruh tabel sistem.',
+                'message' => 'Foto profil Margo One SSO berhasil dihapus.',
             ]);
             exit;
         }
@@ -565,9 +495,6 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             try {
                 $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
             } catch (Throwable $e) {
-            }
-            if (function_exists('margo_sync_google_link_to_learn')) {
-                margo_sync_google_link_to_learn($pdo, $userId, (string)($currentUser['username'] ?? ''), null, null);
             }
             $_SESSION['user_email_google'] = null;
 

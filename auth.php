@@ -687,30 +687,13 @@ function margo_resolve_user_identity(PDO $pdo, $userId, $activeRoleOverride = nu
         ? $activeRoleOverride
         : $primaryRole;
 
-    $guruInfo  = ['guru' => null, 'id_guru' => null];
-    $siswaInfo = ['siswa' => null, 'siswa_id' => null, 'kelas_id' => null, 'nama_kelas' => null, 'nama_lengkap' => null];
-
-    if (in_array('guru', $roleCodes, true) || in_array('admin', $roleCodes, true)) {
-        $guruInfo = margo_resolve_logged_guru($pdo, $user);
-    }
-    if (in_array('siswa', $roleCodes, true) || in_array('ketua_kelas', $roleCodes, true)) {
-        $siswaInfo = margo_resolve_logged_siswa($pdo, $user);
-    }
-
-    $fullName = !empty($user['full_name'])
-        ? (string)$user['full_name']
-        : (!empty($siswaInfo['nama_lengkap']) ? (string)$siswaInfo['nama_lengkap'] : (string)$user['username']);
-
-    $email = !empty($user['email']) ? (string)$user['email'] : (string)($user['email_google'] ?? '');
+    // Identitas Margo One SSO terpisah total dari tabel guru/siswa/users milik aplikasi lain
+    $fullName     = !empty($user['full_name']) ? (string)$user['full_name'] : (string)$user['username'];
+    $email        = !empty($user['email']) ? (string)$user['email'] : (string)($user['email_google'] ?? '');
     $googleLinked = !empty($user['email_google']) && trim((string)$user['email_google']) !== '';
-
-    $rawPic = !empty($user['foto_profil'])
+    $rawPic       = !empty($user['foto_profil'])
         ? (string)$user['foto_profil']
-        : (!empty($user['avatar'])
-            ? (string)$user['avatar']
-            : (!empty($guruInfo['guru']['foto'])
-                ? (string)$guruInfo['guru']['foto']
-                : (!empty($siswaInfo['siswa']['foto']) ? (string)$siswaInfo['siswa']['foto'] : '')));
+        : (!empty($user['avatar']) ? (string)$user['avatar'] : '');
 
     return [
         'sub'                 => (string)$user['id'],
@@ -719,16 +702,17 @@ function margo_resolve_user_identity(PDO $pdo, $userId, $activeRoleOverride = nu
         'name'                => $fullName,
         'full_name'           => $fullName,
         'email'               => $email,
+        'nisn_nip'            => (string)($user['nisn_nip'] ?? ''),
         'email_verified'      => $googleLinked,
         'google_linked'       => $googleLinked,
         'picture'             => margo_resolve_avatar_url($rawPic),
         'roles'               => $roleCodes,
         'primary_role'        => $primaryRole,
         'active_role'         => $activeRole,
-        'guru_id'             => $guruInfo['id_guru'],
-        'siswa_id'            => $siswaInfo['siswa_id'],
-        'kelas_id'            => $siswaInfo['kelas_id'],
-        'nama_kelas'          => $siswaInfo['nama_kelas'],
+        'guru_id'             => null,
+        'siswa_id'            => null,
+        'kelas_id'            => null,
+        'nama_kelas'          => null,
     ];
 }
 
@@ -744,12 +728,6 @@ function margo_hydrate_php_session(PDO $pdo, array $user, $ssoSessionId, $rawTok
     $roleCodes = array_values(array_column($rolesDetail, 'code'));
 
     $fullName = !empty($user['full_name']) ? (string)$user['full_name'] : (string)$user['username'];
-    if (in_array('siswa', $roleCodes, true) || in_array('ketua_kelas', $roleCodes, true)) {
-        $sInfo = margo_resolve_logged_siswa($pdo, $user);
-        if (!empty($sInfo['nama_lengkap'])) {
-            $fullName = $sInfo['nama_lengkap'];
-        }
-    }
 
     $primaryRole = $roleCodes[0];
     $activeRole  = ($activeRoleOverride && in_array($activeRoleOverride, $roleCodes, true))
@@ -806,11 +784,6 @@ function establishUserSession(PDO $pdo, array $user, $loginMethod = 'password')
         $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([(int)$user['id']]);
     } catch (Throwable $e) {
         // Non-fatal
-    }
-
-    // Auto-heal guru.id_user bila relevan
-    if (in_array('guru', $roleCodes, true) || in_array('admin', $roleCodes, true)) {
-        margo_resolve_logged_guru($pdo, $user);
     }
 
     margo_sso_log_audit($pdo, 'login_ok', [
@@ -951,7 +924,8 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
     }
     $statusSql = !empty($statusConditions) ? " AND (" . implode(" AND ", $statusConditions) . ")" : "";
 
-    // STRICT: HANYA cocokkan kolom users.email_google yang sudah tertaut!
+    // STRICT: HANYA cocokkan kolom users.email_google milik Margo One SSO yang sudah tertaut!
+    // Tabel users SSO terpisah penuh dari database Ilmuna Learn maupun aplikasi lain.
     $stmt = $pdo->prepare("
         SELECT * FROM users
         WHERE email_google IS NOT NULL AND TRIM(email_google) != '' AND LOWER(email_google) = :email_g{$statusSql}
@@ -960,40 +934,6 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
     $stmt->execute(['email_g' => $cleanEmail]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // Fallback sinkronisasi lintas DB: bila akun sudah ditautkan di Ilmuna Learn (uofruaju_learn_ilmuna.users)
-    if (!$user && defined('LEARN_DB_NAME') && LEARN_DB_NAME !== '' && LEARN_DB_NAME !== DB_NAME) {
-        try {
-            $learnDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string)LEARN_DB_NAME);
-            if ($learnDb !== '') {
-                $stLearn = $pdo->prepare("
-                    SELECT username, email_google, google_id
-                    FROM `{$learnDb}`.`users`
-                    WHERE email_google IS NOT NULL AND TRIM(email_google) != '' AND LOWER(email_google) = ?
-                    LIMIT 1
-                ");
-                $stLearn->execute([$cleanEmail]);
-                $learnMatch = $stLearn->fetch(PDO::FETCH_ASSOC);
-                if ($learnMatch && !empty($learnMatch['username'])) {
-                    $stLocal = $pdo->prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(:uname){$statusSql} LIMIT 1");
-                    $stLocal->execute(['uname' => (string)$learnMatch['username']]);
-                    $localCand = $stLocal->fetch(PDO::FETCH_ASSOC);
-                    if ($localCand && empty($localCand['email_google'])) {
-                        $syncGid = !empty($learnMatch['google_id']) ? (string)$learnMatch['google_id'] : ($cleanGid !== '' ? $cleanGid : null);
-                        $pdo->prepare("UPDATE users SET email_google = ?, google_id = COALESCE(google_id, ?) WHERE id = ?")
-                            ->execute([$cleanEmail, $syncGid, (int)$localCand['id']]);
-                        $localCand['email_google'] = $cleanEmail;
-                        if ($syncGid) {
-                            $localCand['google_id'] = $syncGid;
-                        }
-                        $user = $localCand;
-                    }
-                }
-            }
-        } catch (Throwable $eLearnSync) {
-            // Non-fatal
-        }
-    }
-
     if (!$user) {
         $hasUnlinkedEmail = false;
         try {
@@ -1001,20 +941,6 @@ function loginUserByGoogle($emailGoogle, $googleId = '')
                 $stU = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1");
                 $stU->execute([$cleanEmail]);
                 if ($stU->fetchColumn()) {
-                    $hasUnlinkedEmail = true;
-                }
-            }
-            if (!$hasUnlinkedEmail) {
-                $stS = $pdo->prepare("SELECT id FROM siswa WHERE LOWER(gmail) = ? LIMIT 1");
-                $stS->execute([$cleanEmail]);
-                if ($stS->fetchColumn()) {
-                    $hasUnlinkedEmail = true;
-                }
-            }
-            if (!$hasUnlinkedEmail) {
-                $stG = $pdo->prepare("SELECT id FROM guru WHERE LOWER(email) = ? LIMIT 1");
-                $stG->execute([$cleanEmail]);
-                if ($stG->fetchColumn()) {
                     $hasUnlinkedEmail = true;
                 }
             }
@@ -1160,6 +1086,7 @@ function margo_issue_token_bundle(PDO $pdo, array $client, array $identity, $sso
         'username'      => $identity['username'],
         'name'          => $identity['full_name'],
         'email'         => $identity['email'],
+        'nisn_nip'      => (string)($identity['nisn_nip'] ?? ''),
         'email_verified'=> (bool)$identity['email_verified'],
         'roles'         => $identity['roles'],
         'primary_role'  => $identity['primary_role'],
