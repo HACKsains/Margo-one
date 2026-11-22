@@ -321,10 +321,12 @@ if (!defined('LEARN_DB_PASS')) define('LEARN_DB_PASS', DB_PASS);
 
 // ==============================================================================
 // GOOGLE OAUTH 2.0 CONFIGURATION (STRICT LINKED-ONLY MODE)
-// Atur kredensial asli di config.local.php (tidak di-commit ke Git) atau env server
+// Client ID bersifat publik (Google Identity Services / Browser OAuth).
+// Client Secret sensitif disimpan terenkripsi di tabel sso_settings (via Panel Admin)
+// atau melalui config.local.php (gitignored) / environment variable server.
 // ==============================================================================
 if (!defined('GOOGLE_CLIENT_ID')) {
-    define('GOOGLE_CLIENT_ID', getenv('GOOGLE_CLIENT_ID') ?: '');
+    define('GOOGLE_CLIENT_ID', getenv('GOOGLE_CLIENT_ID') ?: '601762704297-evhn06rui0pce1jnk9fcco0uko8pnn0c.apps.googleusercontent.com');
 }
 if (!defined('GOOGLE_CLIENT_SECRET')) {
     define('GOOGLE_CLIENT_SECRET', getenv('GOOGLE_CLIENT_SECRET') ?: '');
