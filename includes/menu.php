@@ -29,7 +29,7 @@ $margoSidebarGroups = [
             ],
             [
                 'label' => 'Aplikasi Ekosistem',
-                'href'  => BASE_URL . '/gateway#apps-container',
+                'href'  => BASE_URL . '/gateway?section=apps',
                 'icon'  => 'solar:widget-5-bold',
                 'route' => 'apps',
             ],

@@ -13,6 +13,10 @@
  * ==============================================================================
  */
 
+if (!defined('ILMUNA_SKIP_GD_WAF_INTERSTITIAL')) {
+    define('ILMUNA_SKIP_GD_WAF_INTERSTITIAL', true);
+}
+
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 
@@ -32,6 +36,10 @@ $pdo         = getDBConnection();
 $currentUser = getCurrentUser();
 $userId      = (int)$currentUser['id'];
 $userRoles   = getUserRoles();
+$isAdminRole = hasRole('admin');
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 $resource    = strtolower(trim((string)($_GET['resource'] ?? 'agenda')));
 
 /**

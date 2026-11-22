@@ -52,7 +52,14 @@ if (empty($_SESSION['csrf_login_token']) || !is_string($_SESSION['csrf_login_tok
 }
 $csrfToken = $_SESSION['csrf_login_token'];
 
-$pendingOAuth = margo_get_pending_oauth();
+$isOAuthRequest = ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['oauth']) && $_GET['oauth'] === '1')
+    || ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['oauth_flow']) && $_POST['oauth_flow'] === '1');
+
+if (!$isOAuthRequest) {
+    margo_clear_pending_oauth();
+}
+
+$pendingOAuth = $isOAuthRequest ? margo_get_pending_oauth() : null;
 $targetClient = null;
 if ($pendingOAuth && !empty($pendingOAuth['client_db_id'])) {
     try {
@@ -784,6 +791,7 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
 
                 <form method="POST" action="" id="loginForm" autocomplete="on" novalidate>
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="oauth_flow" value="<?= $pendingOAuth ? '1' : '0' ?>">
 
                     <div class="hp-field" aria-hidden="true">
                         <label for="website">Website</label>
@@ -864,6 +872,7 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             </p>
             <form method="POST" action="" id="googleLoginForm" novalidate>
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="oauth_flow" value="<?= $pendingOAuth ? '1' : '0' ?>">
                 <input type="hidden" name="login_mode" value="google">
                 <div class="hp-field" aria-hidden="true"><input type="text" name="website" tabindex="-1" autocomplete="off"></div>
                 <div class="field" style="margin-bottom: 0;">
@@ -911,7 +920,7 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             resizeCanvas();
             window.addEventListener('resize', resizeCanvas);
 
-            var particleColors = ['#1D3B5E', '#0D7A87', '#52B2DC', '#10B981'];
+            var particleColors = ['#1D3B5E', '#0D7A87', '#52B2DC'];
             var particles = [];
             for (var i = 0; i < 48; i++) {
                 particles.push({
@@ -1008,6 +1017,7 @@ $ctxIcon = $targetClient && !empty($targetClient['app_icon']) ? (string)$targetC
             }
             var fd = new FormData();
             fd.append('csrf_token', <?= json_encode($csrfToken) ?>);
+            fd.append('oauth_flow', <?= $pendingOAuth ? "'1'" : "'0'" ?>);
             fd.append('login_mode', 'google');
             fd.append('ajax', '1');
             if (payload.accessToken) fd.append('google_access_token', payload.accessToken);

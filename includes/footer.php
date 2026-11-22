@@ -54,14 +54,9 @@ $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
             });
         }
 
-        // 2. Persist <details> sidebar accordion state in localStorage
+        // 2. Persist <details> sidebar accordion toggle changes in localStorage
         document.querySelectorAll('details[data-sidebar-dropdown]').forEach(function (det) {
             var key = 'margo.sidebar.dropdown.' + det.getAttribute('data-sidebar-dropdown');
-            try {
-                var saved = localStorage.getItem(key);
-                if (saved === 'open') det.open = true;
-                else if (saved === 'closed') det.open = false;
-            } catch (e) {}
             det.addEventListener('toggle', function () {
                 try { localStorage.setItem(key, det.open ? 'open' : 'closed'); } catch (e) {}
             });
@@ -240,7 +235,11 @@ $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
 
         window.MargoShell = {
             refreshRightWidgets: function () {
-                fetch(BASE_URL + '/portal-data.php?resource=agenda', { credentials: 'same-origin' })
+                var ajaxOpts = {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                };
+                fetch(BASE_URL + '/portal-data.php?resource=agenda', ajaxOpts)
                     .then(function (r) { return r.json(); })
                     .then(function (res) {
                         if (res && res.success) {
@@ -249,7 +248,7 @@ $margoDefaultRightClosed = !empty($margoDefaultRightClosed);
                         }
                     }).catch(function () {});
 
-                fetch(BASE_URL + '/portal-data.php?resource=announcements', { credentials: 'same-origin' })
+                fetch(BASE_URL + '/portal-data.php?resource=announcements', ajaxOpts)
                     .then(function (r) { return r.json(); })
                     .then(function (res) {
                         if (res && res.success) {

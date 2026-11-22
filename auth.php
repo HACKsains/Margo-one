@@ -314,6 +314,27 @@ function isLoggedIn()
         return false;
     }
 
+    // Pastikan daftar role selalu terhidrasi di session (mencegah role hilang saat reload)
+    if (empty($_SESSION['user_roles']) || !is_array($_SESSION['user_roles'])) {
+        try {
+            $pdo = getDBConnection();
+            $rolesDetail = margo_fetch_user_roles($pdo, (int)$_SESSION['user_id']);
+            if (!empty($rolesDetail)) {
+                $roleCodes = array_values(array_column($rolesDetail, 'code'));
+                $_SESSION['user_roles']        = $roleCodes;
+                $_SESSION['user_roles_detail'] = $rolesDetail;
+                if (empty($_SESSION['primary_role'])) {
+                    $_SESSION['primary_role'] = $roleCodes[0];
+                }
+                if (empty($_SESSION['active_role'])) {
+                    $_SESSION['active_role'] = $roleCodes[0];
+                }
+            }
+        } catch (Throwable $eRoles) {
+            // Non-fatal
+        }
+    }
+
     // Validasi real-time terhadap sso_sessions (cache per request agar cepat)
     static $validatedSid = null;
     $sid = isset($_SESSION['sso_session_id']) ? (int)$_SESSION['sso_session_id'] : 0;

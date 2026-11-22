@@ -33,7 +33,7 @@ require __DIR__ . '/menu.php';
         </a>
     </div>
 
-    <nav class="margo-left-nav">
+    <nav id="margoLeftNav" class="margo-left-nav">
         <?php foreach ($margoSidebarGroups as $grp): ?>
             <details open class="margo-nav-group <?= !empty($grp['is_admin']) ? 'is-admin-group' : '' ?>" data-sidebar-dropdown="<?= htmlspecialchars($grp['key'], ENT_QUOTES, 'UTF-8') ?>">
                 <summary>
@@ -73,3 +73,57 @@ require __DIR__ . '/menu.php';
         </div>
     </div>
 </aside>
+<script>
+(function () {
+    'use strict';
+    var nav = document.getElementById('margoLeftNav');
+    if (!nav) return;
+    var KEY = 'margo_left_nav_scroll_v1';
+
+    // Pulihkan state <details> dan scrollTop secara sinkron sebelum browser menggambar halaman
+    document.querySelectorAll('details[data-sidebar-dropdown]').forEach(function (det) {
+        var dKey = 'margo.sidebar.dropdown.' + det.getAttribute('data-sidebar-dropdown');
+        try {
+            var st = localStorage.getItem(dKey);
+            if (st === 'closed') det.open = false;
+            else det.open = true;
+        } catch (e) {}
+    });
+
+    function saveScroll() {
+        try { sessionStorage.setItem(KEY, String(nav.scrollTop)); } catch (e) {}
+    }
+
+    function restoreScroll() {
+        try {
+            var saved = sessionStorage.getItem(KEY);
+            if (saved !== null && saved !== '') {
+                nav.scrollTop = parseInt(saved, 10) || 0;
+            }
+        } catch (e) {}
+    }
+
+    restoreScroll();
+    requestAnimationFrame(restoreScroll);
+
+    nav.addEventListener('scroll', saveScroll, { passive: true });
+    nav.addEventListener('mousedown', saveScroll, { passive: true });
+    nav.addEventListener('click', function (e) {
+        saveScroll();
+        var link = e.target.closest('a.margo-nav-link');
+        if (!link) return;
+        var route = link.getAttribute('data-sidebar-route');
+        var appsEl = document.getElementById('apps-container');
+        var mainEl = document.getElementById('mainContent');
+        if (route === 'apps' && appsEl && mainEl) {
+            e.preventDefault();
+            mainEl.scrollTo({ top: Math.max(0, appsEl.offsetTop - 76), behavior: 'smooth' });
+        } else if (route === 'gateway' && appsEl && mainEl && window.location.pathname.indexOf('/gateway') !== -1) {
+            e.preventDefault();
+            mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    });
+    window.addEventListener('beforeunload', saveScroll);
+    window.addEventListener('pagehide', saveScroll);
+})();
+</script>

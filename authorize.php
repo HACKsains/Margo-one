@@ -631,7 +631,7 @@ try {
             session_start();
         }
         margo_set_pending_oauth($outcome['pending']);
-        header('Location: ' . BASE_URL . '/login?msg=switch_account');
+        header('Location: ' . BASE_URL . '/login?oauth=1&msg=switch_account');
         exit;
     }
 } catch (Throwable $e) {
@@ -651,13 +651,13 @@ if ($outcome['action'] === 'error_page') {
 
 if ($outcome['action'] === 'require_login') {
     margo_set_pending_oauth($outcome['pending']);
-    $loginUrl = BASE_URL . '/login' . (($outcome['prompt'] ?? '') === 'login' ? '?prompt=login' : '');
+    $loginUrl = BASE_URL . '/login?oauth=1' . (($outcome['prompt'] ?? '') === 'login' ? '&prompt=login' : '');
     header('Location: ' . $loginUrl);
     exit;
 }
 
 if ($outcome['action'] === 'confirm_account') {
-    margo_set_pending_oauth($outcome['pending']);
+    margo_clear_pending_oauth();
     margo_authorize_render_confirm($outcome['client'], $outcome['user'], $outcome['pending']);
 }
 
