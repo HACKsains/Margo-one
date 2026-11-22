@@ -758,6 +758,14 @@ function establishUserSession(PDO $pdo, array $user, $loginMethod = 'password')
     $ssoSess = margo_create_sso_session($pdo, (int)$user['id'], $primaryRole, $loginMethod);
     margo_hydrate_php_session($pdo, $user, $ssoSess['id'], $ssoSess['token'], $loginMethod, $primaryRole);
 
+    // Bersihkan catatan pencabutan SLO lama saat user berhasil login baru
+    try {
+        $pdo->prepare("DELETE FROM margo_slo_revocations WHERE user_id = ?")->execute([(int)$user['id']]);
+        @$pdo->prepare("DELETE FROM `uofruaju_learn_ilmuna`.`margo_slo_revocations` WHERE user_id = ?")->execute([(int)$user['id']]);
+    } catch (Throwable $eSloClean) {
+        // Non-fatal
+    }
+
     // Update users.last_login
     try {
         $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")->execute([(int)$user['id']]);
