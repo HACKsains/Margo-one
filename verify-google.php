@@ -18,6 +18,7 @@ require_once BASE_PATH . '/includes/email-verify-google-template.php';
 
 $pdo = getDBConnection();
 ilmuna_ensure_google_verification_table($pdo);
+$verifTable = ilmuna_google_verification_table_name();
 
 $token       = trim((string)($_GET['token'] ?? ''));
 $status      = 'error'; // 'success' | 'already_verified' | 'expired' | 'error'
@@ -30,19 +31,51 @@ if ($token === '' || strlen($token) < 20) {
     $status  = 'error';
     $message = 'Token verifikasi tidak valid atau tidak lengkap. Silakan periksa kembali tautan yang dikirimkan ke kotak masuk Gmail Anda.';
 } else {
+    $verif      = null;
+    $foundTable = $verifTable;
+
+    // 1. Cari di tabel verifikasi khusus Margo One SSO (sso_google_link_verifications)
     $stmt = $pdo->prepare("
-        SELECT v.*, u.username, u.full_name, u.email AS user_email
-        FROM google_link_verifications v
-        JOIN sso_users u ON v.user_id = u.id
+        SELECT v.*, u.id AS sso_user_id, u.username, u.full_name, u.email AS user_email
+        FROM `{$verifTable}` v
+        LEFT JOIN sso_users u ON v.user_id = u.id
         WHERE v.token = ?
         LIMIT 1
     ");
     $stmt->execute([$token]);
-    $verif = $stmt->fetch(PDO::FETCH_ASSOC);
+    $verif = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    // 2. Fallback read-only ke tabel lama (google_link_verifications) untuk tautan yang terlanjur terkirim sebelum isolasi tabel
+    if (!$verif && $verifTable !== 'google_link_verifications') {
+        try {
+            $stmtLegacy = $pdo->prepare("
+                SELECT v.*, u.id AS sso_user_id, u.username, u.full_name, u.email AS user_email
+                FROM `google_link_verifications` v
+                LEFT JOIN sso_users u ON v.user_id = u.id
+                WHERE v.token = ?
+                LIMIT 1
+            ");
+            $stmtLegacy->execute([$token]);
+            $legacyRow = $stmtLegacy->fetch(PDO::FETCH_ASSOC);
+            if ($legacyRow) {
+                $verif      = $legacyRow;
+                $foundTable = 'google_link_verifications';
+            }
+        } catch (Throwable $eLeg) {
+            // Tabel lama mungkin belum ada di DB dedicated uofruaju_margo_one
+        }
+    }
 
     if (!$verif) {
         $status  = 'error';
         $message = 'Tautan verifikasi tidak ditemukan atau sudah kedaluwarsa. Silakan lakukan proses penautan ulang dari menu Profil.';
+    } elseif (empty($verif['sso_user_id'])) {
+        // Token ada di DB tetapi user_id-nya tidak ada di sso_users (sesi lama dari tabel users sebelum pemisahan sso_users)
+        if (!empty($_SESSION['user_id']) && (int)$_SESSION['user_id'] === (int)$verif['user_id']) {
+            logoutUserLocalOnly();
+        }
+        $status  = 'error';
+        $message = 'Sesi lama terdeteksi: akun pada tautan ini tidak terdaftar pada tabel pengguna Margo One SSO (sso_users). Silakan masuk kembali menggunakan akun Margo One SSO Anda, lalu ulangi penautan Google dari menu Profil.';
     } elseif (!empty($verif['verified_at'])) {
         $status      = 'already_verified';
         $emailGoogle = (string)$verif['email_google'];
@@ -54,7 +87,7 @@ if ($token === '' || strlen($token) < 20) {
         $userName    = (string)($verif['full_name'] ?: $verif['username']);
         $message     = 'Tautan verifikasi telah kedaluwarsa (berlaku selama 60 menit). Silakan lakukan penautan ulang dari menu Profil portal Anda.';
     } else {
-        $userId      = (int)$verif['user_id'];
+        $userId      = (int)$verif['sso_user_id'];
         $emailGoogle = strtolower(trim((string)$verif['email_google']));
         $googleId    = !empty($verif['google_id'])
             ? (string)$verif['google_id']
@@ -75,8 +108,15 @@ if ($token === '' || strlen($token) < 20) {
                 $updUser = $pdo->prepare("UPDATE sso_users SET email_google = ?, google_id = ? WHERE id = ?");
                 $updUser->execute([$emailGoogle, $googleId, $userId]);
 
-                $updToken = $pdo->prepare("UPDATE google_link_verifications SET verified_at = ? WHERE id = ?");
-                $updToken->execute([date('Y-m-d H:i:s'), (int)$verif['id']]);
+                $verifiedNow = date('Y-m-d H:i:s');
+                $updToken = $pdo->prepare("UPDATE `{$foundTable}` SET verified_at = ? WHERE id = ?");
+                $updToken->execute([$verifiedNow, (int)$verif['id']]);
+
+                // Bersihkan token pending lain milik user yang sama di tabel SSO agar status langsung bersih
+                if ($foundTable === $verifTable) {
+                    $pdo->prepare("DELETE FROM `{$verifTable}` WHERE user_id = ? AND id != ? AND verified_at IS NULL")
+                        ->execute([$userId, (int)$verif['id']]);
+                }
 
                 $pdo->commit();
 

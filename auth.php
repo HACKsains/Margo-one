@@ -308,6 +308,8 @@ function isLoggedIn()
                     return true;
                 }
             }
+            // Cookie SSO tidak valid / mengarah ke akun yang tidak ada di sso_users -> bersihkan
+            logoutUserLocalOnly();
         } catch (Throwable $e) {
             return false;
         }
@@ -316,6 +318,39 @@ function isLoggedIn()
 
     if (empty($_SESSION['user_id'])) {
         return false;
+    }
+
+    // Validasi real-time terhadap sso_sessions & keberadaan akun aktif di sso_users (cache per request)
+    static $validatedKey = null;
+    $sid = isset($_SESSION['sso_session_id']) ? (int)$_SESSION['sso_session_id'] : 0;
+    $uid = (int)$_SESSION['user_id'];
+    $cacheKey = $uid . ':' . $sid;
+    if ($validatedKey !== $cacheKey) {
+        try {
+            $pdo = getDBConnection();
+            if ($sid > 0) {
+                $tok = isset($_SESSION['sso_session_token']) ? (string)$_SESSION['sso_session_token'] : null;
+                $sess = margo_validate_sso_session($pdo, $sid, $tok);
+                if (!$sess || (int)$sess['user_id'] !== $uid) {
+                    logoutUserLocalOnly();
+                    return false;
+                }
+            }
+            $stChkU = $pdo->prepare("SELECT id, username, status, is_active FROM sso_users WHERE id = ? LIMIT 1");
+            $stChkU->execute([$uid]);
+            $chkU = $stChkU->fetch(PDO::FETCH_ASSOC);
+            if (!$chkU || !margo_user_is_active($chkU)) {
+                logoutUserLocalOnly();
+                return false;
+            }
+            if (!empty($_SESSION['user_username']) && strtolower((string)$chkU['username']) !== strtolower((string)$_SESSION['user_username'])) {
+                logoutUserLocalOnly();
+                return false;
+            }
+            $validatedKey = $cacheKey;
+        } catch (Throwable $e) {
+            // Jangan gagalkan secara tidak perlu bila DB sementara bermasalah
+        }
     }
 
     // Pastikan daftar role selalu terhidrasi di session (mencegah role hilang saat reload)
@@ -336,24 +371,6 @@ function isLoggedIn()
             }
         } catch (Throwable $eRoles) {
             // Non-fatal
-        }
-    }
-
-    // Validasi real-time terhadap sso_sessions (cache per request agar cepat)
-    static $validatedSid = null;
-    $sid = isset($_SESSION['sso_session_id']) ? (int)$_SESSION['sso_session_id'] : 0;
-    if ($sid > 0 && $validatedSid !== $sid) {
-        try {
-            $pdo = getDBConnection();
-            $tok = isset($_SESSION['sso_session_token']) ? (string)$_SESSION['sso_session_token'] : null;
-            $sess = margo_validate_sso_session($pdo, $sid, $tok);
-            if (!$sess) {
-                logoutUserLocalOnly();
-                return false;
-            }
-            $validatedSid = $sid;
-        } catch (Throwable $e) {
-            // Jangan gagalkan secara tidak perlu bila DB sementara bermasalah
         }
     }
 

@@ -81,9 +81,10 @@ function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
 
     $pendingEmailGoogle = '';
     $nowPhpStr = date('Y-m-d H:i:s');
+    $verifTbl  = ilmuna_google_verification_table_name();
     if (empty($uRow['email_google'])) {
         try {
-            $pStmt = $pdo->prepare("SELECT email_google FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
+            $pStmt = $pdo->prepare("SELECT email_google FROM `{$verifTbl}` WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
             $pStmt->execute([$userId, $nowPhpStr]);
             $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
             if ($pRow && !empty($pRow['email_google'])) {
@@ -162,7 +163,8 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            $pStmt = $pdo->prepare("SELECT email_google, expires_at FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
+            $verifTbl = ilmuna_google_verification_table_name();
+            $pStmt = $pdo->prepare("SELECT email_google, expires_at FROM `{$verifTbl}` WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
             $pStmt->execute([$userId, date('Y-m-d H:i:s')]);
             $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
             if ($pRow) {
@@ -403,6 +405,18 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 $googleId = 'goog_' . md5($emailGoogle . '_ilmuna_sso');
             }
 
+            // Pastikan akun pengguna benar-benar terdaftar di tabel sso_users sebelum menerbitkan token verifikasi
+            $stSelfExists = $pdo->prepare("SELECT id, username FROM `sso_users` WHERE `id` = ? LIMIT 1");
+            $stSelfExists->execute([$userId]);
+            if (!$stSelfExists->fetch(PDO::FETCH_ASSOC)) {
+                logoutUserLocalOnly();
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Sesi akun lama terdeteksi dan tidak terdaftar di tabel Margo One SSO (sso_users). Silakan muat ulang halaman dan masuk kembali terlebih dahulu.',
+                ]);
+                exit;
+            }
+
             // Cek apakah akun Google sudah ditautkan ke pengguna lain
             $chk = $pdo->prepare("SELECT id, username FROM `sso_users` WHERE (`google_id` = ? OR LOWER(`email_google`) = ?) AND `id` != ? LIMIT 1");
             $chk->execute([$googleId, $emailGoogle, $userId]);
@@ -429,17 +443,32 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            // Hapus permintaan verifikasi lama yang belum selesai untuk user ini
-            $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ? AND `verified_at` IS NULL")->execute([$userId]);
+            $verifTbl  = ilmuna_google_verification_table_name();
+            $createdAt = date('Y-m-d H:i:s');
+            $expiresAt = date('Y-m-d H:i:s', time() + 3600);
+
+            // Hapus hanya token kedaluwarsa atau token pending untuk email Google berbeda
+            // (Token aktif untuk email yang sama tetap dipertahankan agar klik email pertama di thread Gmail tidak gagal)
+            $pdo->prepare("DELETE FROM `{$verifTbl}` WHERE `user_id` = ? AND `verified_at` IS NULL AND (`expires_at` <= ? OR LOWER(`email_google`) != ?)")
+                ->execute([$userId, $createdAt, $emailGoogle]);
 
             // Buat token verifikasi kriptografis baru (berlaku 60 menit)
             $token     = bin2hex(random_bytes(32));
-            $expiresAt = date('Y-m-d H:i:s', time() + 3600);
-            $createdAt = date('Y-m-d H:i:s');
             $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
 
-            $ins = $pdo->prepare("INSERT INTO `google_link_verifications` (`user_id`, `email_google`, `google_id`, `token`, `expires_at`, `created_at`, `ip_address`) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $ins = $pdo->prepare("INSERT INTO `{$verifTbl}` (`user_id`, `email_google`, `google_id`, `token`, `expires_at`, `created_at`, `ip_address`) VALUES (?, ?, ?, ?, ?, ?, ?)");
             $ins->execute([$userId, $emailGoogle, $googleId, $token, $expiresAt, $createdAt, $ipAddress]);
+
+            // Pastikan token benar-benar tersimpan di DB sebelum mengirim email verifikasi
+            $chkIns = $pdo->prepare("SELECT id FROM `{$verifTbl}` WHERE `token` = ? LIMIT 1");
+            $chkIns->execute([$token]);
+            if (!$chkIns->fetchColumn()) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Gagal menyimpan token verifikasi ke database. Silakan coba lagi.',
+                ]);
+                exit;
+            }
 
             $baseUrl   = defined('BASE_URL') ? rtrim(BASE_URL, '/') : 'https://margo-one.ilmuna.my.id';
             $verifyUrl = $baseUrl . '/verify-google.php?token=' . $token;
@@ -481,7 +510,8 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         // Batalkan permintaan penautan Google yang masih pending
         if ($act === 'cancel_link_google') {
             ilmuna_ensure_google_verification_table($pdo);
-            $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ? AND `verified_at` IS NULL")->execute([$userId]);
+            $verifTbl = ilmuna_google_verification_table_name();
+            $pdo->prepare("DELETE FROM `{$verifTbl}` WHERE `user_id` = ? AND `verified_at` IS NULL")->execute([$userId]);
 
             echo json_encode([
                 'success' => true,
@@ -493,7 +523,8 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         if ($act === 'unlink_google') {
             $pdo->prepare("UPDATE sso_users SET email_google = NULL, google_id = NULL WHERE id = ?")->execute([$userId]);
             try {
-                $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
+                $verifTbl = ilmuna_google_verification_table_name();
+                $pdo->prepare("DELETE FROM `{$verifTbl}` WHERE `user_id` = ?")->execute([$userId]);
             } catch (Throwable $e) {
             }
             $_SESSION['user_email_google'] = null;

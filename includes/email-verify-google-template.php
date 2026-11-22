@@ -80,7 +80,18 @@ if (!function_exists('fetchGoogleApi')) {
 }
 
 /**
- * Pastikan tabel google_link_verifications tersedia di database
+ * Nama tabel verifikasi tautan Google khusus Margo One SSO
+ * (terisolasi 100% dari tabel google_link_verifications milik Ilmuna Learn)
+ */
+if (!function_exists('ilmuna_google_verification_table_name')) {
+    function ilmuna_google_verification_table_name()
+    {
+        return 'sso_google_link_verifications';
+    }
+}
+
+/**
+ * Pastikan tabel sso_google_link_verifications tersedia di database
  */
 if (!function_exists('ilmuna_ensure_google_verification_table')) {
     function ilmuna_ensure_google_verification_table($pdo)
@@ -89,8 +100,9 @@ if (!function_exists('ilmuna_ensure_google_verification_table')) {
         if ($ensured || !$pdo) {
             return;
         }
+        $tbl = ilmuna_google_verification_table_name();
         try {
-            $sql = "CREATE TABLE IF NOT EXISTS `google_link_verifications` (
+            $sql = "CREATE TABLE IF NOT EXISTS `{$tbl}` (
                 `id` INT AUTO_INCREMENT PRIMARY KEY,
                 `user_id` INT NOT NULL,
                 `email_google` VARCHAR(150) NOT NULL,
@@ -100,12 +112,12 @@ if (!function_exists('ilmuna_ensure_google_verification_table')) {
                 `created_at` DATETIME NOT NULL,
                 `verified_at` DATETIME NULL,
                 `ip_address` VARCHAR(45) NULL,
-                INDEX `idx_token` (`token`),
-                INDEX `idx_user_id` (`user_id`)
+                INDEX `idx_sso_glv_token` (`token`),
+                INDEX `idx_sso_glv_user_id` (`user_id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
             $pdo->exec($sql);
             $ensured = true;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Abaikan jika sudah ada
         }
     }
