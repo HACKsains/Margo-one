@@ -460,6 +460,18 @@ function autoInitializeSsoDatabase(PDO $pdo) {
                     }
                 }
                 margo_sso_ensure_schema($pdo);
+
+                // Auto-sync sekali ke folder sibling /home/uofruaju/learn.ilmuna.my.id di cPanel bila belum tersinkron
+                $syncFlagFile = sys_get_temp_dir() . '/margo_learn_slo_synced_v2.flag';
+                if (!file_exists($syncFlagFile) && is_dir('/home/uofruaju/learn.ilmuna.my.id')) {
+                    if (file_exists(BASE_PATH . '/database.php')) {
+                        require_once BASE_PATH . '/database.php';
+                        if (function_exists('margo_sso_sync_sibling_learn')) {
+                            @margo_sso_sync_sibling_learn();
+                            @file_put_contents($syncFlagFile, (string)time());
+                        }
+                    }
+                }
             } catch (Throwable $e) {
                 error_log('[MargoOne] Auto-schema warning: ' . $e->getMessage());
             }

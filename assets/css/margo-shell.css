@@ -38,7 +38,9 @@
     --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
 }
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     box-sizing: border-box;
 }
 
@@ -49,7 +51,8 @@ iconify-icon {
     vertical-align: -0.125em;
 }
 
-html, body.margo-shell-body {
+html,
+body.margo-shell-body {
     margin: 0;
     padding: 0;
     height: 100%;
@@ -81,6 +84,7 @@ html, body.margo-shell-body {
     box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.1);
     will-change: transform;
 }
+
 .margo-entry-slide::before {
     content: '';
     position: absolute;
@@ -91,6 +95,7 @@ html, body.margo-shell-body {
     background: #52B2DC;
     box-shadow: 0 -15px 35px rgba(0, 0, 0, 0.08);
 }
+
 .margo-entry-slide::after {
     content: '';
     position: absolute;
@@ -101,6 +106,7 @@ html, body.margo-shell-body {
     background: #0D7A87;
     box-shadow: 0 -15px 35px rgba(0, 0, 0, 0.1);
 }
+
 .margo-entry-slide.is-done {
     transform: rotate(-225deg) translateY(85%);
 }
@@ -116,6 +122,7 @@ html, body.margo-shell-body {
     pointer-events: none;
     transition: opacity 0.25s ease;
 }
+
 .margo-sidebar-overlay.is-open {
     opacity: 1;
     pointer-events: auto;
@@ -149,8 +156,8 @@ html, body.margo-shell-body {
     flex-direction: column;
     z-index: 60;
     transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.22s ease;
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.22s ease;
     box-shadow: 4px 0 24px rgba(29, 59, 94, 0.04);
     overflow: hidden;
 }
@@ -172,6 +179,7 @@ html, body.margo-shell-body {
     border-bottom: 1px solid var(--margo-border-soft);
     background: linear-gradient(180deg, rgba(29, 59, 94, 0.035) 0%, transparent 100%);
 }
+
 .margo-left-brand-link {
     display: inline-flex;
     flex-direction: column;
@@ -179,6 +187,7 @@ html, body.margo-shell-body {
     gap: 8px;
     text-decoration: none;
 }
+
 .margo-left-logo {
     width: 96px;
     height: auto;
@@ -187,9 +196,11 @@ html, body.margo-shell-body {
     filter: drop-shadow(0 4px 10px rgba(29, 59, 94, 0.12));
     transition: transform 0.25s ease;
 }
+
 .margo-left-brand-link:hover .margo-left-logo {
     transform: scale(1.03);
 }
+
 .margo-left-brand-tag {
     display: inline-flex;
     align-items: center;
@@ -205,6 +216,7 @@ html, body.margo-shell-body {
     letter-spacing: 0.09em;
     text-transform: uppercase;
 }
+
 .margo-left-brand-tag .dot {
     width: 6px;
     height: 6px;
@@ -221,13 +233,21 @@ html, body.margo-shell-body {
     scrollbar-width: thin;
     scrollbar-color: rgba(13, 122, 135, 0.22) transparent;
 }
-.margo-left-nav::-webkit-scrollbar { width: 5px; }
-.margo-left-nav::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.22); border-radius: 10px; }
+
+.margo-left-nav::-webkit-scrollbar {
+    width: 5px;
+}
+
+.margo-left-nav::-webkit-scrollbar-thumb {
+    background: rgba(13, 122, 135, 0.22);
+    border-radius: 10px;
+}
 
 .margo-nav-group {
     margin-bottom: 10px;
 }
-.margo-nav-group > summary {
+
+.margo-nav-group>summary {
     list-style: none;
     cursor: pointer;
     user-select: none;
@@ -245,19 +265,26 @@ html, body.margo-shell-body {
     box-shadow: 0 6px 16px -6px rgba(29, 59, 94, 0.32);
     transition: all 0.22s ease;
 }
-.margo-nav-group > summary::-webkit-details-marker { display: none; }
-.margo-nav-group > summary:hover {
+
+.margo-nav-group>summary::-webkit-details-marker {
+    display: none;
+}
+
+.margo-nav-group>summary:hover {
     filter: brightness(1.06);
 }
-.margo-nav-group.is-admin-group > summary {
+
+.margo-nav-group.is-admin-group>summary {
     background: linear-gradient(95deg, #1D3B5E 0%, #0D7A87 60%, #52B2DC 100%);
     box-shadow: 0 6px 16px -6px rgba(13, 122, 135, 0.30);
 }
+
 .margo-nav-group-chevron {
     margin-left: auto;
     transition: transform 0.22s ease;
     opacity: 0.88;
 }
+
 .margo-nav-group[open] .margo-nav-group-chevron {
     transform: rotate(180deg);
 }
@@ -284,21 +311,25 @@ html, body.margo-shell-body {
     transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
     position: relative;
 }
+
 .margo-nav-link iconify-icon {
     font-size: 17px;
     color: var(--margo-teal);
     flex-shrink: 0;
     transition: transform 0.2s ease, color 0.2s ease;
 }
+
 .margo-nav-link:hover {
     background: rgba(13, 122, 135, 0.09);
     border-left-color: #52B2DC;
     color: var(--margo-teal);
     padding-left: 17px;
 }
+
 .margo-nav-link:hover iconify-icon {
     transform: scale(1.08);
 }
+
 .margo-nav-link.is-active {
     background: var(--margo-grad-pill);
     border-left-color: #52B2DC;
@@ -306,6 +337,7 @@ html, body.margo-shell-body {
     font-weight: 700;
     box-shadow: 0 8px 18px -6px rgba(13, 122, 135, 0.42);
 }
+
 .margo-nav-link.is-active iconify-icon {
     color: #52B2DC;
 }
@@ -321,10 +353,12 @@ html, body.margo-shell-body {
     background: rgba(13, 122, 135, 0.12);
     color: var(--margo-teal);
 }
+
 .margo-nav-badge--gold {
     background: rgba(82, 178, 220, 0.18);
     color: #1D3B5E;
 }
+
 .margo-nav-link.is-active .margo-nav-badge {
     background: rgba(255, 255, 255, 0.22);
     color: #FFFFFF;
@@ -338,6 +372,7 @@ html, body.margo-shell-body {
     flex-direction: column;
     gap: 8px;
 }
+
 .margo-left-logout-btn {
     width: 100%;
     min-height: 40px;
@@ -356,11 +391,13 @@ html, body.margo-shell-body {
     cursor: pointer;
     transition: all 0.2s ease;
 }
+
 .margo-left-logout-btn:hover {
     background: #1D3B5E;
     color: #FFFFFF;
     transform: translateY(-1px);
 }
+
 .margo-left-status-line {
     display: flex;
     align-items: center;
@@ -369,6 +406,7 @@ html, body.margo-shell-body {
     color: var(--margo-muted);
     padding: 0 2px;
 }
+
 .margo-left-status-dot {
     display: inline-flex;
     align-items: center;
@@ -376,6 +414,7 @@ html, body.margo-shell-body {
     font-weight: 700;
     color: #0D7A87;
 }
+
 .margo-left-status-dot::before {
     content: '';
     width: 7px;
@@ -401,8 +440,15 @@ html, body.margo-shell-body {
     scrollbar-width: thin;
     scrollbar-color: rgba(29, 59, 94, 0.22) transparent;
 }
-.margo-main::-webkit-scrollbar { width: 7px; }
-.margo-main::-webkit-scrollbar-thumb { background: rgba(29, 59, 94, 0.20); border-radius: 10px; }
+
+.margo-main::-webkit-scrollbar {
+    width: 7px;
+}
+
+.margo-main::-webkit-scrollbar-thumb {
+    background: rgba(29, 59, 94, 0.20);
+    border-radius: 10px;
+}
 
 .margo-top-header {
     position: sticky;
@@ -420,6 +466,7 @@ html, body.margo-shell-body {
     color: var(--margo-navy);
     transition: all 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 .margo-top-header.is-scrolled {
     background: var(--margo-grad-brand);
     color: #FFFFFF;
@@ -453,16 +500,19 @@ html, body.margo-shell-body {
     text-decoration: none;
     flex-shrink: 0;
 }
+
 .margo-icon-btn:hover {
     border-color: var(--margo-teal);
     color: var(--margo-teal);
     box-shadow: 0 4px 12px rgba(13, 122, 135, 0.14);
 }
+
 .margo-top-header.is-scrolled .margo-icon-btn {
     background: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.24);
     color: #FFFFFF;
 }
+
 .margo-top-header.is-scrolled .margo-icon-btn:hover {
     background: rgba(255, 255, 255, 0.25);
 }
@@ -473,6 +523,7 @@ html, body.margo-shell-body {
     gap: 8px;
     min-width: 0;
 }
+
 .margo-header-title {
     font-family: var(--font-heading);
     font-size: 15px;
@@ -485,6 +536,7 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 7px;
 }
+
 .margo-header-role-chip {
     display: inline-flex;
     align-items: center;
@@ -500,6 +552,7 @@ html, body.margo-shell-body {
     border: 1px solid rgba(82, 178, 220, 0.35);
     white-space: nowrap;
 }
+
 .margo-top-header.is-scrolled .margo-header-role-chip {
     background: rgba(255, 255, 255, 0.18);
     color: #FFFFFF;
@@ -522,15 +575,18 @@ html, body.margo-shell-body {
     cursor: pointer;
     transition: all 0.2s ease;
 }
+
 .margo-header-avatar-btn:hover {
     border-color: var(--margo-teal);
     box-shadow: 0 4px 12px rgba(13, 122, 135, 0.14);
 }
+
 .margo-top-header.is-scrolled .margo-header-avatar-btn {
     background: rgba(255, 255, 255, 0.16);
     border-color: rgba(255, 255, 255, 0.28);
     color: #FFFFFF;
 }
+
 .margo-mini-avatar {
     width: 30px;
     height: 30px;
@@ -546,7 +602,12 @@ html, body.margo-shell-body {
     overflow: hidden;
     flex-shrink: 0;
 }
-.margo-mini-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.margo-mini-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 
 .margo-main-inner {
     flex: 1;
@@ -574,15 +635,22 @@ html, body.margo-shell-body {
     padding: 16px;
     gap: 18px;
     transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                padding 0.28s ease,
-                transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity 0.22s ease;
+        padding 0.28s ease,
+        transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.22s ease;
     box-shadow: -4px 0 24px rgba(29, 59, 94, 0.04);
     scrollbar-width: thin;
     scrollbar-color: rgba(13, 122, 135, 0.20) transparent;
 }
-.margo-sidebar-right::-webkit-scrollbar { width: 5px; }
-.margo-sidebar-right::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.20); border-radius: 10px; }
+
+.margo-sidebar-right::-webkit-scrollbar {
+    width: 5px;
+}
+
+.margo-sidebar-right::-webkit-scrollbar-thumb {
+    background: rgba(13, 122, 135, 0.20);
+    border-radius: 10px;
+}
 
 .margo-sidebar-right.is-collapsed-desktop {
     width: 0 !important;
@@ -597,6 +665,7 @@ html, body.margo-shell-body {
 .margo-profile-wrap {
     position: relative;
 }
+
 .margo-profile-card {
     background-image: var(--margo-kawung-svg), var(--margo-grad-brand);
     background-size: 32px 32px, 100% 100%;
@@ -616,6 +685,7 @@ html, body.margo-shell-body {
     text-align: left;
     font-family: inherit;
 }
+
 .margo-profile-card::before {
     content: '';
     position: absolute;
@@ -625,6 +695,7 @@ html, body.margo-shell-body {
     height: 3px;
     background: var(--margo-grad-gold);
 }
+
 .margo-profile-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 16px 30px -10px rgba(13, 122, 135, 0.45);
@@ -647,7 +718,13 @@ html, body.margo-shell-body {
     flex-shrink: 0;
     overflow: hidden;
 }
-.margo-profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.margo-profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .margo-profile-online {
     position: absolute;
     bottom: 1px;
@@ -663,6 +740,7 @@ html, body.margo-shell-body {
     flex: 1;
     min-width: 0;
 }
+
 .margo-profile-name {
     font-family: var(--font-heading);
     font-size: 14px;
@@ -672,6 +750,7 @@ html, body.margo-shell-body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
 .margo-profile-sub {
     font-size: 11px;
     color: rgba(255, 255, 255, 0.80);
@@ -680,6 +759,7 @@ html, body.margo-shell-body {
     text-overflow: ellipsis;
     margin-top: 1px;
 }
+
 .margo-profile-role-pill {
     display: inline-flex;
     align-items: center;
@@ -702,6 +782,7 @@ html, body.margo-shell-body {
     transition: transform 0.22s ease;
     flex-shrink: 0;
 }
+
 .margo-profile-wrap.is-open .margo-profile-caret {
     transform: rotate(180deg);
 }
@@ -716,14 +797,23 @@ html, body.margo-shell-body {
     box-shadow: 0 16px 32px -10px rgba(29, 59, 94, 0.16);
     animation: margoDropIn 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
 .margo-profile-wrap.is-open .margo-profile-dropdown {
     display: flex;
     flex-direction: column;
     gap: 2px;
 }
+
 @keyframes margoDropIn {
-    from { opacity: 0; transform: translateY(-6px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .margo-dd-item {
@@ -743,12 +833,34 @@ html, body.margo-shell-body {
     font-family: inherit;
     transition: all 0.18s ease;
 }
-.margo-dd-item iconify-icon { font-size: 16px; color: var(--margo-teal); }
-.margo-dd-item:hover { background: rgba(13, 122, 135, 0.08); color: var(--margo-teal); }
-.margo-dd-item.is-danger { color: #1D3B5E; }
-.margo-dd-item.is-danger iconify-icon { color: #1D3B5E; }
-.margo-dd-item.is-danger:hover { background: rgba(29, 59, 94, 0.08); }
-.margo-dd-divider { height: 1px; background: var(--margo-border-soft); margin: 4px 6px; }
+
+.margo-dd-item iconify-icon {
+    font-size: 16px;
+    color: var(--margo-teal);
+}
+
+.margo-dd-item:hover {
+    background: rgba(13, 122, 135, 0.08);
+    color: var(--margo-teal);
+}
+
+.margo-dd-item.is-danger {
+    color: #1D3B5E;
+}
+
+.margo-dd-item.is-danger iconify-icon {
+    color: #1D3B5E;
+}
+
+.margo-dd-item.is-danger:hover {
+    background: rgba(29, 59, 94, 0.08);
+}
+
+.margo-dd-divider {
+    height: 1px;
+    background: var(--margo-border-soft);
+    margin: 4px 6px;
+}
 
 /* Multi-Role Switcher in Right Sidebar */
 .margo-role-switch-box {
@@ -757,6 +869,7 @@ html, body.margo-shell-body {
     gap: 5px;
     margin-top: 8px;
 }
+
 .margo-role-switch-pill {
     display: inline-flex;
     align-items: center;
@@ -771,10 +884,12 @@ html, body.margo-shell-body {
     color: var(--margo-muted);
     transition: all 0.18s ease;
 }
+
 .margo-role-switch-pill:hover {
     border-color: var(--margo-teal);
     color: var(--margo-teal);
 }
+
 .margo-role-switch-pill.is-active {
     background: var(--margo-grad-pill);
     border-color: transparent;
@@ -789,6 +904,7 @@ html, body.margo-shell-body {
     gap: 8px;
     margin-bottom: 10px;
 }
+
 .margo-rwidget-title {
     margin: 0;
     font-family: var(--font-heading);
@@ -799,7 +915,12 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 7px;
 }
-.margo-rwidget-title iconify-icon { color: var(--margo-teal); font-size: 17px; }
+
+.margo-rwidget-title iconify-icon {
+    color: var(--margo-teal);
+    font-size: 17px;
+}
+
 .margo-rwidget-link {
     font-size: 11.5px;
     font-weight: 700;
@@ -809,7 +930,10 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 3px;
 }
-.margo-rwidget-link:hover { color: var(--margo-amber); }
+
+.margo-rwidget-link:hover {
+    color: var(--margo-amber);
+}
 
 /* Horizontal Agenda Date Cards */
 .margo-agenda-strip {
@@ -820,8 +944,15 @@ html, body.margo-shell-body {
     scrollbar-width: thin;
     scrollbar-color: rgba(13, 122, 135, 0.25) transparent;
 }
-.margo-agenda-strip::-webkit-scrollbar { height: 5px; }
-.margo-agenda-strip::-webkit-scrollbar-thumb { background: rgba(13, 122, 135, 0.25); border-radius: 999px; }
+
+.margo-agenda-strip::-webkit-scrollbar {
+    height: 5px;
+}
+
+.margo-agenda-strip::-webkit-scrollbar-thumb {
+    background: rgba(13, 122, 135, 0.25);
+    border-radius: 999px;
+}
 
 .margo-agenda-card {
     flex: 0 0 88px;
@@ -840,6 +971,7 @@ html, body.margo-shell-body {
     transition: all 0.24s cubic-bezier(0.22, 1, 0.36, 1);
     box-shadow: 0 2px 8px rgba(29, 59, 94, 0.04);
 }
+
 .margo-agenda-card:hover {
     transform: translateY(-3px);
     background: var(--margo-grad-brand);
@@ -847,6 +979,7 @@ html, body.margo-shell-body {
     color: #FFFFFF;
     box-shadow: 0 12px 20px -8px rgba(13, 122, 135, 0.45);
 }
+
 .margo-agenda-card.is-featured {
     background: var(--margo-grad-brand);
     border-color: transparent;
@@ -854,6 +987,7 @@ html, body.margo-shell-body {
     box-shadow: 0 10px 20px -8px rgba(29, 59, 94, 0.40);
     position: relative;
 }
+
 .margo-agenda-card.is-featured::after {
     content: '';
     position: absolute;
@@ -864,11 +998,13 @@ html, body.margo-shell-body {
     border-radius: 50%;
     background: var(--margo-gold);
 }
+
 .margo-agenda-year {
     font-size: 9.5px;
     font-weight: 700;
     opacity: 0.72;
 }
+
 .margo-agenda-month {
     font-size: 10.5px;
     font-weight: 700;
@@ -876,6 +1012,7 @@ html, body.margo-shell-body {
     letter-spacing: 0.04em;
     opacity: 0.9;
 }
+
 .margo-agenda-day {
     font-family: var(--font-heading);
     font-size: 24px;
@@ -883,6 +1020,7 @@ html, body.margo-shell-body {
     line-height: 1.08;
     margin: 2px 0;
 }
+
 .margo-agenda-short {
     font-size: 10px;
     font-weight: 600;
@@ -900,6 +1038,7 @@ html, body.margo-shell-body {
     flex-direction: column;
     gap: 8px;
 }
+
 .margo-news-card {
     display: flex;
     flex-direction: column;
@@ -912,18 +1051,21 @@ html, body.margo-shell-body {
     color: var(--margo-title);
     transition: all 0.22s ease;
 }
+
 .margo-news-card:hover {
     background: #FFFFFF;
     border-color: var(--margo-teal);
     box-shadow: 0 8px 18px -6px rgba(13, 122, 135, 0.16);
     transform: translateY(-1px);
 }
+
 .margo-news-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
 }
+
 .margo-news-badge {
     font-family: var(--font-heading);
     font-size: 9px;
@@ -935,10 +1077,12 @@ html, body.margo-shell-body {
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
+
 .margo-news-badge--gold {
     background: rgba(82, 178, 220, 0.18);
     color: #1D3B5E;
 }
+
 .margo-news-date {
     font-size: 10.5px;
     color: var(--margo-muted);
@@ -946,6 +1090,7 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 4px;
 }
+
 .margo-news-title {
     font-family: var(--font-heading);
     font-size: 12.5px;
@@ -953,6 +1098,7 @@ html, body.margo-shell-body {
     color: var(--margo-navy);
     line-height: 1.35;
 }
+
 .margo-news-excerpt {
     font-size: 11px;
     color: var(--margo-muted);
@@ -977,6 +1123,7 @@ html, body.margo-shell-body {
     cursor: pointer;
     transition: all 0.2s;
 }
+
 .margo-load-more-btn:hover {
     background: rgba(13, 122, 135, 0.06);
     border-color: var(--margo-teal);
@@ -986,9 +1133,17 @@ html, body.margo-shell-body {
  * 6. PORTAL HERO BANNER, 3D APP CARDS, ACTIVITY FEED & SKELETONS
  * ============================================================================== */
 @keyframes margoPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.45; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.45;
+    }
 }
+
 .margo-skel {
     background: #E2E8F0;
     border-radius: 10px;
@@ -1011,6 +1166,7 @@ html, body.margo-shell-body {
     border: 1px solid rgba(255, 255, 255, 0.14);
     margin-bottom: 22px;
 }
+
 .margo-hero-banner::after {
     content: '';
     position: absolute;
@@ -1020,6 +1176,7 @@ html, body.margo-shell-body {
     height: 4px;
     background: linear-gradient(90deg, #1D3B5E 0%, #0D7A87 50%, #52B2DC 100%);
 }
+
 .margo-hero-gunungan {
     position: absolute;
     right: 12px;
@@ -1031,11 +1188,13 @@ html, body.margo-shell-body {
     user-select: none;
     filter: brightness(2);
 }
+
 .margo-hero-body {
     position: relative;
     z-index: 2;
     max-width: 620px;
 }
+
 .margo-hero-eyebrow {
     display: inline-flex;
     align-items: center;
@@ -1049,6 +1208,7 @@ html, body.margo-shell-body {
     letter-spacing: 0.04em;
     margin-bottom: 10px;
 }
+
 .margo-hero-eyebrow .dot {
     width: 7px;
     height: 7px;
@@ -1056,6 +1216,7 @@ html, body.margo-shell-body {
     background: #52B2DC;
     box-shadow: 0 0 8px #52B2DC;
 }
+
 .margo-hero-title {
     margin: 0 0 6px;
     font-family: var(--font-heading);
@@ -1064,17 +1225,20 @@ html, body.margo-shell-body {
     color: #FFFFFF;
     line-height: 1.22;
 }
+
 .margo-hero-desc {
     margin: 0 0 16px;
     font-size: 13px;
     color: rgba(255, 255, 255, 0.88);
     line-height: 1.55;
 }
+
 .margo-hero-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 9px;
 }
+
 .margo-hero-btn {
     display: inline-flex;
     align-items: center;
@@ -1090,30 +1254,36 @@ html, body.margo-shell-body {
     cursor: pointer;
     border: 1px solid transparent;
 }
+
 .margo-hero-btn--white {
     background: #FFFFFF;
     color: var(--margo-navy);
     box-shadow: 0 6px 16px rgba(15, 29, 47, 0.18);
 }
+
 .margo-hero-btn--white:hover {
     background: rgba(82, 178, 220, 0.18);
     color: #FFFFFF;
     transform: translateY(-2px);
 }
+
 .margo-hero-btn--glass {
     background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.28);
     color: #FFFFFF;
 }
+
 .margo-hero-btn--glass:hover {
     background: rgba(255, 255, 255, 0.24);
     transform: translateY(-2px);
 }
+
 .margo-hero-btn--gold {
     background: var(--margo-grad-gold);
     color: #FFFFFF;
     box-shadow: 0 6px 18px rgba(82, 178, 220, 0.35);
 }
+
 .margo-hero-btn--gold:hover {
     filter: brightness(1.07);
     transform: translateY(-2px);
@@ -1132,6 +1302,7 @@ html, body.margo-shell-body {
     border-radius: 18px;
     padding: 14px 16px;
 }
+
 .margo-hero-stat {
     display: flex;
     align-items: center;
@@ -1139,6 +1310,7 @@ html, body.margo-shell-body {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.92);
 }
+
 .margo-hero-stat iconify-icon {
     font-size: 17px;
     color: #52B2DC;
@@ -1154,6 +1326,7 @@ html, body.margo-shell-body {
     gap: 12px;
     margin-bottom: 14px;
 }
+
 .margo-section-h2 {
     margin: 0;
     font-family: var(--font-heading);
@@ -1164,6 +1337,7 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 8px;
 }
+
 .margo-section-h3 {
     margin: 0 0 12px;
     font-family: var(--font-heading);
@@ -1174,6 +1348,7 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 7px;
 }
+
 .margo-section-h3.is-muted {
     color: var(--margo-muted);
 }
@@ -1183,6 +1358,7 @@ html, body.margo-shell-body {
     width: 280px;
     max-width: 100%;
 }
+
 .margo-search-box iconify-icon {
     position: absolute;
     left: 13px;
@@ -1192,6 +1368,7 @@ html, body.margo-shell-body {
     font-size: 17px;
     pointer-events: none;
 }
+
 .margo-search-input {
     width: 100%;
     min-height: 40px;
@@ -1204,6 +1381,7 @@ html, body.margo-shell-body {
     font-size: 13px;
     transition: all 0.2s ease;
 }
+
 .margo-search-input:focus {
     outline: none;
     border-color: var(--margo-teal);
@@ -1227,16 +1405,20 @@ html, body.margo-shell-body {
     transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease;
     box-shadow: 0 4px 14px rgba(29, 59, 94, 0.06);
 }
+
 .margo-app-frame:hover {
     transform: translateY(-4px) scale(1.01);
     box-shadow: 0 18px 30px -10px rgba(13, 122, 135, 0.28);
 }
+
 .margo-app-frame.is-admin-app {
     background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 60%, #52B2DC 100%);
 }
+
 .margo-app-frame.is-external {
     background: linear-gradient(135deg, #CBD5E1 0%, #E2E8F0 100%);
 }
+
 .margo-app-frame.is-external:hover {
     background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 100%);
 }
@@ -1252,6 +1434,7 @@ html, body.margo-shell-body {
     position: relative;
     overflow: hidden;
 }
+
 .margo-app-icon {
     width: 48px;
     height: 48px;
@@ -1266,17 +1449,21 @@ html, body.margo-shell-body {
     box-shadow: 0 6px 14px -4px rgba(13, 122, 135, 0.35);
     transition: transform 0.25s ease;
 }
+
 .margo-app-frame:hover .margo-app-icon {
     transform: scale(1.08) rotate(-3deg);
 }
+
 .margo-app-frame.is-admin-app .margo-app-icon {
     background: linear-gradient(135deg, #1D3B5E 0%, #0D7A87 100%);
 }
+
 .margo-app-frame.is-external .margo-app-icon {
     background: #F1F5F9;
     color: var(--margo-navy);
     box-shadow: none;
 }
+
 .margo-app-frame.is-external:hover .margo-app-icon {
     background: var(--margo-grad-brand);
     color: #FFFFFF;
@@ -1286,12 +1473,14 @@ html, body.margo-shell-body {
     flex: 1;
     min-width: 0;
 }
+
 .margo-app-title-row {
     display: flex;
     align-items: center;
     gap: 6px;
     margin-bottom: 3px;
 }
+
 .margo-app-name {
     font-family: var(--font-heading);
     font-size: 14px;
@@ -1301,6 +1490,7 @@ html, body.margo-shell-body {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
 .margo-app-pill {
     font-size: 9px;
     font-weight: 800;
@@ -1311,14 +1501,17 @@ html, body.margo-shell-body {
     letter-spacing: 0.04em;
     flex-shrink: 0;
 }
+
 .margo-app-frame.is-admin-app .margo-app-pill {
     background: rgba(82, 178, 220, 0.18);
     color: #1D3B5E;
 }
+
 .margo-app-frame.is-external .margo-app-pill {
     background: #F1F5F9;
     color: var(--margo-muted);
 }
+
 .margo-app-desc {
     font-size: 11.5px;
     color: var(--margo-muted);
@@ -1328,12 +1521,14 @@ html, body.margo-shell-body {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
 .margo-app-arrow {
     color: #94A3B8;
     font-size: 17px;
     flex-shrink: 0;
     transition: transform 0.2s ease, color 0.2s ease;
 }
+
 .margo-app-frame:hover .margo-app-arrow {
     color: var(--margo-teal);
     transform: translateX(3px);
@@ -1347,12 +1542,14 @@ html, body.margo-shell-body {
     padding: 18px 20px;
     box-shadow: 0 6px 20px rgba(29, 59, 94, 0.04);
 }
+
 .margo-login-cards {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 18px;
 }
+
 .margo-login-card {
     padding: 12px 14px;
     border-radius: 14px;
@@ -1363,6 +1560,7 @@ html, body.margo-shell-body {
     justify-content: space-between;
     gap: 10px;
 }
+
 .margo-login-card-title {
     font-family: var(--font-heading);
     font-size: 13px;
@@ -1372,6 +1570,7 @@ html, body.margo-shell-body {
     align-items: center;
     gap: 6px;
 }
+
 .margo-login-card-sub {
     font-size: 11px;
     color: var(--margo-muted);
@@ -1384,6 +1583,7 @@ html, body.margo-shell-body {
     flex-direction: column;
     gap: 7px;
 }
+
 .margo-act-row {
     display: flex;
     align-items: center;
@@ -1395,15 +1595,18 @@ html, body.margo-shell-body {
     background: #FAFBFD;
     transition: background 0.18s ease;
 }
+
 .margo-act-row:hover {
     background: #F1F5F9;
 }
+
 .margo-act-left {
     display: flex;
     align-items: center;
     gap: 10px;
     min-width: 0;
 }
+
 .margo-act-icon {
     width: 34px;
     height: 34px;
@@ -1416,15 +1619,18 @@ html, body.margo-shell-body {
     font-size: 17px;
     flex-shrink: 0;
 }
+
 .margo-act-icon.is-err {
     background: rgba(29, 59, 94, 0.10);
     color: #1D3B5E;
 }
+
 .margo-act-title {
     font-size: 12.5px;
     font-weight: 700;
     color: var(--margo-title);
 }
+
 .margo-act-meta {
     font-size: 11px;
     color: var(--margo-muted);
@@ -1440,12 +1646,14 @@ html, body.margo-shell-body {
     padding-top: 12px;
     border-top: 1px solid var(--margo-border-soft);
 }
+
 .margo-page-btns {
     display: flex;
     align-items: center;
     gap: 5px;
     flex-wrap: wrap;
 }
+
 .margo-page-btn {
     min-width: 34px;
     min-height: 34px;
@@ -1460,15 +1668,18 @@ html, body.margo-shell-body {
     cursor: pointer;
     transition: all 0.18s;
 }
+
 .margo-page-btn:hover:not(:disabled) {
     border-color: var(--margo-teal);
     color: var(--margo-teal);
 }
+
 .margo-page-btn.is-active {
     background: var(--margo-grad-pill);
     border-color: transparent;
     color: #FFFFFF;
 }
+
 .margo-page-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
@@ -1499,11 +1710,13 @@ html, body.margo-shell-body {
     transform: translateY(12px);
     transition: all 0.25s ease;
 }
+
 .margo-scroll-top.is-visible {
     opacity: 1;
     pointer-events: auto;
     transform: translateY(0);
 }
+
 .margo-scroll-top:hover {
     filter: brightness(1.08);
     transform: translateY(-2px);
@@ -1528,20 +1741,53 @@ html, body.margo-shell-body {
 
 /* Smooth In-Place DOM Transitions (Zero Page Reload Policy) */
 @keyframes rowSmoothIn {
-    0%   { opacity: 0; transform: translateY(-8px) scale(0.98); background-color: rgba(13, 122, 135, 0.14); }
-    100% { opacity: 1; transform: translateY(0) scale(1); background-color: transparent; }
+    0% {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+        background-color: rgba(13, 122, 135, 0.14);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        background-color: transparent;
+    }
 }
+
 @keyframes rowSmoothOut {
-    0%   { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(0.95); }
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0.95);
+    }
 }
+
 @keyframes rowFlash {
-    0%   { background-color: rgba(82, 178, 220, 0.25); }
-    100% { background-color: transparent; }
+    0% {
+        background-color: rgba(82, 178, 220, 0.25);
+    }
+
+    100% {
+        background-color: transparent;
+    }
 }
-.row-smooth-in  { animation: rowSmoothIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-.row-smooth-out { animation: rowSmoothOut 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards; pointer-events: none; }
-.row-flash      { animation: rowFlash 1.4s ease-out forwards; }
+
+.row-smooth-in {
+    animation: rowSmoothIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.row-smooth-out {
+    animation: rowSmoothOut 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    pointer-events: none;
+}
+
+.row-flash {
+    animation: rowFlash 1.4s ease-out forwards;
+}
 
 /* ==============================================================================
  * 8. RESPONSIVE BREAKPOINTS (MOBILE 360px+ & TABLET DRAWERS)
@@ -1557,6 +1803,7 @@ html, body.margo-shell-body {
         opacity: 1 !important;
         pointer-events: auto !important;
     }
+
     .margo-sidebar-left.is-open-mobile {
         transform: translateX(0);
     }
@@ -1571,6 +1818,7 @@ html, body.margo-shell-body {
         opacity: 1 !important;
         pointer-events: auto !important;
     }
+
     .margo-sidebar-right.is-open-mobile {
         transform: translateX(0);
     }
@@ -1580,9 +1828,11 @@ html, body.margo-shell-body {
         align-items: flex-start;
         padding: 18px;
     }
+
     .margo-hero-aside {
         width: 100%;
     }
+
     .margo-version-pill {
         display: none;
     }
@@ -1592,28 +1842,36 @@ html, body.margo-shell-body {
     .margo-top-header {
         padding: 10px 12px;
     }
+
     .margo-top-header.is-scrolled {
         margin: 0 6px;
     }
+
     .margo-header-role-chip,
     .margo-header-avatar-name {
         display: none;
     }
+
     .margo-header-avatar-btn {
         padding: 4px;
     }
+
     .margo-main-inner {
         padding: 14px 12px 36px;
     }
+
     .margo-hero-title {
         font-size: 1.2rem;
     }
+
     .margo-login-cards {
         grid-template-columns: 1fr;
     }
+
     .margo-search-box {
         width: 100%;
     }
+
     .margo-apps-grid {
         grid-template-columns: 1fr;
     }

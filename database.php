@@ -239,18 +239,133 @@ function margo_sso_get_table_stats(PDO $pdo)
 }
 
 /**
- * Jalankan migrasi lengkap Margo One SSO
+ * Sinkronisasi & Perbaikan Otomatis Folder Sibling `learn.ilmuna.my.id` di cPanel / Laragon
+ * (Tanpa perlu menu Terminal cPanel!)
+ *   1. Memperbaiki .git/config agar memakai URL HTTPS publik bersih (bebas error token cPanel)
+ *   2. Menyalin berkas integrasi SSO & Global SLO terbaru (auth.php, logout.php, sso-callback.php,
+ *      sso-logout-webhook.php, sdk/ilmuna-sso-client.php, .cpanel.yml) ke learn.ilmuna.my.id
+ *   3. Mengaktifkan ILMUNA_SSO_ENABLED = true pada learn.ilmuna.my.id/config.php
+ *   4. Jika fungsi shell PHP aktif, otomatis menjalankan git fetch & git reset --hard origin/main
+ */
+function margo_sso_sync_sibling_learn()
+{
+    $candidates = [
+        '/home/uofruaju/learn.ilmuna.my.id',
+        dirname(BASE_PATH) . '/learn.ilmuna.my.id',
+        dirname(BASE_PATH) . '/learn',
+    ];
+
+    $learnDir = null;
+    foreach ($candidates as $cand) {
+        if ($cand && is_dir($cand) && file_exists($cand . '/config.php')) {
+            $learnDir = rtrim(str_replace('\\', '/', $cand), '/');
+            break;
+        }
+    }
+
+    // 1. Bersihkan URL remote .git/config di Margo One sendiri bila mengandung token ghp_
+    $selfGitCfg = BASE_PATH . '/.git/config';
+    if (file_exists($selfGitCfg) && is_writable($selfGitCfg)) {
+        $rawSelf = (string)@file_get_contents($selfGitCfg);
+        $cleanSelf = preg_replace('#https://[^@\s]+@github\.com/HACKsains/Margo-one\.git#i', 'https://github.com/HACKsains/Margo-one.git', $rawSelf);
+        if ($cleanSelf && $cleanSelf !== $rawSelf) {
+            @file_put_contents($selfGitCfg, $cleanSelf);
+        }
+    }
+
+    if ($learnDir === null) {
+        return ['synced' => false, 'message' => 'Folder sibling learn.ilmuna.my.id tidak ditemukan di server ini.'];
+    }
+
+    $actions = [];
+
+    // 2. Bersihkan URL remote .git/config di learn.ilmuna.my.id agar cPanel Git Version Control tidak error
+    $learnGitCfg = $learnDir . '/.git/config';
+    if (file_exists($learnGitCfg) && is_writable($learnGitCfg)) {
+        $rawGit = (string)@file_get_contents($learnGitCfg);
+        $cleanGit = preg_replace(
+            '#https://[^@\s]+@github\.com/HACKsains/Ilmuna-Learn-Manajemen-System\.git#i',
+            'https://github.com/HACKsains/Ilmuna-Learn-Manajemen-System.git',
+            $rawGit
+        );
+        if ($cleanGit && $cleanGit !== $rawGit) {
+            @file_put_contents($learnGitCfg, $cleanGit);
+            $actions[] = 'fixed_git_remote_url';
+        }
+    }
+
+    // 3. Salin paket berkas SSO & Global SLO terbaru ke learn.ilmuna.my.id
+    $fileMap = [
+        BASE_PATH . '/sdk/ilmuna-sso-client.php'                     => $learnDir . '/sdk/ilmuna-sso-client.php',
+        BASE_PATH . '/sdk/learn-integration/sso-callback.php'        => $learnDir . '/sso-callback.php',
+        BASE_PATH . '/sdk/learn-integration/sso-logout-webhook.php'  => $learnDir . '/sso-logout-webhook.php',
+        BASE_PATH . '/sdk/learn-integration/logout.php'              => $learnDir . '/logout.php',
+        BASE_PATH . '/sdk/learn-integration/auth.php'                => $learnDir . '/auth.php',
+        BASE_PATH . '/sdk/learn-integration/cpanel.yml'              => $learnDir . '/.cpanel.yml',
+    ];
+
+    if (!is_dir($learnDir . '/sdk')) {
+        @mkdir($learnDir . '/sdk', 0755, true);
+    }
+
+    foreach ($fileMap as $src => $dst) {
+        if (file_exists($src)) {
+            if (@copy($src, $dst)) {
+                $actions[] = 'copied:' . basename($dst);
+            }
+        }
+    }
+
+    // 4. Pastikan ILMUNA_SSO_ENABLED = true di learn.ilmuna.my.id/config.php
+    $learnCfgFile = $learnDir . '/config.php';
+    if (file_exists($learnCfgFile) && is_writable($learnCfgFile)) {
+        $cfgRaw = (string)@file_get_contents($learnCfgFile);
+        $cfgUpd = preg_replace(
+            "/define\s*\(\s*'ILMUNA_SSO_ENABLED'\s*,\s*false\s*\)\s*;/i",
+            "define('ILMUNA_SSO_ENABLED', true);",
+            $cfgRaw
+        );
+        if ($cfgUpd && $cfgUpd !== $cfgRaw) {
+            @file_put_contents($learnCfgFile, $cfgUpd);
+            $actions[] = 'enabled_sso_in_config';
+        }
+    }
+
+    // 5. Jika fungsi shell_exec tersedia di PHP cPanel, sinkronkan juga git working tree learn.ilmuna.my.id
+    if (is_dir($learnDir . '/.git') && function_exists('shell_exec')) {
+        $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+        if (!in_array('shell_exec', $disabled, true)) {
+            $cmd = 'cd ' . escapeshellarg($learnDir) . ' && git fetch origin main 2>&1 && git reset --hard origin/main 2>&1';
+            $gitOut = @shell_exec($cmd);
+            if (is_string($gitOut) && $gitOut !== '') {
+                $actions[] = 'git_reset_hard_origin_main';
+            }
+        }
+    }
+
+    return [
+        'synced'    => true,
+        'learn_dir' => $learnDir,
+        'actions'   => $actions,
+        'message'   => 'Berhasil menyinkronkan berkas SSO/SLO & memperbaiki konfigurasi Git pada ' . $learnDir . ' (' . count($actions) . ' pembaruan).',
+    ];
+}
+
+/**
+ * Jalankan migrasi lengkap Margo One SSO (+ sinkronisasi otomatis sibling learn.ilmuna.my.id)
  */
 function runSsoDatabaseMigration(PDO $pdo)
 {
     margo_sso_ensure_identity_tables($pdo);
     margo_sso_ensure_schema($pdo, true);
+    $learnSync = margo_sso_sync_sibling_learn();
     $stats = margo_sso_get_table_stats($pdo);
 
     return [
-        'status'  => 'success',
-        'message' => 'Seluruh skema tabel Margo One SSO, klien default, kunci RSA-2048 JWKS, portal agenda, dan akun admin utama berhasil disinkronisasi.',
-        'tables'  => $stats,
+        'status'     => 'success',
+        'message'    => 'Seluruh skema tabel Margo One SSO, klien default, kunci RSA-2048 JWKS, portal agenda, akun admin utama, serta integrasi learn.ilmuna.my.id berhasil disinkronisasi.',
+        'learn_sync' => $learnSync,
+        'tables'     => $stats,
     ];
 }
 
@@ -301,6 +416,9 @@ if ($isDirectBrowser) {
     try {
         $pdo = getDBConnection();
         $activeDbName = (string)($pdo->query("SELECT DATABASE()")->fetchColumn() ?: $activeDbName);
+
+        // Otomatis sinkronkan & perbaiki learn.ilmuna.my.id setiap kali halaman database.php dibuka
+        $autoLearnSync = margo_sso_sync_sibling_learn();
 
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'run_migration') {
             $postedCsrf = (string)($_POST['csrf_token'] ?? '');
