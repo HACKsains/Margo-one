@@ -90,10 +90,11 @@ function margo_profile_build_bootstrap_data(PDO $pdo, $userId, $currentSid)
     }
 
     $pendingEmailGoogle = '';
+    $nowPhpStr = date('Y-m-d H:i:s');
     if (empty($uRow['email_google'])) {
         try {
-            $pStmt = $pdo->prepare("SELECT email_google FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
-            $pStmt->execute([$userId]);
+            $pStmt = $pdo->prepare("SELECT email_google FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
+            $pStmt->execute([$userId, $nowPhpStr]);
             $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
             if ($pRow && !empty($pRow['email_google'])) {
                 $pendingEmailGoogle = (string)$pRow['email_google'];
@@ -171,8 +172,8 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            $pStmt = $pdo->prepare("SELECT email_google, expires_at FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
-            $pStmt->execute([$userId]);
+            $pStmt = $pdo->prepare("SELECT email_google, expires_at FROM google_link_verifications WHERE user_id = ? AND verified_at IS NULL AND expires_at > ? ORDER BY id DESC LIMIT 1");
+            $pStmt->execute([$userId, date('Y-m-d H:i:s')]);
             $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
             if ($pRow) {
                 echo json_encode([
@@ -424,14 +425,15 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         }
 
         // =====================================================================
-        // TAUTKAN AKUN GOOGLE 1-KLIK INSTAN (TERVERIFIKASI LANGSUNG VIA GOOGLE OAUTH 2.0)
+        // PERMINTAAN TAUTKAN AKUN GOOGLE DENGAN VERIFIKASI GMAIL VIA RELAY
+        // (1:1 IDENTIK C:\laragon\www\learn\api\profile-action.php)
         // =====================================================================
         if ($act === 'link_google' || $act === 'request_link_google') {
             ilmuna_ensure_google_verification_table($pdo);
 
-            $accessToken = trim((string)($_POST['google_access_token'] ?? ''));
-            $emailGoogle = '';
-            $googleId    = '';
+            $accessToken   = trim((string)($_POST['google_access_token'] ?? ''));
+            $emailGoogle   = '';
+            $googleId      = '';
             $emailVerified = false;
 
             if ($accessToken !== '') {
@@ -483,42 +485,65 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
                 exit;
             }
 
-            // Simpan langsung ke database karena kepemilikan akun sudah diverifikasi resmi oleh Google OAuth 2.0
-            $pdo->prepare("UPDATE `users` SET `email_google` = ?, `google_id` = ? WHERE `id` = ?")
-                ->execute([$emailGoogle, $googleId, $userId]);
-
-            try {
-                $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ?")->execute([$userId]);
-            } catch (Throwable $eDelV) {
-                // Non-fatal
+            // Cek apakah akun Google ini sudah ditautkan ke pengguna ini sendiri
+            $chkSelf = $pdo->prepare("SELECT id FROM `users` WHERE `id` = ? AND (LOWER(`email_google`) = ? OR `google_id` = ?) LIMIT 1");
+            $chkSelf->execute([$userId, $emailGoogle, $googleId]);
+            if ($chkSelf->fetch()) {
+                echo json_encode([
+                    'success'      => true,
+                    'linked'       => true,
+                    'pending'      => false,
+                    'email_google' => $emailGoogle,
+                    'message'      => 'Akun Google ini (' . $emailGoogle . ') sudah berhasil tertaut dengan akun Anda.',
+                ]);
+                exit;
             }
 
-            $uNameNow = (string)($currentUser['username'] ?? '');
-            try {
-                $pdo->prepare("UPDATE `siswa` SET `gmail` = ? WHERE `id_user` = ? OR `nisn` = ? OR `nis` = ?")
-                    ->execute([$emailGoogle, $userId, $uNameNow, $uNameNow]);
-            } catch (Throwable $eSyncSiswa) {
-                // Non-fatal jika user bukan siswa
+            // Hapus permintaan verifikasi lama yang belum selesai untuk user ini
+            $pdo->prepare("DELETE FROM `google_link_verifications` WHERE `user_id` = ? AND `verified_at` IS NULL")->execute([$userId]);
+
+            // Buat token verifikasi kriptografis baru (berlaku 60 menit)
+            $token     = bin2hex(random_bytes(32));
+            $expiresAt = date('Y-m-d H:i:s', time() + 3600);
+            $createdAt = date('Y-m-d H:i:s');
+            $ipAddress = $_SERVER['REMOTE_ADDR'] ?? '';
+
+            $ins = $pdo->prepare("INSERT INTO `google_link_verifications` (`user_id`, `email_google`, `google_id`, `token`, `expires_at`, `created_at`, `ip_address`) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $ins->execute([$userId, $emailGoogle, $googleId, $token, $expiresAt, $createdAt, $ipAddress]);
+
+            $baseUrl   = defined('BASE_URL') ? rtrim(BASE_URL, '/') : 'https://margo-one.ilmuna.my.id';
+            $verifyUrl = $baseUrl . '/verify-google.php?token=' . $token;
+
+            $userName = $currentUser['full_name'] ?? ($currentUser['username'] ?? 'Pengguna');
+            $mailRes  = ilmuna_send_google_verify_email($emailGoogle, $userName, $verifyUrl, 60);
+
+            if (empty($mailRes['success'])) {
+                $mailErrDetail = trim((string)($mailRes['message'] ?? ''));
+                echo json_encode([
+                    'success'      => true,
+                    'pending'      => true,
+                    'email_google' => $emailGoogle,
+                    'verify_url'   => $verifyUrl,
+                    'mail_failed'  => true,
+                    'mail_error'   => $mailErrDetail,
+                    'message'      => 'Tautan verifikasi penautan Google berhasil dibuat! Pengiriman email otomatis terkendala (' . ($mailErrDetail !== '' ? $mailErrDetail : 'SMTP/Relay') . '). Silakan klik tombol "Buka Link Verifikasi" untuk menyelesaikan penautan.',
+                    'action_url'   => $verifyUrl,
+                ]);
+                exit;
             }
 
-            if (function_exists('margo_sync_google_link_to_learn')) {
-                margo_sync_google_link_to_learn($pdo, $userId, $uNameNow, $emailGoogle, $googleId);
-            }
-
-            $_SESSION['user_email_google'] = $emailGoogle;
-
-            margo_sso_log_audit($pdo, 'google_linked', [
+            margo_sso_log_audit($pdo, 'google_link_requested', [
                 'user_id'     => $userId,
                 'http_status' => 200,
-                'detail'      => ['email_google' => $emailGoogle, 'verified_via' => 'google_oauth_gis'],
+                'detail'      => ['email_google' => $emailGoogle, 'sent_via' => $mailRes['sent_via'] ?? 'relay_smtp'],
             ]);
 
             echo json_encode([
                 'success'      => true,
-                'linked'       => true,
-                'pending'      => false,
+                'pending'      => true,
                 'email_google' => $emailGoogle,
-                'message'      => 'Akun Google (' . $emailGoogle . ') berhasil ditautkan secara instan! Anda sekarang dapat masuk menggunakan Google SSO.',
+                'sent_via'     => $mailRes['sent_via'] ?? 'GoogleRelay',
+                'message'      => 'Tautan konfirmasi telah dikirim ke ' . $emailGoogle . ' via Gmail Relay. Silakan periksa kotak masuk atau spam di Gmail Anda dan klik tombol konfirmasi untuk menyelesaikan penautan.',
             ]);
             exit;
         }

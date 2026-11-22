@@ -266,10 +266,21 @@ if (!function_exists('ilmuna_send_via_google_relay')) {
         }
 
         $httpRes = ilmuna_post_json_google_relay($relayUrl, $payloadArr, 25);
-        if (!empty($httpRes['ok']) && is_array($httpRes['json']) && !empty($httpRes['json']['success'])) {
+        if (!empty($httpRes['ok']) && is_array($httpRes['json'])) {
+            $json = $httpRes['json'];
+            if (!empty($json['success'])) {
+                return [
+                    'success'       => true,
+                    'message'       => $json['message'] ?? 'Email berhasil dikirim via Google Relay HTTPS!',
+                    'sent_via'      => $json['sent_via'] ?? 'GoogleRelay',
+                    'relay_version' => $json['relay_version'] ?? null,
+                ];
+            }
             return [
-                'success' => true,
-                'message' => $httpRes['json']['message'] ?? 'Email berhasil dikirim via Google Relay HTTPS!',
+                'success'       => false,
+                'message'       => 'Google Relay menolak: ' . (string)($json['message'] ?? 'error tidak diketahui'),
+                'auth_error'    => !empty($json['auth_error']),
+                'relay_version' => $json['relay_version'] ?? null,
             ];
         }
         return [
@@ -415,11 +426,13 @@ if (!function_exists('ilmuna_raw_smtp_send')) {
     {
         $cfg = ilmuna_smtp_config();
         $relayUrl = trim((string)($cfg['google_relay_url'] ?? ''));
+        $relayErr = '';
         if ($relayUrl !== '') {
             $relayRes = ilmuna_send_via_google_relay($relayUrl, $params);
             if (!empty($relayRes['success'])) {
                 return $relayRes;
             }
+            $relayErr = trim((string)($relayRes['message'] ?? ''));
         }
 
         $res = _ilmuna_single_socket_smtp($params);
@@ -448,10 +461,16 @@ if (!function_exists('ilmuna_raw_smtp_send')) {
             $subj     = '=?UTF-8?B?' . base64_encode($params['subject'] ?? '') . '?=';
             $hdr      = "MIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nFrom: {$fromName} <{$from}>\r\n";
             if (@mail($params['to'], $subj, $params['body'] ?? '', $hdr)) {
-                return ['success' => true, 'message' => 'Email berhasil dikirim via mail server hosting.'];
+                return ['success' => true, 'message' => 'Email berhasil dikirim via mail server hosting.', 'sent_via' => 'php_mail'];
             }
         }
 
+        if ($relayErr !== '') {
+            return [
+                'success' => false,
+                'message' => $relayErr . ' | Fallback SMTP: ' . (string)($res['message'] ?? 'gagal'),
+            ];
+        }
         return $res;
     }
 }

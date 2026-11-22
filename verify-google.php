@@ -82,8 +82,8 @@ if ($token === '' || strlen($token) < 20) {
                     // Abaikan jika tabel siswa tidak memiliki baris terkait
                 }
 
-                $updToken = $pdo->prepare("UPDATE google_link_verifications SET verified_at = NOW() WHERE id = ?");
-                $updToken->execute([(int)$verif['id']]);
+                $updToken = $pdo->prepare("UPDATE google_link_verifications SET verified_at = ? WHERE id = ?");
+                $updToken->execute([date('Y-m-d H:i:s'), (int)$verif['id']]);
 
                 $pdo->commit();
 
