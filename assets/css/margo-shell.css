@@ -1193,6 +1193,63 @@ body.margo-shell-body {
     filter: brightness(2);
 }
 
+.margo-hero-banner--16x9 {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    padding: clamp(24px, 3.6vw, 44px) clamp(26px, 4vw, 48px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(20px, 3vw, 40px);
+}
+
+.margo-hero-banner--16x9 .margo-hero-body {
+    flex: 1 1 56%;
+    max-width: 560px;
+}
+
+.margo-hero-banner--16x9 .margo-hero-title {
+    font-size: clamp(1.45rem, 2.3vw, 2.15rem);
+    margin: 0 0 12px;
+    line-height: 1.18;
+    letter-spacing: -0.02em;
+}
+
+.margo-hero-banner--16x9 .margo-hero-desc {
+    font-size: clamp(13px, 1.15vw, 15px);
+    margin: 0;
+    color: rgba(255, 255, 255, 0.90);
+    line-height: 1.65;
+}
+
+.margo-hero-logo-showcase {
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(16px, 2.2vw, 26px) clamp(22px, 3vw, 34px);
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.96);
+    border: 1.5px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 20px 40px -12px rgba(15, 29, 47, 0.34);
+}
+
+.margo-hero-brand-img {
+    width: clamp(145px, 18vw, 240px);
+    height: auto;
+    object-fit: contain;
+    display: block;
+}
+
+.margo-hero-banner--16x9 .margo-hero-gunungan {
+    height: 78%;
+    right: 16px;
+    bottom: -14px;
+    opacity: 0.12;
+}
+
 .margo-hero-body {
     position: relative;
     z-index: 2;
@@ -1850,6 +1907,13 @@ body.margo-shell-body {
         padding: 18px;
     }
 
+    .margo-hero-banner--16x9 {
+        aspect-ratio: 16 / 9;
+        flex-direction: row;
+        align-items: center;
+        padding: 22px 24px;
+    }
+
     .margo-hero-aside {
         width: 100%;
     }
@@ -1883,6 +1947,23 @@ body.margo-shell-body {
 
     .margo-hero-title {
         font-size: 1.2rem;
+    }
+
+    .margo-hero-banner--16x9 {
+        aspect-ratio: auto;
+        flex-direction: column-reverse;
+        align-items: flex-start;
+        padding: 20px 18px;
+        gap: 14px;
+    }
+
+    .margo-hero-logo-showcase {
+        padding: 12px 18px;
+        border-radius: 16px;
+    }
+
+    .margo-hero-brand-img {
+        width: 140px;
     }
 
     .margo-login-cards {

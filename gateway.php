@@ -158,12 +158,18 @@ require_once BASE_PATH . '/includes/header.php';
 ?>
 
 <!-- ========================================================================= -->
-<!-- 1. ECOSYSTEM HERO BANNER (RINGKAS & BERSIH)                               -->
+<!-- 1. ECOSYSTEM HERO BANNER (RASIO 16:9 LANDSCAPE · DESKRIPSI + LOGO MARGO)  -->
 <!-- ========================================================================= -->
-<section id="heroContent" class="margo-hero-banner" style="padding:20px 24px;">
+<section id="heroContent" class="margo-hero-banner margo-hero-banner--16x9">
     <img src="<?= htmlspecialchars($gununganUrl, ENT_QUOTES, 'UTF-8') ?>" alt="" class="margo-hero-gunungan" aria-hidden="true">
     <div class="margo-hero-body">
-        <h1 class="margo-hero-title" style="margin:0;">Selamat datang, <?= htmlspecialchars($nama, ENT_QUOTES, 'UTF-8') ?></h1>
+        <h1 class="margo-hero-title">Selamat datang, <?= htmlspecialchars($nama, ENT_QUOTES, 'UTF-8') ?></h1>
+        <p class="margo-hero-desc">
+            Portal terpadu Single Sign-On (SSO) ekosistem digital Ilmuna. Akses seluruh aplikasi pembelajaran, pantau agenda akademik, dan kelola keamanan identitas akun Anda secara terpusat dari satu pintu.
+        </p>
+    </div>
+    <div class="margo-hero-logo-showcase">
+        <img src="<?= htmlspecialchars(APP_LOGO_LANDSCAPE_URL, ENT_QUOTES, 'UTF-8') ?>" alt="Margo One — Ilmuna SSO" class="margo-hero-brand-img">
     </div>
 </section>
 
