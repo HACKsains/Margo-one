@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /login
+Allow: /assets/images/
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /includes/
+Disallow: /sdk/
+Disallow: /authorize
+Disallow: /logout
+Disallow: /profile
+Disallow: /gateway
+Disallow: /agenda
+Disallow: /verify-google
+Disallow: /database.php
+Disallow: /portal-data.php
+
+Sitemap: https://margo-one.ilmuna.my.id/sitemap.xml

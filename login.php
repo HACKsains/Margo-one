@@ -284,9 +284,17 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="referrer" content="strict-origin-when-cross-origin">
-    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
 
-    <title>Masuk — <?= htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8') ?></title>
+    <title><?= $targetClient ? ('Masuk ke ' . htmlspecialchars((string)$targetClient['client_name'], ENT_QUOTES, 'UTF-8') . ' — ' . htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8')) : ('Masuk — ' . htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8')) ?></title>
+<?= renderSeoMeta([
+    'title'       => $targetClient ? ('Masuk ke ' . (string)$targetClient['client_name'] . ' — ' . APP_NAME) : ('Masuk — ' . APP_NAME),
+    'description' => $ctxDesc,
+    'canonical'   => 'https://' . APP_DOMAIN . '/login',
+    'robots'      => ($targetClient || !empty($_GET['resume']) || !empty($_GET['client_id']) || !empty($_GET['msg']))
+        ? 'noindex, nofollow'
+        : 'index, follow, max-image-preview:large, max-snippet:-1',
+    'json_ld'     => !$targetClient,
+]) ?>
     <?= renderFavicon() ?>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
