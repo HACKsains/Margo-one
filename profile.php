@@ -740,6 +740,58 @@ $extraHead = '<style>
 .row-smooth-in{animation:rowSmoothIn .35s cubic-bezier(.16,1,.3,1) forwards}
 .row-smooth-out{animation:rowSmoothOut .28s ease forwards;pointer-events:none}
 .row-flash{animation:rowFlash 1.4s ease-out forwards}
+
+/* ============================================================================
+ * MODAL CROP FOTO PROFIL 1:1 (PURE HTML5 CANVAS · LUMINA GOLD)
+ * ============================================================================ */
+.mprof-crop-backdrop{
+    position:fixed;inset:0;z-index:9990;background:rgba(15,23,42,0.72);
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;padding:16px;
+}
+.mprof-crop-backdrop.is-open{display:flex;animation:rowSmoothIn .22s ease}
+.mprof-crop-dialog{
+    width:100%;max-width:460px;background:#FFFFFF;border:1px solid #E2E8F0;
+    border-radius:20px;box-shadow:0 24px 60px rgba(15,23,42,0.34);overflow:hidden;
+    display:flex;flex-direction:column;
+}
+.mprof-crop-head{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:15px 18px;border-bottom:1px solid #F1F5F9;background:#F8FAFC;
+}
+.mprof-crop-title{
+    margin:0;font-family:"Outfit",sans-serif;font-size:15.5px;font-weight:800;
+    color:#1D3B5E;display:inline-flex;align-items:center;gap:8px;
+}
+.mprof-crop-close{
+    width:34px;height:34px;border-radius:10px;border:1px solid #E2E8F0;background:#FFF;
+    color:#64748B;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.mprof-crop-close:hover{background:#F1F5F9;color:#1D3B5E}
+.mprof-crop-body{padding:18px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.mprof-crop-stage{
+    position:relative;width:288px;height:288px;max-width:100%;aspect-ratio:1/1;
+    border-radius:16px;overflow:hidden;background:#0F172A;cursor:grab;
+    touch-action:none;user-select:none;-webkit-user-select:none;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+.mprof-crop-stage:active{cursor:grabbing}
+.mprof-crop-stage canvas{width:100%;height:100%;display:block}
+.mprof-crop-hint{font-size:12px;color:#64748B;text-align:center;margin:0}
+.mprof-crop-controls{width:100%;display:flex;flex-direction:column;gap:10px}
+.mprof-crop-zoom-row{display:flex;align-items:center;gap:10px}
+.mprof-crop-zoom-row input[type="range"]{flex:1;accent-color:#0D7A87;cursor:pointer}
+.mprof-crop-tool-row{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.mprof-crop-tool-btn{
+    appearance:none;border:1px solid #CBD5E1;background:#F8FAFC;color:#1D3B5E;
+    border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;
+    display:inline-flex;align-items:center;gap:5px;font-family:inherit;
+}
+.mprof-crop-tool-btn:hover{border-color:#0D7A87;color:#0D7A87;background:rgba(13,122,135,0.06)}
+.mprof-crop-foot{
+    display:flex;align-items:center;justify-content:flex-end;gap:10px;
+    padding:14px 18px;border-top:1px solid #F1F5F9;background:#F8FAFC;
+}
 </style>';
 
 $googleOAuthCfg = getGoogleOAuthConfig();
@@ -822,7 +874,7 @@ require_once BASE_PATH . '/includes/header.php';
                             </button>
                         <?php endif; ?>
                     </div>
-                    <p class="upload-hint">Format JPG/PNG/WebP maks 3MB. Rasio 1:1.</p>
+                    <p class="upload-hint">Format JPG/PNG/WebP (dapat dipotong 1:1 sebelum disimpan).</p>
                 </div>
             </div>
         </div>
@@ -921,6 +973,55 @@ require_once BASE_PATH . '/includes/header.php';
             </div>
         </div>
     </section>
+</div>
+
+<!-- MODAL CROP FOTO PROFIL 1:1 -->
+<div class="mprof-crop-backdrop" id="mprofCropModal" role="dialog" aria-modal="true" aria-labelledby="mprofCropTitle">
+    <div class="mprof-crop-dialog">
+        <div class="mprof-crop-head">
+            <h3 class="mprof-crop-title" id="mprofCropTitle">
+                <iconify-icon icon="solar:crop-minimalistic-bold" style="color:#0D7A87;font-size:19px;"></iconify-icon>
+                <span>Potong Foto Profil (1:1)</span>
+            </h3>
+            <button type="button" class="mprof-crop-close" id="btnCropClose" aria-label="Tutup">
+                <iconify-icon icon="solar:close-circle-bold" width="20"></iconify-icon>
+            </button>
+        </div>
+        <div class="mprof-crop-body">
+            <div class="mprof-crop-stage" id="mprofCropStage">
+                <canvas id="mprofCropCanvas" width="512" height="512"></canvas>
+            </div>
+            <p class="mprof-crop-hint">Geser foto untuk mengatur posisi, gunakan penggeser atau gulir mouse untuk zoom.</p>
+            <div class="mprof-crop-controls">
+                <div class="mprof-crop-zoom-row">
+                    <iconify-icon icon="solar:magnifer-zoom-out-bold" width="18" style="color:#64748B;"></iconify-icon>
+                    <input type="range" id="mprofCropZoom" min="1" max="3.5" step="0.02" value="1" aria-label="Zoom foto">
+                    <iconify-icon icon="solar:magnifer-zoom-in-bold" width="18" style="color:#0D7A87;"></iconify-icon>
+                </div>
+                <div class="mprof-crop-tool-row">
+                    <button type="button" class="mprof-crop-tool-btn" id="btnCropRotL">
+                        <iconify-icon icon="solar:restart-bold" width="15" style="transform:scaleX(-1);"></iconify-icon>
+                        <span>Putar Kiri</span>
+                    </button>
+                    <button type="button" class="mprof-crop-tool-btn" id="btnCropRotR">
+                        <iconify-icon icon="solar:restart-bold" width="15"></iconify-icon>
+                        <span>Putar Kanan</span>
+                    </button>
+                    <button type="button" class="mprof-crop-tool-btn" id="btnCropReset">
+                        <iconify-icon icon="solar:refresh-bold" width="15"></iconify-icon>
+                        <span>Reset</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="mprof-crop-foot">
+            <button type="button" class="mprof-btn mprof-btn--ghost" id="btnCropCancel">Batal</button>
+            <button type="button" class="mprof-btn mprof-btn--primary" id="btnCropSave">
+                <iconify-icon icon="solar:check-circle-bold" width="17"></iconify-icon>
+                <span>Simpan Foto Profil</span>
+            </button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -1037,23 +1138,141 @@ require_once BASE_PATH . '/includes/header.php';
         }
     }
 
-    window.handlePhotoUpload = async function (input) {
-        if (!input || !input.files || !input.files[0]) return;
-        var file = input.files[0];
+    // -------------------------------------------------------------------------
+    // INTERACTIVE 1:1 IMAGE CROPPER MODAL (PURE HTML5 CANVAS)
+    // -------------------------------------------------------------------------
+    var CROP_STATE = {
+        img: null,
+        objectUrl: null,
+        zoom: 1,
+        rotation: 0,
+        offsetX: 0,
+        offsetY: 0,
+        dragging: false,
+        startX: 0,
+        startY: 0,
+        baseScale: 1
+    };
 
-        if (file.size > 3 * 1024 * 1024) {
-            notifyToast('error', 'Ukuran Terlalu Besar', 'Maksimal ukuran foto adalah 3MB.');
-            input.value = '';
-            return;
+    function getCropMetrics() {
+        var canvas = document.getElementById('mprofCropCanvas');
+        var size = canvas ? canvas.width : 512;
+        if (!CROP_STATE.img) return { size: size, drawW: size, drawH: size };
+        var rotRad = ((CROP_STATE.rotation % 360) + 360) % 360;
+        var swap = (rotRad === 90 || rotRad === 270);
+        var iw = swap ? CROP_STATE.img.naturalHeight : CROP_STATE.img.naturalWidth;
+        var ih = swap ? CROP_STATE.img.naturalWidth : CROP_STATE.img.naturalHeight;
+        var baseScale = Math.max(size / iw, size / ih);
+        var scale = baseScale * CROP_STATE.zoom;
+        return {
+            size: size,
+            iw: iw,
+            ih: ih,
+            scale: scale,
+            drawW: iw * scale,
+            drawH: ih * scale
+        };
+    }
+
+    function clampCropOffsets() {
+        var m = getCropMetrics();
+        var maxX = Math.max(0, (m.drawW - m.size) / 2);
+        var maxY = Math.max(0, (m.drawH - m.size) / 2);
+        if (CROP_STATE.offsetX > maxX) CROP_STATE.offsetX = maxX;
+        if (CROP_STATE.offsetX < -maxX) CROP_STATE.offsetX = -maxX;
+        if (CROP_STATE.offsetY > maxY) CROP_STATE.offsetY = maxY;
+        if (CROP_STATE.offsetY < -maxY) CROP_STATE.offsetY = -maxY;
+    }
+
+    function renderCropCanvas(forExport) {
+        var canvas = document.getElementById('mprofCropCanvas');
+        if (!canvas || !CROP_STATE.img) return;
+        var ctx = canvas.getContext('2d');
+        var m = getCropMetrics();
+        clampCropOffsets();
+
+        ctx.clearRect(0, 0, m.size, m.size);
+        ctx.fillStyle = '#0F172A';
+        ctx.fillRect(0, 0, m.size, m.size);
+
+        ctx.save();
+        ctx.translate(m.size / 2 + CROP_STATE.offsetX, m.size / 2 + CROP_STATE.offsetY);
+        ctx.rotate((CROP_STATE.rotation * Math.PI) / 180);
+        ctx.scale(m.scale, m.scale);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(
+            CROP_STATE.img,
+            -CROP_STATE.img.naturalWidth / 2,
+            -CROP_STATE.img.naturalHeight / 2
+        );
+        ctx.restore();
+
+        if (!forExport) {
+            // Overlay gelap di luar lingkaran 1:1 + garis panduan tipis
+            ctx.save();
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.52)';
+            ctx.beginPath();
+            ctx.rect(0, 0, m.size, m.size);
+            ctx.arc(m.size / 2, m.size / 2, m.size * 0.46, 0, Math.PI * 2, true);
+            ctx.fill('evenodd');
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(m.size / 2, m.size / 2, m.size * 0.46, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
         }
+    }
 
+    function closeCropModal() {
+        var modal = document.getElementById('mprofCropModal');
+        if (modal) modal.classList.remove('is-open');
+        if (CROP_STATE.objectUrl) {
+            try { URL.revokeObjectURL(CROP_STATE.objectUrl); } catch (e) {}
+            CROP_STATE.objectUrl = null;
+        }
+        CROP_STATE.img = null;
+        var inp = document.getElementById('profilePhotoInput');
+        if (inp) inp.value = '';
+    }
+
+    function openCropModalWithFile(file) {
+        if (CROP_STATE.objectUrl) {
+            try { URL.revokeObjectURL(CROP_STATE.objectUrl); } catch (e) {}
+        }
+        var url = URL.createObjectURL(file);
+        CROP_STATE.objectUrl = url;
+        var img = new Image();
+        img.onload = function () {
+            CROP_STATE.img = img;
+            CROP_STATE.zoom = 1;
+            CROP_STATE.rotation = 0;
+            CROP_STATE.offsetX = 0;
+            CROP_STATE.offsetY = 0;
+            var zInp = document.getElementById('mprofCropZoom');
+            if (zInp) zInp.value = '1';
+            var modal = document.getElementById('mprofCropModal');
+            if (modal) modal.classList.add('is-open');
+            renderCropCanvas(false);
+        };
+        img.onerror = function () {
+            closeCropModal();
+            notifyToast('error', 'Gambar Tidak Valid', 'File gambar tidak dapat dibaca. Pilih file JPG, PNG, atau WebP.');
+        };
+        img.src = url;
+    }
+
+    async function uploadCroppedBlob(blob) {
         var spinner = document.getElementById('photoSpinner');
         if (spinner) spinner.classList.add('active');
 
+        var ext = blob.type === 'image/webp' ? 'webp' : (blob.type === 'image/png' ? 'png' : 'jpg');
         var fd = new FormData();
         fd.append('api_action', 'upload_photo');
         fd.append('csrf_token', CSRF);
-        fd.append('photo', file);
+        fd.append('photo', blob, 'profile_cropped.' + ext);
 
         try {
             var response = await fetch(ENDPOINT, {
@@ -1079,8 +1298,142 @@ require_once BASE_PATH . '/includes/header.php';
             notifyToast('error', 'Kesalahan Jaringan', 'Terjadi kesalahan jaringan saat mengunggah foto.');
         } finally {
             if (spinner) spinner.classList.remove('active');
-            input.value = '';
         }
+    }
+
+    (function bindCropperEvents() {
+        var stage   = document.getElementById('mprofCropStage');
+        var zoomEl  = document.getElementById('mprofCropZoom');
+        var btnRotL = document.getElementById('btnCropRotL');
+        var btnRotR = document.getElementById('btnCropRotR');
+        var btnRst  = document.getElementById('btnCropReset');
+        var btnCan  = document.getElementById('btnCropCancel');
+        var btnCls  = document.getElementById('btnCropClose');
+        var btnSave = document.getElementById('btnCropSave');
+        var modal   = document.getElementById('mprofCropModal');
+
+        if (!stage) return;
+
+        function getPoint(e) {
+            if (e.touches && e.touches.length) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function onStart(e) {
+            if (!CROP_STATE.img) return;
+            e.preventDefault();
+            var pt = getPoint(e);
+            CROP_STATE.dragging = true;
+            CROP_STATE.startX = pt.x;
+            CROP_STATE.startY = pt.y;
+        }
+
+        function onMove(e) {
+            if (!CROP_STATE.dragging || !CROP_STATE.img) return;
+            e.preventDefault();
+            var pt = getPoint(e);
+            var rect = stage.getBoundingClientRect();
+            var ratio = rect.width > 0 ? (512 / rect.width) : 1;
+            CROP_STATE.offsetX += (pt.x - CROP_STATE.startX) * ratio;
+            CROP_STATE.offsetY += (pt.y - CROP_STATE.startY) * ratio;
+            CROP_STATE.startX = pt.x;
+            CROP_STATE.startY = pt.y;
+            renderCropCanvas(false);
+        }
+
+        function onEnd() {
+            CROP_STATE.dragging = false;
+        }
+
+        stage.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+        stage.addEventListener('touchstart', onStart, { passive: false });
+        window.addEventListener('touchmove', onMove, { passive: false });
+        window.addEventListener('touchend', onEnd);
+
+        stage.addEventListener('wheel', function (e) {
+            if (!CROP_STATE.img) return;
+            e.preventDefault();
+            var delta = e.deltaY < 0 ? 0.12 : -0.12;
+            CROP_STATE.zoom = Math.min(3.5, Math.max(1, CROP_STATE.zoom + delta));
+            if (zoomEl) zoomEl.value = String(CROP_STATE.zoom.toFixed(2));
+            renderCropCanvas(false);
+        }, { passive: false });
+
+        if (zoomEl) {
+            zoomEl.addEventListener('input', function () {
+                CROP_STATE.zoom = parseFloat(zoomEl.value) || 1;
+                renderCropCanvas(false);
+            });
+        }
+        if (btnRotL) {
+            btnRotL.addEventListener('click', function () {
+                CROP_STATE.rotation = (CROP_STATE.rotation - 90) % 360;
+                renderCropCanvas(false);
+            });
+        }
+        if (btnRotR) {
+            btnRotR.addEventListener('click', function () {
+                CROP_STATE.rotation = (CROP_STATE.rotation + 90) % 360;
+                renderCropCanvas(false);
+            });
+        }
+        if (btnRst) {
+            btnRst.addEventListener('click', function () {
+                CROP_STATE.zoom = 1;
+                CROP_STATE.rotation = 0;
+                CROP_STATE.offsetX = 0;
+                CROP_STATE.offsetY = 0;
+                if (zoomEl) zoomEl.value = '1';
+                renderCropCanvas(false);
+            });
+        }
+        if (btnCan) btnCan.addEventListener('click', closeCropModal);
+        if (btnCls) btnCls.addEventListener('click', closeCropModal);
+        if (modal) {
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) closeCropModal();
+            });
+        }
+        if (btnSave) {
+            btnSave.addEventListener('click', function () {
+                if (!CROP_STATE.img) return;
+                var canvas = document.getElementById('mprofCropCanvas');
+                btnSave.disabled = true;
+                // Render bersih tanpa overlay lingkaran untuk ekspor 512x512
+                renderCropCanvas(true);
+                canvas.toBlob(function (blob) {
+                    btnSave.disabled = false;
+                    closeCropModal();
+                    if (!blob) {
+                        notifyToast('error', 'Gagal Memotong', 'Tidak dapat memproses gambar hasil potongan.');
+                        return;
+                    }
+                    uploadCroppedBlob(blob);
+                }, 'image/jpeg', 0.92);
+            });
+        }
+    })();
+
+    window.handlePhotoUpload = function (input) {
+        if (!input || !input.files || !input.files[0]) return;
+        var file = input.files[0];
+
+        if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type || '')) {
+            notifyToast('error', 'Format Tidak Didukung', 'Harap pilih gambar JPG, PNG, WebP, atau GIF.');
+            input.value = '';
+            return;
+        }
+        if (file.size > 12 * 1024 * 1024) {
+            notifyToast('error', 'Ukuran Terlalu Besar', 'Maksimal ukuran file asli adalah 12MB.');
+            input.value = '';
+            return;
+        }
+
+        openCropModalWithFile(file);
     };
 
     window.confirmDeletePhoto = async function () {
