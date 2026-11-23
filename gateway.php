@@ -111,6 +111,11 @@ try {
     ")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($extRows as $ex) {
         $exUrl = trim((string)$ex['app_url']);
+        $exUrlNorm = strtolower(trim((string)parse_url($exUrl, PHP_URL_PATH), '/'));
+        if ($exUrlNorm === 'agenda' || substr($exUrlNorm, -7) === '/agenda' ||
+            strpos($exUrlNorm, 'api/sso/jwks') !== false) {
+            continue;
+        }
         $isExtUrl = (bool)preg_match('#^https?://#i', $exUrl);
         $resolvedUrl = $isExtUrl ? $exUrl : (rtrim(BASE_URL, '/') . '/' . ltrim($exUrl, '/'));
         $exIconClean = !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold';

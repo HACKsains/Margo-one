@@ -246,7 +246,13 @@ try {
         ")->fetchAll(PDO::FETCH_ASSOC);
         $others = [];
         foreach ($extRows as $ex) {
-            $resolved = margo_portal_resolve_url($ex['app_url']);
+            $rawExUrl = trim((string)$ex['app_url']);
+            $exUrlNorm = strtolower(trim((string)parse_url($rawExUrl, PHP_URL_PATH), '/'));
+            if ($exUrlNorm === 'agenda' || substr($exUrlNorm, -7) === '/agenda' ||
+                strpos($exUrlNorm, 'api/sso/jwks') !== false) {
+                continue;
+            }
+            $resolved = margo_portal_resolve_url($rawExUrl);
             $isExtUrl = (bool)preg_match('#^https?://#i', (string)$ex['app_url']);
             $exIconClean = !empty($ex['app_icon']) ? (string)$ex['app_icon'] : 'solar:widget-4-bold';
             if ($exIconClean === 'solar:globe-bold') {
