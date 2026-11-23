@@ -1218,7 +1218,7 @@ $adminPageMeta = [
     'clients'  => ['title' => 'Aplikasi Klien & Kunci SSO', 'icon' => 'solar:key-minimalistic-square-2-bold'],
     'sessions' => ['title' => 'Sesi Aktif Global',          'icon' => 'solar:devices-bold'],
     'users'    => ['title' => 'Identitas & Multi-Role',     'icon' => 'solar:users-group-rounded-bold'],
-    'jwks'     => ['title' => 'JWKS, SDK & Audit Log',      'icon' => 'solar:history-bold'],
+    'jwks'     => ['title' => 'JWKS, SDK & OAuth',          'icon' => 'solar:key-square-2-bold'],
     'portal'   => ['title' => 'Kelola Portal & Agenda',     'icon' => 'solar:calendar-add-bold'],
 ];
 $pageTitle = $adminPageMeta[$initialTab]['title'];
@@ -1519,38 +1519,6 @@ require_once BASE_PATH . '/includes/header.php';
                     </button>
                 </div>
             </form>
-        </div>
-
-        <div class="ssoadm-card" style="padding:0;overflow:hidden;">
-            <div class="ssoadm-card-head" style="padding:14px 18px;margin-bottom:0;">
-                <h3 class="ssoadm-card-title">
-                    <iconify-icon icon="solar:history-bold" style="color:#0D7A87;font-size:20px;"></iconify-icon>
-                    Audit Log Keamanan SSO (100 Event Terakhir)
-                </h3>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    <input type="text" id="auditSearchInput" class="ssoadm-input" style="width:220px;min-height:36px;padding:6px 10px;" placeholder="Filter event / user / IP...">
-                    <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.load()">
-                        <iconify-icon icon="solar:refresh-bold"></iconify-icon> Segarkan
-                    </button>
-                </div>
-            </div>
-            <div class="table-responsive">
-                <table class="lms-table ilmuna-table-stack">
-                    <thead>
-                        <tr>
-                            <th>Waktu</th>
-                            <th>Event</th>
-                            <th>Status</th>
-                            <th>Pengguna / Klien</th>
-                            <th>IP</th>
-                            <th>Detail</th>
-                        </tr>
-                    </thead>
-                    <tbody id="auditLogsBody">
-                        <tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Belum ada log audit.</td></tr>
-                    </tbody>
-                </table>
-            </div>
         </div>
     </section>
 
@@ -2583,40 +2551,18 @@ require_once BASE_PATH . '/includes/header.php';
 
         document.getElementById('txtJwksUrl').textContent = (STATE.data && STATE.data.endpoints && STATE.data.endpoints.jwks) || '';
 
-        document.getElementById('jwksKeysList').innerHTML = keys.map(function (k) {
-            var badge = Number(k.is_primary) === 1
-                ? '<span class="ssoadm-badge ssoadm-badge--ok">PRIMARY SIGNING</span>'
-                : (Number(k.is_active) === 1 ? '<span class="ssoadm-badge ssoadm-badge--warn">GRACE PERIOD</span>' : '<span class="ssoadm-badge ssoadm-badge--err">NONAKTIF</span>');
-            return '<div style="padding:10px 12px;border:1px solid #E2E8F0;border-radius:11px;background:#F8FAFC;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
-                + '<div><strong style="font-family:var(--font-mono);font-size:12.5px;color:#0F172A;">' + esc(k.kid) + '</strong>'
-                + '<div style="font-size:11px;color:#64748B;">SHA256: ' + esc((k.fingerprint || '').slice(0, 24)) + '… · Dibuat: ' + esc(k.created_at) + '</div></div>'
-                + badge + '</div>';
-        }).join('');
-
-        var q = (document.getElementById('auditSearchInput').value || '').toLowerCase().trim();
-        var filtered = logs.filter(function (l) {
-            if (q === '') return true;
-            var hay = (l.event_type + ' ' + (l.username || '') + ' ' + (l.client_name || '') + ' ' + (l.ip_address || '') + ' ' + (l.detail_json || '')).toLowerCase();
-            return hay.indexOf(q) !== -1;
-        });
-
-        var tb = document.getElementById('auditLogsBody');
-        if (!filtered.length) {
-            tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#64748B;">Belum ada catatan audit log.</td></tr>';
-            return;
+        var jwksListEl = document.getElementById('jwksKeysList');
+        if (jwksListEl) {
+            jwksListEl.innerHTML = keys.map(function (k) {
+                var badge = Number(k.is_primary) === 1
+                    ? '<span class="ssoadm-badge ssoadm-badge--ok">PRIMARY SIGNING</span>'
+                    : (Number(k.is_active) === 1 ? '<span class="ssoadm-badge ssoadm-badge--warn">GRACE PERIOD</span>' : '<span class="ssoadm-badge ssoadm-badge--err">NONAKTIF</span>');
+                return '<div style="padding:10px 12px;border:1px solid #E2E8F0;border-radius:11px;background:#F8FAFC;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">'
+                    + '<div><strong style="font-family:var(--font-mono);font-size:12.5px;color:#0F172A;">' + esc(k.kid) + '</strong>'
+                    + '<div style="font-size:11px;color:#64748B;">SHA256: ' + esc((k.fingerprint || '').slice(0, 24)) + '… · Dibuat: ' + esc(k.created_at) + '</div></div>'
+                    + badge + '</div>';
+            }).join('');
         }
-        tb.innerHTML = filtered.map(function (l) {
-            var st = Number(l.http_status);
-            var stCls = st < 300 ? 'ssoadm-badge--ok' : (st < 400 ? 'ssoadm-badge--teal' : 'ssoadm-badge--err');
-            return '<tr>'
-                + '<td data-label="Waktu" style="white-space:nowrap;font-size:12px;">' + esc(l.created_at) + '</td>'
-                + '<td data-label="Event"><span class="ssoadm-badge ssoadm-badge--navy">' + esc(l.event_type) + '</span></td>'
-                + '<td data-label="Status"><span class="ssoadm-badge ' + stCls + '">' + esc(l.http_status) + '</span></td>'
-                + '<td data-label="Aktor">' + esc(l.username ? '@' + l.username : '-') + (l.client_name ? '<div style="font-size:11px;color:#64748B;">' + esc(l.client_name) + '</div>' : '') + '</td>'
-                + '<td data-label="IP" style="font-family:var(--font-mono);font-size:12px;">' + esc(l.ip_address) + '</td>'
-                + '<td data-label="Detail" style="font-family:var(--font-mono);font-size:11px;color:#475569;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(l.detail_json || '') + '">' + esc(l.detail_json || '-') + '</td>'
-                + '</tr>';
-        }).join('');
     }
 
     function renderPortal() {
@@ -3579,7 +3525,8 @@ require_once BASE_PATH . '/includes/header.php';
         if (cSearch) cSearch.addEventListener('input', renderClients);
         document.getElementById('sessSearchInput').addEventListener('input', renderSessions);
         document.getElementById('userSearchInput').addEventListener('input', renderUsers);
-        document.getElementById('auditSearchInput').addEventListener('input', renderJwksAndLogs);
+        var auditSearchEl = document.getElementById('auditSearchInput');
+        if (auditSearchEl) auditSearchEl.addEventListener('input', renderJwksAndLogs);
         SSOADM.load(true);
     });
 })();

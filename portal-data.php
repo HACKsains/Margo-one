@@ -191,20 +191,6 @@ try {
     // ------------------------------------------------------------------
     if ($resource === 'apps') {
         $integrated = [];
-        if (hasRole('admin')) {
-            $integrated[] = [
-                'id'          => 0,
-                'slug'        => 'margo-admin',
-                'name'        => 'Panel Kontrol Admin SSO',
-                'description' => 'Kelola klien OAuth2, Public/Private Key, sesi global, agenda & audit log',
-                'url'         => BASE_URL . '/dashboard/admin/',
-                'icon'        => 'solar:shield-keyhole-bold',
-                'logo'        => margo_resolve_app_logo_url('', '', 'margo-admin'),
-                'badge'       => 'ADMIN',
-                'is_admin'    => true,
-                'external'    => false,
-            ];
-        }
 
         $freshAllowedApps = $currentUser['allowed_apps'] ?? null;
         try {

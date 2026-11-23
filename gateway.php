@@ -52,21 +52,6 @@ $hostNowHero = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
 $isLocalHero = (strpos($hostNowHero, 'localhost') === 0 || strpos($hostNowHero, '127.0.0.1') === 0);
 $learnLaunchUrl = $isLocalHero ? 'http://localhost/learn/login.php?sso_login=1' : 'https://learn.ilmuna.my.id/login.php?sso_login=1';
 
-if (hasRole('admin')) {
-    $initialIntegratedApps[] = [
-        'id'          => 0,
-        'slug'        => 'margo-admin',
-        'name'        => 'Panel Kontrol Admin SSO',
-        'description' => 'Kelola klien OAuth2, Public/Private Key, sesi global, agenda & audit log',
-        'url'         => BASE_URL . '/dashboard/admin/',
-        'icon'        => 'solar:shield-keyhole-bold',
-        'logo'        => margo_resolve_app_logo_url('', '', 'margo-admin'),
-        'badge'       => 'ADMIN',
-        'is_admin'    => true,
-        'external'    => false,
-    ];
-}
-
 try {
     $stCnt = $pdo->prepare("SELECT COUNT(*) FROM sso_sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW()");
     $stCnt->execute([(int)$currentUser['id']]);
@@ -268,6 +253,7 @@ require_once BASE_PATH . '/includes/header.php';
     </div>
 </section>
 
+<?php if (!hasRole('admin')): ?>
 <!-- ========================================================================= -->
 <!-- 3. AKTIVITAS & LOGIN TERAKHIR (PAGINATED AJAX — ZERO RELOAD)              -->
 <!-- ========================================================================= -->
@@ -303,6 +289,7 @@ require_once BASE_PATH . '/includes/header.php';
         <div id="activityPageBtns" class="margo-page-btns"></div>
     </div>
 </section>
+<?php endif; ?>
 
 <script>
 (function () {
@@ -469,7 +456,9 @@ require_once BASE_PATH . '/includes/header.php';
 
     document.addEventListener('DOMContentLoaded', function () {
         renderAppsFiltered();
-        loadActivity(1);
+        if (document.getElementById('activitySection')) {
+            loadActivity(1);
+        }
 
         if (window.location.search.indexOf('section=apps') !== -1 || window.location.hash === '#apps-container') {
             var appsEl = document.getElementById('apps-container');
