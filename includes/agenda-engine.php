@@ -361,7 +361,7 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
     $agInfo = margo_agenda_ensure_schema($ssoPdo);
     /** @var PDO $apdo */
     $apdo      = $agInfo['pdo'];
-    $agendaDb  = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$agInfo['db_name']);
+    $agendaDb  = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$agInfo['db_name']);
     $result['agenda_db'] = $agendaDb;
 
     // A. Pasang Trigger Proteksi Read-Only untuk Agenda Kaldik di tabel `agendas`
@@ -407,7 +407,7 @@ function margo_agenda_install_kaldik_triggers(PDO $ssoPdo = null)
 
     /** @var PDO $lpdo */
     $lpdo    = $learnInfo['pdo'];
-    $learnDb = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$learnInfo['db_name']);
+    $learnDb = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$learnInfo['db_name']);
     $result['learn_db'] = $learnDb;
 
     try {
@@ -585,7 +585,7 @@ function margo_agenda_backfill_from_kaldik(PDO $ssoPdo = null)
                       AND TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
                 ")->fetchAll(PDO::FETCH_COLUMN);
                 foreach ($altSchemas as $sch) {
-                    $schClean = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$sch);
+                    $schClean = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$sch);
                     if ($schClean === '' || $schClean === $sourceDbUsed) {
                         continue;
                     }

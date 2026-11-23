@@ -175,7 +175,8 @@ function margo_sso_decrypt_secret($encoded)
 
     $candidateSeeds = [
         null,
-        defined('DB_NAME') ? DB_NAME : 'uofruaju_margo_one',
+        defined('DB_NAME') ? DB_NAME : 'uofruaju_margo-one',
+        'uofruaju_margo-one',
         'uofruaju_margo_one',
         'uofruaju_learn_ilmuna',
     ];
@@ -1663,8 +1664,8 @@ function margo_sso_record_cross_db_revocation(PDO $pdo, $userId, $ssoSessionId =
         // Non-fatal
     }
 
-    // 2. Catat langsung ke DB uofruaju_learn_ilmuna bila berada di server MySQL yang sama (Laragon / cPanel)
-    $siblingDbs = ['uofruaju_learn_ilmuna', 'uofruaju_margo_one'];
+    // 2. Catat juga ke DB dedicated Margo One bila berbeda dengan koneksi aktif
+    $siblingDbs = [defined('DB_NAME') ? DB_NAME : 'uofruaju_margo-one'];
     foreach ($siblingDbs as $dbName) {
         try {
             $pdo->exec("

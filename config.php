@@ -294,7 +294,7 @@ function loadCentralTemplates(array $templates = ['modal', 'calendar', 'table'])
 }
 
 // ==============================================================================
-// DATABASE CREDENTIALS (DEDICATED ISOLATED SSO DB: uofruaju_margo_one)
+// DATABASE CREDENTIALS (DEDICATED ISOLATED SSO DB: uofruaju_margo-one)
 // ==============================================================================
 // Mendukung override opsional dari file lokal config.local.php (tidak di-commit ke Git)
 if (file_exists(__DIR__ . '/config.local.php')) {
@@ -304,20 +304,20 @@ if (file_exists(__DIR__ . '/config.local.php')) {
 if (!defined('DB_TYPE'))    define('DB_TYPE', 'mysql');
 if (!defined('DB_HOST'))    define('DB_HOST', 'localhost');
 if (!defined('DB_PORT'))    define('DB_PORT', '3306');
-if (!defined('DB_NAME'))    define('DB_NAME', 'uofruaju_margo_one');
-if (!defined('DB_USER'))    define('DB_USER', 'uofruaju_margo_one');
-if (!defined('DB_PASS'))    define('DB_PASS', 'Ilmuna28@');
+if (!defined('DB_NAME'))    define('DB_NAME', 'uofruaju_margo-one');
+if (!defined('DB_USER'))    define('DB_USER', 'uofruaju_margo-one-db');
+if (!defined('DB_PASS'))    define('DB_PASS', 'M@r90On3');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
-// Dedicated Agenda Database (terpisah dari DB SSO & tersinkron otomatis via MySQL Trigger dengan Kaldik Learn)
-if (!defined('AGENDA_DB_NAME')) define('AGENDA_DB_NAME', 'uofruaju_margo_agenda');
+// Dedicated Agenda Database (berjalan di DB dedicated Margo One: uofruaju_margo-one)
+if (!defined('AGENDA_DB_NAME')) define('AGENDA_DB_NAME', DB_NAME);
 if (!defined('AGENDA_DB_USER')) define('AGENDA_DB_USER', DB_USER);
 if (!defined('AGENDA_DB_PASS')) define('AGENDA_DB_PASS', DB_PASS);
 
-// Database Ilmuna Learn (sumber Kaldik, kelas, guru, siswa untuk sinkronisasi trigger & audiens kelas)
+// Database Ilmuna Learn (READ-ONLY: sumber Kaldik, kelas, guru, siswa untuk sinkronisasi)
 if (!defined('LEARN_DB_NAME')) define('LEARN_DB_NAME', 'uofruaju_learn_ilmuna');
 if (!defined('LEARN_DB_USER')) define('LEARN_DB_USER', 'uofruaju_Learn_Ilmuna');
-if (!defined('LEARN_DB_PASS')) define('LEARN_DB_PASS', DB_PASS);
+if (!defined('LEARN_DB_PASS')) define('LEARN_DB_PASS', 'Ilmuna28@');
 
 // ==============================================================================
 // GOOGLE OAUTH 2.0 CONFIGURATION (STRICT LINKED-ONLY MODE)
@@ -442,32 +442,8 @@ function getDBConnection() {
             }
         }
 
-        // 3. Fallback cPanel: DB_NAME (uofruaju_margo_one) menggunakan user MySQL cPanel eksisting (uofruaju_Learn_Ilmuna)
         if ($pdo === null) {
-            try {
-                $dsnCpDedicated = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-                $pdo = new PDO($dsnCpDedicated, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
-                $pdo->exec("SET time_zone = '+07:00'");
-            } catch (PDOException $e3) {
-                $errors[] = 'cPanel Dedicated DB: ' . $e3->getMessage();
-            }
-        }
-
-        // 4. Fallback cPanel Host DB (uofruaju_learn_ilmuna) jika DB uofruaju_margo_one belum dibuat di cPanel.
-        //    AMAN 100% TERPISAH: Margo One SSO menggunakan tabel terisolasi `sso_users`, `sso_roles`, `sso_user_roles`
-        //    sehingga TIDAK PERNAH menyentuh atau bercampur dengan tabel `users` milik Ilmuna Learn!
-        if ($pdo === null) {
-            try {
-                $dsnCpFallback = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=uofruaju_learn_ilmuna;charset=" . DB_CHARSET;
-                $pdo = new PDO($dsnCpFallback, 'uofruaju_Learn_Ilmuna', DB_PASS, $pdoOptions);
-                $pdo->exec("SET time_zone = '+07:00'");
-            } catch (PDOException $e4) {
-                $errors[] = 'cPanel Fallback DB: ' . $e4->getMessage();
-            }
-        }
-
-        if ($pdo === null) {
-            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO: ' . implode(' | ', $errors));
+            throw new RuntimeException('Gagal terhubung ke MySQL Margo One SSO (' . DB_NAME . '): ' . implode(' | ', $errors));
         }
     }
 

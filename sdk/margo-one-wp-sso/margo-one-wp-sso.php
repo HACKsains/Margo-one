@@ -33,7 +33,7 @@ function margo_wp_sso_get_settings()
         'role_guru'       => 'editor',
         'role_ketua'      => 'subscriber',
         'role_siswa'      => 'subscriber',
-        'redirect_after'  => home_url('/'),
+        'redirect_after'  => admin_url(),
     ];
     $saved = get_option(MARGO_WP_SSO_OPTION, []);
     if (!is_array($saved)) {
@@ -291,10 +291,22 @@ function margo_wp_map_role(array $ssoRoles, array $cfg)
 add_action('init', function () {
     $cfg = margo_wp_sso_get_settings();
 
-    // 1. Inisiasi Login Margo One
-    if (!empty($_GET['margo_one_login'])) {
+    // 1. Inisiasi Login Margo One (mendukung ?margo_one_login=1 maupun ?sso_login=1 dari Margo One Gateway)
+    if (!empty($_GET['margo_one_login']) || !empty($_GET['sso_login'])) {
         if (empty($cfg['public_key']) || empty($cfg['private_key'])) {
             wp_die('Konfigurasi Margo One SSO belum diisi di Settings -> Margo One SSO.');
+        }
+        // Jika sudah login di WordPress dan diklik dari Margo One Gateway (?sso_login=1), langsung arahkan ke wp-admin / tujuan
+        if (!empty($_GET['sso_login']) && is_user_logged_in()) {
+            $curWpUser = wp_get_current_user();
+            $defaultTarget = user_can($curWpUser, 'edit_posts') ? admin_url() : home_url('/');
+            $cfgTarget = rtrim((string)$cfg['redirect_after'], '/');
+            $homeNorm  = rtrim((string)home_url('/'), '/');
+            $targetLogged = !empty($_GET['redirect_to'])
+                ? esc_url_raw(wp_unslash($_GET['redirect_to']))
+                : (($cfgTarget !== '' && $cfgTarget !== $homeNorm) ? $cfg['redirect_after'] : $defaultTarget);
+            wp_safe_redirect($targetLogged);
+            exit;
         }
         $state    = bin2hex(random_bytes(20));
         $nonce    = bin2hex(random_bytes(16));
@@ -409,7 +421,10 @@ add_action('init', function () {
         wp_set_current_user($wpUser->ID);
         wp_set_auth_cookie($wpUser->ID, true, is_ssl());
 
-        $target = !empty($flow['redirect_to']) ? $flow['redirect_to'] : home_url('/');
+        $defaultAfter = user_can($wpUser, 'edit_posts') ? admin_url() : home_url('/');
+        $flowRedir    = !empty($flow['redirect_to']) ? (string)$flow['redirect_to'] : '';
+        $homeNorm     = rtrim((string)home_url('/'), '/');
+        $target       = ($flowRedir !== '' && rtrim($flowRedir, '/') !== $homeNorm) ? $flowRedir : $defaultAfter;
         wp_safe_redirect($target);
         exit;
     }
