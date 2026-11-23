@@ -573,10 +573,25 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
         @media (min-width: 768px) { .form-heading { font-size: 1.6rem; } }
 
         .sso-trust-chip {
-            display: inline-flex; align-items: center; gap: 5px;
-            padding: 5px 10px; border-radius: 999px;
-            background: rgba(13, 122, 135, 0.09); border: 1px solid rgba(13, 122, 135, 0.24);
-            color: var(--teal); font-family: var(--font-h); font-size: 0.72rem; font-weight: 700;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: 999px;
+            background: rgba(13, 122, 135, 0.09); border: 1px solid rgba(13, 122, 135, 0.28);
+            color: var(--teal); font-family: var(--font-h); font-size: 0.74rem; font-weight: 700;
+            cursor: pointer; transition: all 0.2s ease; appearance: none;
+        }
+        .sso-trust-chip:hover {
+            background: linear-gradient(135deg, #1D3B5E, #0D7A87);
+            border-color: transparent; color: #FFFFFF;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(13, 122, 135, 0.28);
+        }
+        .sso-trust-chip.is-ready {
+            background: linear-gradient(135deg, #1D3B5E, #0D7A87);
+            border-color: transparent; color: #FFFFFF;
+            box-shadow: 0 4px 12px rgba(13, 122, 135, 0.25);
+        }
+        .sso-trust-chip.is-installed {
+            opacity: 0.75; cursor: default;
         }
 
         .form-subheading { color: #64748B; font-size: 0.78rem; margin-bottom: 14px; font-weight: 500; }
@@ -763,10 +778,10 @@ $ctxLogo = $targetClient ? margo_resolve_app_logo_url($targetClient['app_logo'] 
             <div class="form-inner">
                 <div class="form-head-row">
                     <h2 class="form-heading">Masuk</h2>
-                    <span class="sso-trust-chip">
-                        <iconify-icon icon="solar:shield-check-bold" width="14"></iconify-icon>
-                        <span>Margo One ID</span>
-                    </span>
+                    <button type="button" class="sso-trust-chip" id="btnLoginInstallPwa" data-pwa-install title="Pasang Margo One sebagai aplikasi (PWA)">
+                        <iconify-icon icon="solar:download-minimalistic-bold" width="14"></iconify-icon>
+                        <span>Install App</span>
+                    </button>
                 </div>
                 <p class="form-subheading">
                     <?= $targetClient
