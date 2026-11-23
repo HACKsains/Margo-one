@@ -27,6 +27,16 @@
     php_value memory_limit 256M
 </IfModule>
 
+# Lewati scan pre-flight Guardian Dome pada layar konfirmasi OAuth2 (/authorize) & Global SLO (/logout)
+<FilesMatch "^(authorize|logout)\.php$">
+    <IfModule lsapi_module>
+        php_value auto_prepend_file none
+    </IfModule>
+    <IfModule php7_module>
+        php_value auto_prepend_file none
+    </IfModule>
+</FilesMatch>
+
 # ------------------------------------------------------------------------------
 # 2. PROTEKSI FILE SENSITIF & DIRECTORY BROWSING
 # ------------------------------------------------------------------------------
