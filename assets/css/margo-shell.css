@@ -1974,25 +1974,9 @@ body.margo-shell-body {
         padding: 14px 12px 36px;
     }
 
-    .margo-hero-title {
-        font-size: 1.2rem;
-    }
-
+    .margo-hero-banner,
     .margo-hero-banner--16x9 {
-        aspect-ratio: auto;
-        flex-direction: column-reverse;
-        align-items: flex-start;
-        padding: 20px 18px;
-        gap: 14px;
-    }
-
-    .margo-hero-logo-showcase {
-        padding: 12px 18px;
-        border-radius: 16px;
-    }
-
-    .margo-hero-brand-img {
-        width: 140px;
+        display: none !important;
     }
 
     .margo-login-cards {
