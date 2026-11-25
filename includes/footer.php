@@ -1101,34 +1101,28 @@ try {
             return output;
         }
 
-        function showFloatingPushBanner() {
-            if (document.getElementById('margoPushFloatingPrompt')) return;
+        var pushPromptShown = false;
+        function showPushPermissionAlert() {
+            if (pushPromptShown) return;
             try {
                 if (sessionStorage.getItem('margo.push.bannerDismissed') === '1') return;
             } catch (e) {}
-            var bar = document.createElement('div');
-            bar.id = 'margoPushFloatingPrompt';
-            bar.style.cssText = 'position:fixed;bottom:16px;right:16px;left:auto;max-width:360px;z-index:9998;background:#1D3B5E;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 12px 30px rgba(15,23,42,.35);display:flex;align-items:center;gap:10px;border:1px solid rgba(82,178,220,.45);font-family:inherit;';
-            bar.innerHTML = '<div style="width:36px;height:36px;border-radius:10px;background:rgba(82,178,220,.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#52B2DC;font-size:20px;"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon></div>'
-                + '<div style="flex:1;min-width:0;font-size:12px;line-height:1.38;"><strong style="display:block;font-size:12.5px;">Aktifkan Notifikasi HP &amp; Suara</strong><span>Terima notif agenda &amp; kelas meski PWA ditutup.</span></div>'
-                + '<button type="button" id="margoPushFloatBtn" style="border:none;background:#0D7A87;color:#fff;font-weight:800;font-size:11.5px;padding:7px 11px;border-radius:9px;cursor:pointer;white-space:nowrap;">Aktifkan</button>'
-                + '<button type="button" id="margoPushFloatClose" style="border:none;background:transparent;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;padding:2px 4px;" aria-label="Tutup">&times;</button>';
-            document.body.appendChild(bar);
-            var actBtn = document.getElementById('margoPushFloatBtn');
-            var clsBtn = document.getElementById('margoPushFloatClose');
-            if (actBtn) {
-                actBtn.onclick = function () {
+            if (!window.Ilmuna || typeof window.Ilmuna.confirm !== 'function') return;
+            pushPromptShown = true;
+            window.Ilmuna.confirm(
+                'info',
+                'Aktifkan Notifikasi HP & Suara?',
+                'Izinkan Margo One mengirim notifikasi Agenda, Kelas, Kelompok, dan Info Ekosistem beserta suara notifikasi ke perangkat Anda meskipun aplikasi sedang ditutup.',
+                'Ya, Aktifkan',
+                'Nanti Saja'
+            ).then(function (ok) {
+                if (ok) {
                     unlockNotifAudioOnce();
-                    if (bar.parentNode) bar.parentNode.removeChild(bar);
                     MargoLearnWS.enableBackgroundPush();
-                };
-            }
-            if (clsBtn) {
-                clsBtn.onclick = function () {
+                } else {
                     try { sessionStorage.setItem('margo.push.bannerDismissed', '1'); } catch (e) {}
-                    if (bar.parentNode) bar.parentNode.removeChild(bar);
-                };
-            }
+                }
+            });
         }
 
         function updatePushBarUI(state) {
@@ -1139,8 +1133,6 @@ try {
             }
             pushBar.style.display = 'flex';
             if (state === 'subscribed') {
-                var fl = document.getElementById('margoPushFloatingPrompt');
-                if (fl && fl.parentNode) fl.parentNode.removeChild(fl);
                 pushTxt.textContent = 'Notif HP (luar web) & suara aktif';
                 pushBtn.textContent = 'Uji Push';
                 pushBtn.classList.add('is-active');
@@ -1176,7 +1168,7 @@ try {
                     unlockNotifAudioOnce();
                     MargoLearnWS.enableBackgroundPush();
                 };
-                showFloatingPushBanner();
+                setTimeout(showPushPermissionAlert, 900);
             }
         }
 
