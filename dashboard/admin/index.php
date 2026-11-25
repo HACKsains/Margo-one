@@ -3330,7 +3330,7 @@ require_once BASE_PATH . '/includes/header.php';
             var ok = await Ilmuna.confirm(
                 'info',
                 'Sinkron & Kirim ' + cbs.length + ' Akun SSO?',
-                'Sistem akan membuatkan username acak & kata sandi acak terpisah di Margo One SSO berdasarkan ID/NISN/NIS/NIP lalu mengirimkannya ke Gmail masing-masing via EmailRelay.',
+                'Sistem akan membuat akun SSO sesuai peran di Learn (Admin: username nama & sandi angka acak; Guru: username NIP & sandi NIP+tgl lahir+4 angka acak; Siswa: username NIS & sandi NISN+tgl lahir+4 angka acak) lalu mengirimkannya ke Gmail masing-masing.',
                 'Ya, Buat & Kirim Sekarang',
                 'Batal'
             );

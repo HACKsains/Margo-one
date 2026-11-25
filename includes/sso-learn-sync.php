@@ -106,7 +106,90 @@ function margo_learn_sync_pick_gmail(array $candidates)
 }
 
 /**
- * Ambil daftar kandidat user dari database Learn (READ-ONLY — hanya Gmail, nama, role, dan nomor ID/NISN/NIS/NIP).
+ * Normalisasi tanggal lahir ke format 8 digit DDMMYYYY (mis. 2008-05-14 -> 14052008)
+ */
+function margo_learn_sync_format_dob_digits($rawDob, $fallbackNip = '')
+{
+    $s = trim((string)$rawDob);
+    if ($s !== '' && $s !== '0000-00-00' && $s !== '0000-00-00 00:00:00') {
+        $ts = strtotime($s);
+        if ($ts !== false) {
+            return date('dmY', $ts);
+        }
+        $dOnly = preg_replace('/\D+/', '', $s);
+        if (strlen($dOnly) === 8) {
+            return $dOnly;
+        }
+    }
+
+    // Fallback khusus NIP PNS (18 digit): 8 digit awal adalah YYYYMMDD tanggal lahir
+    $nipDigits = preg_replace('/\D+/', '', (string)$fallbackNip);
+    if (strlen($nipDigits) >= 14) {
+        $y = (int)substr($nipDigits, 0, 4);
+        $m = (int)substr($nipDigits, 4, 2);
+        $d = (int)substr($nipDigits, 6, 2);
+        if ($y >= 1940 && $y <= 2015 && checkdate($m, $d, $y)) {
+            return sprintf('%02d%02d%04d', $d, $m, $y);
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Normalisasi role dari Ilmuna Learn secara ketat:
+ *   - Guru di Learn -> WAJIB 'guru' (JANGAN pernah jadi 'admin')
+ *   - Admin di Learn -> 'admin'
+ *   - Siswa di Learn -> 'siswa' (plus 'ketua_kelas' bila memang ketua kelas)
+ */
+function margo_learn_sync_normalize_roles(array $rawRoles, $hasGuruRow = false, $hasSiswaRow = false)
+{
+    $norm = [];
+    foreach ($rawRoles as $r) {
+        $c = strtolower(trim((string)$r));
+        if ($c === '') {
+            continue;
+        }
+        if (in_array($c, ['admin', 'administrator', 'superadmin', 'operator'], true)) {
+            $norm[] = 'admin';
+        } elseif (in_array($c, ['guru', 'teacher', 'pendidik'], true)) {
+            $norm[] = 'guru';
+        } elseif (in_array($c, ['ketua_kelas', 'ketua-kelas'], true)) {
+            $norm[] = 'ketua_kelas';
+        } elseif (in_array($c, ['siswa', 'student', 'murid'], true)) {
+            $norm[] = 'siswa';
+        }
+    }
+    $norm = array_values(array_unique($norm));
+
+    // Role utama mengikuti role pertama (is_primary DESC) dari Learn
+    if (!empty($norm)) {
+        $primary = $norm[0];
+        if ($primary === 'guru') {
+            return ['guru'];
+        }
+        if ($primary === 'admin') {
+            return ['admin'];
+        }
+        if ($primary === 'ketua_kelas') {
+            return ['siswa', 'ketua_kelas'];
+        }
+        if ($primary === 'siswa') {
+            return in_array('ketua_kelas', $norm, true) ? ['siswa', 'ketua_kelas'] : ['siswa'];
+        }
+    }
+
+    if ($hasGuruRow) {
+        return ['guru'];
+    }
+    if ($hasSiswaRow) {
+        return ['siswa'];
+    }
+    return ['siswa'];
+}
+
+/**
+ * Ambil daftar kandidat user dari database Learn (READ-ONLY — Gmail, nama, role, NIS/NISN/NIP, dan tanggal lahir).
  */
 function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
 {
@@ -115,7 +198,7 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
 
     $uCols = $learnPdo->query("SHOW COLUMNS FROM `users`")->fetchAll(PDO::FETCH_COLUMN);
     $selCols = ['id'];
-    foreach (['full_name', 'email', 'email_google', 'nisn_nip', 'status', 'is_active'] as $c) {
+    foreach (['username', 'full_name', 'email', 'email_google', 'nisn_nip', 'role', 'tanggal_lahir', 'tgl_lahir', 'birth_date', 'dob', 'status', 'is_active'] as $c) {
         if (in_array($c, $uCols, true)) {
             $selCols[] = $c;
         }
@@ -125,11 +208,17 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
     // Ambil peta role dari Learn
     $learnRolesMap = [];
     try {
+        $rCols = $learnPdo->query("SHOW COLUMNS FROM `roles`")->fetchAll(PDO::FETCH_COLUMN);
+        $rCodeCol = in_array('code', $rCols, true) ? 'code' : (in_array('slug', $rCols, true) ? 'slug' : 'nama_roles');
+        $urCols = $learnPdo->query("SHOW COLUMNS FROM `user_roles`")->fetchAll(PDO::FETCH_COLUMN);
+        $hasIsPrimary = in_array('is_primary', $urCols, true);
+        $orderSql = $hasIsPrimary ? 'ORDER BY ur.is_primary DESC, r.id ASC' : 'ORDER BY r.id ASC';
+
         $rRows = $learnPdo->query("
-            SELECT ur.user_id, r.code
+            SELECT ur.user_id, r.`{$rCodeCol}` AS code
             FROM `user_roles` ur
             JOIN `roles` r ON r.id = ur.role_id
-            ORDER BY ur.is_primary DESC, r.id ASC
+            {$orderSql}
         ")->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rRows as $rr) {
             $uid = (int)$rr['user_id'];
@@ -145,14 +234,14 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
         // Non-fatal
     }
 
-    // Ambil nomor NISN/NIS & gmail siswa (READ-ONLY)
+    // Ambil NIS, NISN, gmail, & tanggal lahir siswa (READ-ONLY)
     $siswaByUser = [];
     try {
         if ($learnPdo->query("SHOW TABLES LIKE 'siswa'")->fetch()) {
             $sCols = $learnPdo->query("SHOW COLUMNS FROM `siswa`")->fetchAll(PDO::FETCH_COLUMN);
             if (in_array('id_user', $sCols, true)) {
                 $sSel = ['id_user'];
-                foreach (['nisn', 'nis', 'gmail', 'nama_lengkap'] as $c) {
+                foreach (['nisn', 'nis', 'gmail', 'nama_lengkap', 'tanggal_lahir', 'tgl_lahir', 'birth_date', 'dob'] as $c) {
                     if (in_array($c, $sCols, true)) {
                         $sSel[] = $c;
                     }
@@ -166,14 +255,14 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
         // Non-fatal
     }
 
-    // Ambil nomor NIP & email guru (READ-ONLY)
+    // Ambil NIP, email, & tanggal lahir guru (READ-ONLY)
     $guruByUser = [];
     try {
         if ($learnPdo->query("SHOW TABLES LIKE 'guru'")->fetch()) {
             $gCols = $learnPdo->query("SHOW COLUMNS FROM `guru`")->fetchAll(PDO::FETCH_COLUMN);
             if (in_array('id_user', $gCols, true)) {
                 $gSel = ['id_user'];
-                foreach (['nip', 'email', 'nama_guru'] as $c) {
+                foreach (['nip', 'nuptk', 'kode_guru', 'email', 'nama_guru', 'tanggal_lahir', 'tgl_lahir', 'birth_date', 'dob'] as $c) {
                     if (in_array($c, $gCols, true)) {
                         $gSel[] = $c;
                     }
@@ -229,23 +318,56 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
         ]);
         $isGmailDomain = ($gmail !== '' && (bool)preg_match('/@(gmail\.com|googlemail\.com)$/i', $gmail));
 
-        // Nomor identitas untuk dasar generasi username & password acak (NISN / NIS / NIP / ID)
-        $refNumber = '';
-        $refType   = 'ID';
+        $rawRoles = $learnRolesMap[$lid] ?? [];
+        if (empty($rawRoles) && !empty($lu['role'])) {
+            $rawRoles = [(string)$lu['role']];
+        }
+        $roles = margo_learn_sync_normalize_roles($rawRoles, !empty($gRow), !empty($sRow));
+        $primaryRole = $roles[0];
+
+        $nisVal  = trim((string)($sRow['nis'] ?? ''));
+        $nisnVal = trim((string)($sRow['nisn'] ?? ''));
+        $nipVal  = trim((string)($gRow['nip'] ?? ''));
+        if ($nipVal === '' && $primaryRole === 'guru') {
+            $nipVal = trim((string)($lu['nisn_nip'] ?? ($gRow['nuptk'] ?? '')));
+        }
+        if ($nisVal === '' && $primaryRole === 'siswa') {
+            $nisVal = trim((string)($lu['username'] ?? ($lu['nisn_nip'] ?? '')));
+        }
+        if ($nisnVal === '' && $primaryRole === 'siswa') {
+            $nisnVal = trim((string)($lu['nisn_nip'] ?? ''));
+        }
+
+        // Ambil tanggal lahir dari tabel siswa/guru/users
+        $rawDob = '';
         foreach ([
-            ['val' => $sRow['nisn'] ?? '', 'type' => 'NISN'],
-            ['val' => $sRow['nis'] ?? '', 'type' => 'NIS'],
-            ['val' => $gRow['nip'] ?? '', 'type' => 'NIP'],
-            ['val' => $lu['nisn_nip'] ?? '', 'type' => 'NISN/NIP'],
-        ] as $candRef) {
-            $v = trim((string)$candRef['val']);
-            if ($v !== '' && $v !== '-' && $v !== '0') {
-                $refNumber = $v;
-                $refType   = $candRef['type'];
+            $sRow['tanggal_lahir'] ?? '', $sRow['tgl_lahir'] ?? '', $sRow['birth_date'] ?? '', $sRow['dob'] ?? '',
+            $gRow['tanggal_lahir'] ?? '', $gRow['tgl_lahir'] ?? '', $gRow['birth_date'] ?? '', $gRow['dob'] ?? '',
+            $lu['tanggal_lahir'] ?? '',   $lu['tgl_lahir'] ?? '',   $lu['birth_date'] ?? '',   $lu['dob'] ?? '',
+        ] as $dCand) {
+            if (trim((string)$dCand) !== '' && trim((string)$dCand) !== '0000-00-00') {
+                $rawDob = trim((string)$dCand);
                 break;
             }
         }
-        if ($refNumber === '') {
+        $dobDigits = margo_learn_sync_format_dob_digits($rawDob, $primaryRole === 'guru' ? $nipVal : '');
+
+        // Nomor identitas utama untuk tampilan referensi
+        $refNumber = '';
+        $refType   = 'ID';
+        if ($primaryRole === 'guru' && $nipVal !== '' && $nipVal !== '-') {
+            $refNumber = $nipVal;
+            $refType   = 'NIP';
+        } elseif ($primaryRole === 'siswa' && $nisVal !== '' && $nisVal !== '-') {
+            $refNumber = $nisVal;
+            $refType   = 'NIS';
+        } elseif ($nisnVal !== '' && $nisnVal !== '-') {
+            $refNumber = $nisnVal;
+            $refType   = 'NISN';
+        } elseif (!empty($lu['nisn_nip']) && trim((string)$lu['nisn_nip']) !== '-') {
+            $refNumber = trim((string)$lu['nisn_nip']);
+            $refType   = 'NISN/NIP';
+        } else {
             $refNumber = (string)$lid;
             $refType   = 'ID';
         }
@@ -253,17 +375,6 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
         $fullName = trim((string)($sRow['nama_lengkap'] ?? $gRow['nama_guru'] ?? $lu['full_name'] ?? ''));
         if ($fullName === '') {
             $fullName = 'Pengguna #' . $lid;
-        }
-
-        $roles = $learnRolesMap[$lid] ?? [];
-        if (empty($roles)) {
-            if (!empty($gRow)) {
-                $roles = ['guru'];
-            } elseif (!empty($sRow)) {
-                $roles = ['siswa'];
-            } else {
-                $roles = ['siswa'];
-            }
         }
 
         $syncRefKey = 'learn:' . $lid;
@@ -285,8 +396,13 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
             'has_email'           => ($gmail !== ''),
             'ref_number'          => $refNumber,
             'ref_type'            => $refType,
+            'nis'                 => $nisVal,
+            'nisn'                => $nisnVal,
+            'nip'                 => $nipVal,
+            'tanggal_lahir'       => $rawDob,
+            'dob_digits'          => $dobDigits,
             'roles'               => $roles,
-            'primary_role'        => $roles[0],
+            'primary_role'        => $primaryRole,
             'already_in_sso'      => ($existingSso !== null),
             'sso_user_id'         => $existingSso ? (int)$existingSso['id'] : null,
             'sso_username'        => $existingSso ? (string)$existingSso['username'] : '',
@@ -298,7 +414,7 @@ function margo_learn_sync_fetch_candidates(PDO $ssoPdo)
 }
 
 /**
- * Buat string acak kriptografis bebas karakter membingungkan (tanpa 0/O/1/l/I)
+ * Buat string acak kriptografis
  */
 function margo_learn_sync_rand_chars($alphabet, $length)
 {
@@ -311,54 +427,76 @@ function margo_learn_sync_rand_chars($alphabet, $length)
 }
 
 /**
- * Bangkitkan USERNAME ACAK & PASSWORD ACAK baru khusus Margo One SSO
- * berdasarkan nomor ID / NISN / NIS / NIP (100% terpisah dari akun Learn).
+ * Pastikan username unik di `sso_users` (jika sudah dipakai, tambahkan akhiran angka)
  */
-function margo_learn_sync_generate_credentials(PDO $ssoPdo, $refNumber, $learnId, $roleCode = 'siswa')
+function margo_learn_sync_ensure_unique_username(PDO $ssoPdo, $baseUsername, $excludeUserId = 0)
 {
-    $digitsOnly = preg_replace('/\D+/', '', (string)$refNumber);
-    if ($digitsOnly === '') {
-        $digitsOnly = str_pad((string)max(1, (int)$learnId), 4, '0', STR_PAD_LEFT);
+    $clean = strtolower(trim((string)$baseUsername));
+    $clean = preg_replace('/[^a-z0-9._-]+/', '', $clean);
+    if ($clean === '') {
+        $clean = 'user_' . margo_learn_sync_rand_chars('0123456789', 5);
     }
-    // Ambil potongan 4-6 digit dari nomor ID/NISN/NIS/NIP sebagai basis acak
-    $numSlice = strlen($digitsOnly) > 6 ? substr($digitsOnly, -6) : str_pad($digitsOnly, 4, '0', STR_PAD_LEFT);
-    // Acak urutan digit seed dengan salt acak agar tidak bisa ditebak langsung
-    $seedHashNum = substr(preg_replace('/\D+/', '', hash('sha256', $digitsOnly . '|' . bin2hex(random_bytes(8)))), 0, 2);
-    if (strlen($seedHashNum) < 2) {
-        $seedHashNum = (string)random_int(10, 99);
-    }
+    $clean = substr($clean, 0, 60);
 
-    $prefixMap = [
-        'admin'       => 'adm',
-        'guru'        => 'gru',
-        'ketua_kelas' => 'ktk',
-        'siswa'       => 'sws',
-    ];
-    $rPrefix = $prefixMap[strtolower((string)$roleCode)] ?? 'mgo';
-
-    // 1. Username acak unik berbasis nomor ID/NISN/NIS/NIP
-    $username = '';
-    for ($try = 0; $try < 25; $try++) {
-        $randTail = margo_learn_sync_rand_chars('abcdefghjkmnpqrstuvwxyz23456789', 4);
-        $cand = $rPrefix . '_' . substr($numSlice, -4) . $seedHashNum . '_' . $randTail;
-        $chk = $ssoPdo->prepare("SELECT id FROM `sso_users` WHERE LOWER(`username`) = LOWER(?) LIMIT 1");
-        $chk->execute([$cand]);
+    $cand = $clean;
+    for ($i = 0; $i < 30; $i++) {
+        if ($i > 0) {
+            $cand = substr($clean, 0, 54) . ($i <= 9 ? (string)$i : margo_learn_sync_rand_chars('0123456789', 3));
+        }
+        $chk = $ssoPdo->prepare("SELECT id FROM `sso_users` WHERE LOWER(`username`) = LOWER(?) AND (? <= 0 OR `id` <> ?) LIMIT 1");
+        $chk->execute([$cand, (int)$excludeUserId, (int)$excludeUserId]);
         if (!$chk->fetchColumn()) {
-            $username = $cand;
-            break;
+            return $cand;
         }
     }
-    if ($username === '') {
-        $username = 'mgo_' . bin2hex(random_bytes(5));
+    return substr($clean, 0, 50) . '_' . margo_learn_sync_rand_chars('0123456789', 4);
+}
+
+/**
+ * Bangkitkan USERNAME & PASSWORD SSO sesuai aturan peran:
+ *   - Admin : Username = namanya (slug bersih), Password = 8 angka random
+ *   - Guru  : Username = NIP, Password = NIP + tanggal lahir (DDMMYYYY) + 4 angka random
+ *   - Siswa : Username = NIS, Password = NISN + tanggal lahir (DDMMYYYY) + 4 angka random
+ */
+function margo_learn_sync_generate_credentials(PDO $ssoPdo, array $cand, $excludeUserId = 0)
+{
+    $role      = strtolower(trim((string)($cand['primary_role'] ?? 'siswa')));
+    $fullName  = trim((string)($cand['full_name'] ?? ''));
+    $learnId   = (int)($cand['learn_id'] ?? 0);
+    $nipDigits = preg_replace('/\D+/', '', (string)($cand['nip'] ?? ''));
+    $nisDigits = preg_replace('/\D+/', '', (string)($cand['nis'] ?? ''));
+    $nisnDigits = preg_replace('/\D+/', '', (string)($cand['nisn'] ?? ''));
+    $refDigits = preg_replace('/\D+/', '', (string)($cand['ref_number'] ?? ''));
+    $dobDigits = preg_replace('/\D+/', '', (string)($cand['dob_digits'] ?? ''));
+    $rand4     = str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+
+    $nameSlug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $fullName));
+    $nameSlug = trim($nameSlug, '_');
+    if ($nameSlug === '') {
+        $nameSlug = 'user_' . max(1, $learnId);
     }
 
-    // 2. Password acak kuat (min 12 karakter) berbasis nomor ID/NISN/NIS/NIP + entropi kriptografis
-    $pUpper = margo_learn_sync_rand_chars('ABCDEFGHJKLMNPQRSTUVWXYZ', 2);
-    $pLower = margo_learn_sync_rand_chars('abcdefghjkmnpqrstuvwxyz', 3);
-    $pSym   = margo_learn_sync_rand_chars('@#!$%', 1);
-    $pTail  = margo_learn_sync_rand_chars('ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789', 3);
-    $pNum   = substr($numSlice, -4);
-    $password = $pUpper . $pLower . $pNum . $pSym . $pTail;
+    if ($role === 'admin') {
+        // Admin: username = namanya, password = beberapa angka random (8 digit)
+        $baseUser = $nameSlug;
+        $password = margo_learn_sync_rand_chars('0123456789', 8);
+    } elseif ($role === 'guru') {
+        // Guru: username = NIP, password = NIP + tanggal lahir + 4 angka random
+        $nipUse = $nipDigits !== '' ? $nipDigits : ($refDigits !== '' ? $refDigits : '');
+        $baseUser = $nipUse !== '' ? $nipUse : $nameSlug;
+        if ($dobDigits === '' && $nipUse !== '') {
+            $dobDigits = margo_learn_sync_format_dob_digits('', $nipUse);
+        }
+        $password = ($nipUse !== '' ? $nipUse : $baseUser) . $dobDigits . $rand4;
+    } else {
+        // Siswa: username = NIS, password = NISN + tanggal lahir + 4 angka random
+        $nisUse  = $nisDigits !== '' ? $nisDigits : ($refDigits !== '' ? $refDigits : '');
+        $nisnUse = $nisnDigits !== '' ? $nisnDigits : $nisUse;
+        $baseUser = $nisUse !== '' ? $nisUse : $nameSlug;
+        $password = ($nisnUse !== '' ? $nisnUse : $baseUser) . $dobDigits . $rand4;
+    }
+
+    $username = margo_learn_sync_ensure_unique_username($ssoPdo, $baseUser, $excludeUserId);
 
     return [
         'username' => $username,
@@ -450,9 +588,9 @@ function margo_learn_sync_send_credentials_email($toGmail, $fullName, $ssoUserna
                                 <strong>Assalamu'alaikum Warahmatullahi Wabarakatuh,</strong><br>
                                 Yth. <strong style="color:{$c_teal};">{$namaEsc}</strong> ({$roleEsc})
                             </p>
-                            <p style="margin:0 0 18px;font-size:13.5px;color:#475569;line-height:1.7;">
-                                Akun <strong>Margo One SSO</strong> Anda telah dibuat secara <strong>terpisah penuh</strong> dari akun lokal aplikasi lain.
-                                Gunakan kredensial acak khusus di bawah ini untuk masuk ke portal <strong>{$siteName}</strong>:
+                                <p style="margin:0 0 18px;font-size:13.5px;color:#475569;line-height:1.7;">
+                                Akun <strong>Margo One SSO</strong> Anda telah dibuat sesuai peran Anda (<strong>{$roleEsc}</strong>).
+                                Gunakan kredensial di bawah ini untuk masuk ke portal <strong>{$siteName}</strong>:
                             </p>
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#F8FAFC;border:1.5px solid #CBD5E1;border-left:4.5px solid {$c_teal};border-radius:12px;margin-bottom:20px;">
                                 <tr>
@@ -460,10 +598,10 @@ function margo_learn_sync_send_credentials_email($toGmail, $fullName, $ssoUserna
                                         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:{$c_teal};margin-bottom:4px;">Username Margo One SSO</div>
                                         <div style="font-family:Consolas,monospace;font-size:18px;font-weight:800;color:{$c_navy};margin-bottom:14px;word-break:break-all;">{$userEsc}</div>
 
-                                        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:{$c_teal};margin-bottom:4px;">Kata Sandi SSO (Acak)</div>
+                                        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:{$c_teal};margin-bottom:4px;">Kata Sandi SSO</div>
                                         <div style="font-family:Consolas,monospace;font-size:18px;font-weight:800;color:{$c_navy};margin-bottom:10px;word-break:break-all;">{$passEsc}</div>
 
-                                        <div style="font-size:11.5px;color:#64748B;">Referensi: {$refEsc}</div>
+                                        <div style="font-size:11.5px;color:#64748B;">Peran: <strong>{$roleEsc}</strong> &middot; Referensi: {$refEsc}</div>
                                     </td>
                                 </tr>
                             </table>
@@ -558,18 +696,37 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
         ];
     }
 
-    $creds = margo_learn_sync_generate_credentials($ssoPdo, $refNumber, $learnId, $primary);
+    $creds = margo_learn_sync_generate_credentials($ssoPdo, $cand, $existing ? (int)$existing['id'] : 0);
     $isReset = false;
 
     if ($existing) {
-        // Mode resend: buat ulang password acak baru untuk akun SSO eksisting (username tetap atau gunakan yang ada)
+        // Mode resend: perbarui username & password sesuai aturan role + pastikan role cocok dengan Learn (guru != admin)
         $isReset     = true;
         $ssoUserId   = (int)$existing['id'];
-        $ssoUsername = (string)$existing['username'];
+        $ssoUsername = $creds['username'];
         $ssoPassword = $creds['password'];
 
-        $ssoPdo->prepare("UPDATE `sso_users` SET `password_hash` = ?, `email` = ?, `nisn_nip` = COALESCE(NULLIF(`nisn_nip`, ''), ?), `sync_source` = 'learn', `sync_ref_id` = COALESCE(`sync_ref_id`, ?) WHERE `id` = ?")
-            ->execute([password_hash($ssoPassword, PASSWORD_DEFAULT), $gmail, $refNumber, $syncRef, $ssoUserId]);
+        $ssoPdo->prepare("UPDATE `sso_users` SET `username` = ?, `password_hash` = ?, `email` = ?, `full_name` = ?, `nisn_nip` = COALESCE(NULLIF(?, ''), `nisn_nip`), `sync_source` = 'learn', `sync_ref_id` = COALESCE(`sync_ref_id`, ?) WHERE `id` = ?")
+            ->execute([$ssoUsername, password_hash($ssoPassword, PASSWORD_DEFAULT), $gmail, $fullName, $refNumber, $syncRef, $ssoUserId]);
+
+        // Sinkronkan ulang role sesuai Learn (guru -> guru, admin -> admin, siswa -> siswa)
+        $roleMap = [];
+        foreach ($ssoPdo->query("SELECT id, code FROM `sso_roles`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $roleMap[strtolower((string)$r['code'])] = (int)$r['id'];
+        }
+        $ssoPdo->prepare("DELETE FROM `sso_user_roles` WHERE `user_id` = ?")->execute([$ssoUserId]);
+        $insUr = $ssoPdo->prepare("INSERT IGNORE INTO `sso_user_roles` (`user_id`, `role_id`, `is_primary`) VALUES (?, ?, ?)");
+        $assignedAny = false;
+        foreach ($roles as $idx => $rc) {
+            $rcLow = strtolower(trim((string)$rc));
+            if (isset($roleMap[$rcLow])) {
+                $insUr->execute([$ssoUserId, $roleMap[$rcLow], $idx === 0 ? 1 : 0]);
+                $assignedAny = true;
+            }
+        }
+        if (!$assignedAny && isset($roleMap['siswa'])) {
+            $insUr->execute([$ssoUserId, $roleMap['siswa'], 1]);
+        }
     } else {
         // Buat akun SSO BARU 100% terpisah (email_google=NULL, google_id=NULL, foto_profil=NULL)
         $ssoUsername = $creds['username'];
@@ -591,7 +748,7 @@ function margo_learn_sync_execute_one(PDO $ssoPdo, array $cand, $resendIfExists 
         ]);
         $ssoUserId = (int)$ssoPdo->lastInsertId();
 
-        // Assign role di tabel user_roles milik Margo One SSO
+        // Assign role di tabel sso_user_roles sesuai role di Learn (guru -> guru, admin -> admin, siswa -> siswa)
         $roleMap = [];
         foreach ($ssoPdo->query("SELECT id, code FROM `sso_roles`")->fetchAll(PDO::FETCH_ASSOC) as $r) {
             $roleMap[strtolower((string)$r['code'])] = (int)$r['id'];
