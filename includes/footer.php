@@ -670,27 +670,105 @@ try {
             try { localStorage.setItem('margo.learn.notifs', JSON.stringify(allNotifs)); } catch (e) {}
         }
 
-        /* ── Koneksi WebSocket RFC 6455 ke learn.ilmuna.my.id ── */
+        /* ── Koneksi Real-Time: WebSocket (jika daemon port 8090 aktif) -> Auto-Fallback SSE Stream (cPanel tanpa CLI) ── */
+        var sseSource  = null;
+        var sseLastId  = 0;
+
+        function closeAllStreams() {
+            clearTimeout(reconnTimer);
+            try { if (ws) { ws.onclose = null; ws.onerror = null; ws.close(); } } catch (e) {}
+            try { if (sseSource) { sseSource.close(); } } catch (e) {}
+            ws = null;
+            sseSource = null;
+        }
+
+        function connectSse(streamUrl) {
+            if (!streamUrl || typeof window.EventSource === 'undefined') {
+                scheduleReconnect(5000);
+                return;
+            }
+            closeAllStreams();
+            var urlWithLast = streamUrl + (sseLastId > 0 ? ((streamUrl.indexOf('?') >= 0 ? '&' : '?') + 'last_id=' + sseLastId) : '');
+            try {
+                sseSource = new EventSource(urlWithLast);
+            } catch (eSse) {
+                scheduleReconnect(5000);
+                return;
+            }
+
+            sseSource.addEventListener('ilmuna.realtime.welcome', function (evt) {
+                reconnDelay = 2000;
+                try {
+                    var w = JSON.parse(evt.data);
+                    if (w && w.last_id && Number(w.last_id) > sseLastId) sseLastId = Number(w.last_id);
+                } catch (e) {}
+                if (liveDot) {
+                    liveDot.classList.add('is-live');
+                    liveDot.title = 'Koneksi real-time aktif (SSE Stream)';
+                }
+            });
+
+            sseSource.addEventListener('ilmuna.realtime.event', function (evt) {
+                try {
+                    if (evt.lastEventId) sseLastId = Math.max(sseLastId, Number(evt.lastEventId) || 0);
+                    var data = JSON.parse(evt.data);
+                    if (data && data.event_id) sseLastId = Math.max(sseLastId, Number(data.event_id) || 0);
+                    if (data && data.payload) processEvent(data);
+                } catch (e) {}
+            });
+
+            sseSource.addEventListener('ilmuna.stream.rotate', function (evt) {
+                try {
+                    var r = JSON.parse(evt.data);
+                    if (r && r.last_id) sseLastId = Math.max(sseLastId, Number(r.last_id) || 0);
+                } catch (e) {}
+                try { sseSource.close(); } catch (e) {}
+                sseSource = null;
+                scheduleReconnect(250); // Rotasi mulus tanpa delay panjang
+            });
+
+            sseSource.onerror = function () {
+                try { sseSource.close(); } catch (e) {}
+                sseSource = null;
+                if (liveDot) {
+                    liveDot.classList.remove('is-live');
+                    liveDot.title = 'Menyambung ulang real-time stream…';
+                }
+                scheduleReconnect();
+            };
+        }
+
         function connect() {
             if (!WS_BOOT || !WS_BOOT.ok || !WS_BOOT.ws_ticket) return;
-            var wsUrl = WS_BOOT.ws_ticket.ws_connect_url;
-            if (!wsUrl) return;
+            var t = WS_BOOT.ws_ticket;
+            var wsUrl = t.ws_connect_url;
+            var streamUrl = t.stream_connect_url || (t.stream_url && t.ticket ? (t.stream_url + '?ticket=' + encodeURIComponent(t.ticket)) : '');
 
-            clearTimeout(reconnTimer);
-            try { if (ws) ws.close(); } catch (e) {}
+            // Jika server menginformasikan daemon WS port 8090 tidak aktif (mis. cPanel tanpa CLI), langsung pakai SSE Stream!
+            if (t.daemon_live === false && streamUrl) {
+                connectSse(streamUrl);
+                return;
+            }
+            if (!wsUrl) {
+                if (streamUrl) connectSse(streamUrl);
+                return;
+            }
 
+            closeAllStreams();
+            var openedOnce = false;
             try {
                 ws = new WebSocket(wsUrl);
             } catch (eWs) {
-                scheduleReconnect();
+                if (streamUrl) { connectSse(streamUrl); } else { scheduleReconnect(); }
                 return;
             }
 
             ws.onopen = function () {
+                openedOnce = true;
                 reconnDelay = 2000;
                 if (liveDot) {
                     liveDot.classList.add('is-live');
-                    liveDot.title = 'Koneksi real-time aktif';
+                    liveDot.title = 'Koneksi real-time aktif (WebSocket)';
                 }
             };
 
@@ -705,6 +783,12 @@ try {
 
             ws.onerror = function () {};
             ws.onclose = function () {
+                ws = null;
+                if (!openedOnce && streamUrl) {
+                    // WebSocket gagal tersambung -> langsung fallback ke SSE Stream dengan tiket baru
+                    scheduleReconnect(300, true);
+                    return;
+                }
                 if (liveDot) {
                     liveDot.classList.remove('is-live');
                     liveDot.title = 'Mencoba sambungkan ulang…';
@@ -713,8 +797,9 @@ try {
             };
         }
 
-        function scheduleReconnect() {
+        function scheduleReconnect(customDelayMs, forceSse) {
             clearTimeout(reconnTimer);
+            var waitMs = (typeof customDelayMs === 'number') ? customDelayMs : reconnDelay;
             reconnTimer = setTimeout(function () {
                 /* Re-fetch tiket baru dulu via portal-data sebelum reconnect */
                 fetch(BASE_URL + '/portal-data.php?resource=ws_ticket', {
@@ -722,13 +807,16 @@ try {
                     headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
                 }).then(function (r) { return r.json(); })
                   .then(function (res) {
-                    if (res && res.success && res.data && res.data.ws_connect_url) {
+                    if (res && res.success && res.data) {
+                        if (forceSse) res.data.daemon_live = false;
                         WS_BOOT = { ok: true, ws_ticket: res.data };
                         connect();
                     }
                   }).catch(function () {});
-                reconnDelay = Math.min(reconnDelay * 1.8, maxDelay);
-            }, reconnDelay);
+                if (typeof customDelayMs !== 'number') {
+                    reconnDelay = Math.min(reconnDelay * 1.8, maxDelay);
+                }
+            }, waitMs);
         }
 
         /* ── Muat notifikasi awal dari INIT_EVENTS (PHP server bootstrap) ── */
