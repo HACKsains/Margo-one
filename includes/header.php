@@ -89,28 +89,6 @@ if (!empty($extraHead)) {
                 </div>
 
                 <div class="margo-header-right">
-                    <?php
-                    // ── LEARN REAL-TIME NOTIFICATION BELL ────────────────────────────────
-                    // Muat bridge + terbitkan WS Ticket server-side agar TIDAK ada Private Key bocor ke browser
-                    $margoLearnWsBootstrap = null;
-                    $margoLearnNotifEvents = [];
-                    try {
-                        $learnBridgePath = BASE_PATH . '/includes/learn-realtime-bridge.php';
-                        if (file_exists($learnBridgePath)) {
-                            require_once $learnBridgePath;
-                            $footUserHdr = function_exists('getCurrentUser') ? getCurrentUser() : null;
-                            $learnPdoHdr = function_exists('getDBConnection') ? getDBConnection() : null;
-                            if ($footUserHdr && $learnPdoHdr) {
-                                $margoLearnWsBootstrap = margo_learn_issue_user_ws_bootstrap($learnPdoHdr, $footUserHdr);
-                                if (!empty($margoLearnWsBootstrap['recent_events']) && is_array($margoLearnWsBootstrap['recent_events'])) {
-                                    $margoLearnNotifEvents = $margoLearnWsBootstrap['recent_events'];
-                                }
-                            }
-                        }
-                    } catch (Throwable $eLearnHdr) {
-                        // Non-fatal: bell tampil kosong, WS connect ulang otomatis di JS
-                    }
-                    ?>
                     <div class="margo-learn-notif-wrap" id="margoLearnNotifMount">
                         <button type="button" class="margo-icon-btn margo-learn-bell-btn" id="margoLearnBellBtn"
                                 aria-label="Notifikasi Real-Time Ilmuna Learn" title="Notifikasi Kelas Ilmuna Learn"

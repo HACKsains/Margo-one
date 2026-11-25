@@ -111,6 +111,18 @@ body.margo-shell-body {
     transform: rotate(-225deg) translateY(85%);
 }
 
+@keyframes margoEntryFailsafe {
+    to {
+        transform: rotate(-225deg) translateY(85%);
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+.margo-entry-slide:not(.is-done) {
+    animation: margoEntryFailsafe 0.55s cubic-bezier(0.4, 0, 0.2, 1) 1.5s forwards;
+}
+
 .margo-sidebar-overlay {
     position: fixed;
     inset: 0;

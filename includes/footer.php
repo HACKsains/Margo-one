@@ -20,7 +20,7 @@ try {
     }
     $footUser = function_exists('getCurrentUser') ? getCurrentUser() : null;
     if ($footUser && function_exists('margo_agenda_fetch_visible')) {
-        $agListF = margo_agenda_fetch_visible($pdoFooter, $footUser, ['upcoming' => true, 'limit' => 12]);
+        $agListF = margo_agenda_fetch_visible($pdoFooter, $footUser, ['upcoming' => true, 'limit' => 12, 'skip_learn_sync' => true]);
         foreach ($agListF as $rF) {
             $margoInitRightAgenda[] = [
                 'id'               => (int)$rF['id'],
@@ -889,10 +889,43 @@ try {
             },
         };
 
-        /* ── Init ── */
+        /* ── Init (Async agar tidak memblokir render halaman / #entrySlide) ── */
         document.addEventListener('DOMContentLoaded', function () {
             hydrateInitEvents();
-            connect();
+            if (WS_BOOT && WS_BOOT.ok && WS_BOOT.ws_ticket) {
+                connect();
+            } else {
+                fetch(BASE_URL + '/portal-data.php?resource=ws_ticket', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                }).then(function (r) { return r.json(); })
+                  .then(function (res) {
+                    if (res && res.success && res.data) {
+                        WS_BOOT = { ok: true, ws_ticket: res.data };
+                        if (Array.isArray(res.recent_events) && res.recent_events.length > 0 && allNotifs.length === 0) {
+                            res.recent_events.forEach(function (evt) {
+                                var p = evt.payload || evt;
+                                if (!p) return;
+                                allNotifs.push({
+                                    id: Number(evt.event_id || Date.now()),
+                                    type: (p.kategori_item || 'tugas') + '_buat',
+                                    title: p.judul_tugas || p.nama_proyek || p.judul_asesmen || evt.title || 'Notifikasi Kelas',
+                                    sub: p.deskripsi_ringkas || evt.summary || '',
+                                    kelas: (p.kelas && p.kelas.nama) || evt.nama_kelas || '',
+                                    url: p.portal_url || evt.portal_url || (BASE_URL + '/agenda'),
+                                    ts: Date.now(),
+                                    unread: false
+                                });
+                            });
+                            renderDrawer();
+                        }
+                        if (window.MargoShell && MargoShell.refreshRightWidgets) {
+                            MargoShell.refreshRightWidgets();
+                        }
+                        connect();
+                    }
+                  }).catch(function () {});
+            }
             /* Request browser notification permission dengan lembut setelah interaksi pertama pengguna */
             document.addEventListener('click', function permReq() {
                 MargoLearnWS.requestNotifPermission();

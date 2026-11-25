@@ -377,7 +377,11 @@ try {
         try {
             $boot = margo_learn_issue_user_ws_bootstrap($pdo, $currentUser);
             if (!empty($boot['ok']) && !empty($boot['ws_ticket'])) {
-                echo json_encode(['success' => true, 'data' => $boot['ws_ticket']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                echo json_encode([
+                    'success'       => true,
+                    'data'          => $boot['ws_ticket'],
+                    'recent_events' => $boot['recent_events'] ?? [],
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             } else {
                 echo json_encode(['success' => false, 'message' => $boot['error'] ?? 'WebSocket ticket tidak tersedia saat ini.']);
             }

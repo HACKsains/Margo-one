@@ -259,7 +259,7 @@ function margo_learn_user_identity_payload(PDO $ssoPdo, array $userSession)
 
     $payload = [
         'role'     => $roleTag,
-        'email'    => trim((string)($uRow['email_google'] ?: ($uRow['email'] ?? ($userSession['email'] ?? '')))),
+        'email'    => trim((string)(($uRow['email_google'] ?? '') !== '' ? $uRow['email_google'] : ($uRow['email'] ?? ($userSession['email'] ?? '')))),
         'nis'      => trim((string)($uRow['nis'] ?? ($userSession['nis'] ?? ''))),
         'nisn'     => trim((string)($uRow['nisn'] ?? ($userSession['nisn'] ?? ''))),
         'nip'      => trim((string)($uRow['nip'] ?? ($userSession['nip'] ?? ''))),
@@ -331,8 +331,9 @@ function margo_learn_fetch_class_feed(PDO $ssoPdo, array $userSession, $includeW
         $learnDir = margo_learn_sibling_base_dir();
         if ($learnDir !== null) {
             try {
-                $lpdo = margo_get_learn_db($ssoPdo);
-                if ($lpdo && file_exists($learnDir . '/includes/sso-api-data.php') && file_exists($learnDir . '/includes/sso-api-security.php')) {
+                $lpdoRaw = margo_get_learn_db($ssoPdo);
+                $lpdo = is_array($lpdoRaw) ? ($lpdoRaw['pdo'] ?? null) : $lpdoRaw;
+                if ($lpdo instanceof PDO && file_exists($learnDir . '/includes/sso-api-data.php') && file_exists($learnDir . '/includes/sso-api-security.php')) {
                     require_once $learnDir . '/includes/sso-api-security.php';
                     require_once $learnDir . '/includes/sso-api-data.php';
 
