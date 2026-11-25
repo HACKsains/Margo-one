@@ -739,12 +739,74 @@ try {
             }
         }
 
-        /* ── Gentle WA-like chime (Web Audio API, graceful fallback) ── */
+        /* ── Custom Notification Sound (Sunrise Pendopo MP3 — gaya DANA / BRImo) + Web Audio Fallback ── */
+        var NOTIF_SOUND_URL = BASE_URL + '/assets/audio/notif-margo-one.mp3';
+        var notifAudioEl = null;
+        var audioUnlocked = false;
+
+        function initNotifAudio() {
+            if (!notifAudioEl && typeof window.Audio !== 'undefined') {
+                try {
+                    notifAudioEl = new Audio(NOTIF_SOUND_URL);
+                    notifAudioEl.preload = 'auto';
+                    notifAudioEl.volume = 1.0;
+                } catch (eA) {}
+            }
+        }
+
+        function unlockNotifAudioOnce() {
+            if (audioUnlocked) return;
+            audioUnlocked = true;
+            initNotifAudio();
+            if (notifAudioEl) {
+                try {
+                    notifAudioEl.muted = true;
+                    var p = notifAudioEl.play();
+                    if (p && typeof p.then === 'function') {
+                        p.then(function () {
+                            notifAudioEl.pause();
+                            notifAudioEl.currentTime = 0;
+                            notifAudioEl.muted = false;
+                        }).catch(function () {
+                            notifAudioEl.muted = false;
+                        });
+                    } else {
+                        notifAudioEl.pause();
+                        notifAudioEl.currentTime = 0;
+                        notifAudioEl.muted = false;
+                    }
+                } catch (eU) {
+                    notifAudioEl.muted = false;
+                }
+            }
+        }
+        document.addEventListener('pointerdown', unlockNotifAudioOnce, { once: true, passive: true });
+        document.addEventListener('touchstart', unlockNotifAudioOnce, { once: true, passive: true });
+        document.addEventListener('keydown', unlockNotifAudioOnce, { once: true, passive: true });
+
         function playChime() {
+            initNotifAudio();
+            if (notifAudioEl) {
+                try {
+                    notifAudioEl.muted = false;
+                    notifAudioEl.volume = 1.0;
+                    notifAudioEl.currentTime = 0;
+                    var playProm = notifAudioEl.play();
+                    if (playProm && typeof playProm.catch === 'function') {
+                        playProm.catch(function () { playFallbackSynthChime(); });
+                    }
+                    return;
+                } catch (ePlay) {}
+            }
+            playFallbackSynthChime();
+        }
+
+        function playFallbackSynthChime() {
             try {
                 if (!audioCtx) {
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
                 var osc = audioCtx.createOscillator();
                 var gain = audioCtx.createGain();
                 osc.connect(gain);
@@ -1039,6 +1101,36 @@ try {
             return output;
         }
 
+        function showFloatingPushBanner() {
+            if (document.getElementById('margoPushFloatingPrompt')) return;
+            try {
+                if (sessionStorage.getItem('margo.push.bannerDismissed') === '1') return;
+            } catch (e) {}
+            var bar = document.createElement('div');
+            bar.id = 'margoPushFloatingPrompt';
+            bar.style.cssText = 'position:fixed;bottom:16px;right:16px;left:auto;max-width:360px;z-index:9998;background:#1D3B5E;color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 12px 30px rgba(15,23,42,.35);display:flex;align-items:center;gap:10px;border:1px solid rgba(82,178,220,.45);font-family:inherit;';
+            bar.innerHTML = '<div style="width:36px;height:36px;border-radius:10px;background:rgba(82,178,220,.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#52B2DC;font-size:20px;"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon></div>'
+                + '<div style="flex:1;min-width:0;font-size:12px;line-height:1.38;"><strong style="display:block;font-size:12.5px;">Aktifkan Notifikasi HP &amp; Suara</strong><span>Terima notif agenda &amp; kelas meski PWA ditutup.</span></div>'
+                + '<button type="button" id="margoPushFloatBtn" style="border:none;background:#0D7A87;color:#fff;font-weight:800;font-size:11.5px;padding:7px 11px;border-radius:9px;cursor:pointer;white-space:nowrap;">Aktifkan</button>'
+                + '<button type="button" id="margoPushFloatClose" style="border:none;background:transparent;color:rgba(255,255,255,.7);font-size:16px;cursor:pointer;padding:2px 4px;" aria-label="Tutup">&times;</button>';
+            document.body.appendChild(bar);
+            var actBtn = document.getElementById('margoPushFloatBtn');
+            var clsBtn = document.getElementById('margoPushFloatClose');
+            if (actBtn) {
+                actBtn.onclick = function () {
+                    unlockNotifAudioOnce();
+                    if (bar.parentNode) bar.parentNode.removeChild(bar);
+                    MargoLearnWS.enableBackgroundPush();
+                };
+            }
+            if (clsBtn) {
+                clsBtn.onclick = function () {
+                    try { sessionStorage.setItem('margo.push.bannerDismissed', '1'); } catch (e) {}
+                    if (bar.parentNode) bar.parentNode.removeChild(bar);
+                };
+            }
+        }
+
         function updatePushBarUI(state) {
             if (!pushBar || !pushTxt || !pushBtn) return;
             if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
@@ -1047,32 +1139,44 @@ try {
             }
             pushBar.style.display = 'flex';
             if (state === 'subscribed') {
-                pushTxt.textContent = 'Notif latar belakang (luar web) aktif';
+                var fl = document.getElementById('margoPushFloatingPrompt');
+                if (fl && fl.parentNode) fl.parentNode.removeChild(fl);
+                pushTxt.textContent = 'Notif HP (luar web) & suara aktif';
                 pushBtn.textContent = 'Uji Push';
                 pushBtn.classList.add('is-active');
                 pushBtn.onclick = function () {
+                    playChime();
                     fetch(BASE_URL + '/api/push.php?action=test', { method: 'POST', credentials: 'same-origin' })
                         .then(function (r) { return r.json(); })
                         .then(function (d) {
                             if (window.Ilmuna && Ilmuna.toast) {
-                                Ilmuna.toast(d && d.success ? 'Notifikasi push uji dikirim!' : 'Push terdaftar, tunggu notifikasi sistem.', d && d.success ? 'success' : 'info');
+                                if (d && d.success) {
+                                    Ilmuna.toast('Notifikasi push uji & suara berhasil dikirim!', 'success');
+                                } else {
+                                    var errInfo = (d && d.data && (d.data.last_error || (d.data.no_subscription ? 'Perangkat belum terdaftar' : ('HTTP ' + (d.data.last_http_code || 0))))) || 'Cek izin notifikasi browser/HP.';
+                                    Ilmuna.toast('Push gagal: ' + errInfo, 'warning');
+                                }
                             }
                         }).catch(function () {});
                 };
             } else if (state === 'denied') {
-                pushTxt.textContent = 'Izin notifikasi diblokir di browser';
+                pushTxt.textContent = 'Izin notifikasi diblokir di browser/HP';
                 pushBtn.textContent = 'Info';
                 pushBtn.classList.remove('is-active');
                 pushBtn.onclick = function () {
                     if (window.Ilmuna && Ilmuna.info) {
-                        Ilmuna.info('Aktifkan Notifikasi Browser', 'Buka pengaturan situs (ikon gembok di address bar browser), lalu ubah izin Notifications menjadi Allow/Izinkan agar notifikasi tetap masuk saat web ditutup.');
+                        Ilmuna.info('Aktifkan Notifikasi HP / Browser', 'Buka Pengaturan Aplikasi / Situs di HP atau ikon gembok di address bar browser, lalu ubah izin Notifications menjadi Allow/Izinkan agar notifikasi tetap masuk saat PWA ditutup.');
                     }
                 };
             } else {
-                pushTxt.textContent = 'Tetap dapat notif saat di luar web';
+                pushTxt.textContent = 'Tetap dapat notif di HP saat PWA ditutup';
                 pushBtn.textContent = 'Aktifkan';
                 pushBtn.classList.remove('is-active');
-                pushBtn.onclick = function () { MargoLearnWS.enableBackgroundPush(); };
+                pushBtn.onclick = function () {
+                    unlockNotifAudioOnce();
+                    MargoLearnWS.enableBackgroundPush();
+                };
+                showFloatingPushBanner();
             }
         }
 
@@ -1098,24 +1202,51 @@ try {
                         return;
                     }
                 }
+                var vkResp = await fetch(BASE_URL + '/api/push.php?action=vapid_key', { credentials: 'same-origin' });
+                var vkJson = await vkResp.json();
+                if (!vkJson || !vkJson.success || !vkJson.public_key) {
+                    updatePushBarUI('prompt');
+                    return;
+                }
+                var expectedKeyBytes = urlBase64ToUint8Array(vkJson.public_key);
                 var existing = await swReg.pushManager.getSubscription();
+                // Jika VAPID key server berubah, unsubscribe key lama dan subscribe ulang otomatis
+                if (existing && existing.options && existing.options.applicationServerKey) {
+                    var curBytes = new Uint8Array(existing.options.applicationServerKey);
+                    var sameKey = (curBytes.length === expectedKeyBytes.length);
+                    if (sameKey) {
+                        for (var ki = 0; ki < curBytes.length; ki++) {
+                            if (curBytes[ki] !== expectedKeyBytes[ki]) { sameKey = false; break; }
+                        }
+                    }
+                    if (!sameKey) {
+                        try { await existing.unsubscribe(); } catch (eUns) {}
+                        existing = null;
+                    }
+                }
                 if (!existing) {
-                    var vkResp = await fetch(BASE_URL + '/api/push.php?action=vapid_key', { credentials: 'same-origin' });
-                    var vkJson = await vkResp.json();
-                    if (!vkJson || !vkJson.success || !vkJson.public_key) return;
                     existing = await swReg.pushManager.subscribe({
                         userVisibleOnly: true,
-                        applicationServerKey: urlBase64ToUint8Array(vkJson.public_key),
+                        applicationServerKey: expectedKeyBytes,
                     });
                 }
                 if (existing) {
-                    await fetch(BASE_URL + '/api/push.php?action=subscribe', {
+                    var subResp = await fetch(BASE_URL + '/api/push.php?action=subscribe', {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(existing.toJSON()),
                     });
-                    updatePushBarUI('subscribed');
+                    var subJson = await subResp.json();
+                    if (subJson && subJson.success) {
+                        updatePushBarUI('subscribed');
+                        if (askPermission) {
+                            playChime();
+                            if (window.Ilmuna && Ilmuna.toast) {
+                                Ilmuna.toast('Notifikasi HP (latar belakang) & suara berhasil diaktifkan!', 'success');
+                            }
+                        }
+                    }
                 }
             } catch (eSw) {
                 updatePushBarUI('prompt');
@@ -1212,9 +1343,17 @@ try {
             },
         };
 
-        /* ── Tangkap klik dari Service Worker OS Notification -> buka popup detail ── */
+        /* ── Tangkap klik & penerimaan Push dari Service Worker -> putar suara MP3 kustom / buka detail ── */
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.addEventListener('message', function (ev) {
+                if (ev.data && ev.data.type === 'MARGO_PUSH_RECEIVED') {
+                    playChime();
+                    loadUnifiedNotifications(false);
+                    if (window.MargoShell && MargoShell.refreshRightWidgets) {
+                        MargoShell.refreshRightWidgets();
+                    }
+                    return;
+                }
                 if (ev.data && ev.data.type === 'MARGO_PUSH_CLICK' && ev.data.payload) {
                     var p = ev.data.payload;
                     if (p.notif_id) {

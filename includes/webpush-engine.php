@@ -284,8 +284,11 @@ function margo_push_encrypt_payload($plaintext, $userPublicKeyB64, $userAuthB64)
         . str_pad($localDetails['ec']['y'], 32, "\x00", STR_PAD_LEFT);
 
     $sharedSecret = @openssl_pkey_derive($peerKey, $localKey, 32);
-    if ($sharedSecret === false || strlen($sharedSecret) !== 32) {
+    if ($sharedSecret === false || strlen($sharedSecret) === 0 || strlen($sharedSecret) > 32) {
         return null;
+    }
+    if (strlen($sharedSecret) < 32) {
+        $sharedSecret = str_pad($sharedSecret, 32, "\x00", STR_PAD_LEFT);
     }
 
     $salt = random_bytes(16);
@@ -403,10 +406,15 @@ function margo_push_send_to_user(PDO $pdo, $userId, array $payload, $dedupKey = 
     }
 
     $sent = 0;
+    $lastCode = 0;
+    $lastErr  = '';
     foreach ($subs as $sub) {
         $res = margo_push_send_raw($pdo, $sub, $payload, $vapid);
+        $lastCode = (int)($res['http_code'] ?? 0);
         if (!empty($res['ok'])) {
             $sent++;
+        } elseif (!empty($res['error'])) {
+            $lastErr = (string)$res['error'];
         }
     }
 
@@ -422,7 +430,12 @@ function margo_push_send_to_user(PDO $pdo, $userId, array $payload, $dedupKey = 
         } catch (Throwable $eLog) {}
     }
 
-    return ['sent' => $sent, 'total_subs' => count($subs)];
+    return [
+        'sent'           => $sent,
+        'total_subs'     => count($subs),
+        'last_http_code' => $lastCode,
+        'last_error'     => $lastErr,
+    ];
 }
 
 /**

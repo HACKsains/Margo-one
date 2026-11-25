@@ -9,12 +9,27 @@
  */
 'use strict';
 
+var MARGO_SW_CACHE = 'margo-one-sw-v3';
+var MARGO_SOUND_URL = './assets/audio/notif-margo-one.mp3';
+
 self.addEventListener('install', function (event) {
-    self.skipWaiting();
+    event.waitUntil(
+        caches.open(MARGO_SW_CACHE).then(function (cache) {
+            return cache.addAll([MARGO_SOUND_URL, './assets/pwa/icon-192.png', './assets/pwa/icon-96.png']).catch(function () {});
+        }).then(function () {
+            return self.skipWaiting();
+        })
+    );
 });
 
 self.addEventListener('activate', function (event) {
-    event.waitUntil(self.clients.claim());
+    event.waitUntil(
+        caches.keys().then(function (keys) {
+            return Promise.all(keys.filter(function (k) { return k !== MARGO_SW_CACHE; }).map(function (k) { return caches.delete(k); }));
+        }).then(function () {
+            return self.clients.claim();
+        })
+    );
 });
 
 self.addEventListener('push', function (event) {
@@ -27,22 +42,42 @@ self.addEventListener('push', function (event) {
         var tag   = (data && data.tag) ? String(data.tag) : ('margo-push-' + Date.now());
         var url   = (data && data.url) ? String(data.url) : './gateway';
 
-        return self.registration.showNotification(title, {
+        var payloadData = {
+            url: url,
+            notif_id: (data && data.notif_id) ? data.notif_id : null,
+            category: (data && data.category) ? String(data.category) : 'info',
+            title: title,
+            body: body,
+            meta: (data && data.meta) ? String(data.meta) : ''
+        };
+
+        var showPromise = self.registration.showNotification(title, {
             body: body,
             icon: (data && data.icon) ? String(data.icon) : defaultIcon,
             badge: (data && data.badge) ? String(data.badge) : defaultBadge,
+            sound: MARGO_SOUND_URL,
+            silent: false,
             tag: tag,
             renotify: true,
-            vibrate: [120, 60, 120],
-            data: {
-                url: url,
-                notif_id: (data && data.notif_id) ? data.notif_id : null,
-                category: (data && data.category) ? String(data.category) : 'info',
-                title: title,
-                body: body,
-                meta: (data && data.meta) ? String(data.meta) : ''
-            }
+            requireInteraction: true,
+            timestamp: Date.now(),
+            vibrate: [200, 100, 200, 100, 300],
+            data: payloadData
         });
+
+        // Beri tahu seluruh jendela PWA/tab yang aktif agar langsung memutar suara MP3 kustom (Sunrise Pendopo)
+        var notifyClients = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+            for (var i = 0; i < clientList.length; i++) {
+                try {
+                    clientList[i].postMessage({
+                        type: 'MARGO_PUSH_RECEIVED',
+                        payload: payloadData
+                    });
+                } catch (eMsg) {}
+            }
+        }).catch(function () {});
+
+        return Promise.all([showPromise, notifyClients]);
     };
 
     if (event.data) {
