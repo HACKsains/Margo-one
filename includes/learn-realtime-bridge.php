@@ -70,57 +70,8 @@ function margo_learn_sibling_base_dir()
  */
 function margo_learn_auto_provision_credentials(PDO $ssoPdo)
 {
-    static $tried = false;
-    if ($tried) {
-        return null;
-    }
-    $tried = true;
-
-    $learnDir = margo_learn_sibling_base_dir();
-    if ($learnDir === null) {
-        return null;
-    }
-
-    try {
-        $lpdo = margo_get_learn_db($ssoPdo);
-        if (!$lpdo) {
-            return null;
-        }
-        require_once $learnDir . '/includes/sso-api-security.php';
-        if (!function_exists('ilmuna_sso_api_ensure_schema') || !function_exists('ilmuna_sso_api_create_client')) {
-            return null;
-        }
-        ilmuna_sso_api_ensure_schema($lpdo);
-
-        // Cek apakah ada klien eksisting bernama "Margo One SSO Portal" yang bisa dibaca rahasianya (jika belum disimpan di sso_settings)
-        $created = ilmuna_sso_api_create_client(
-            $lpdo,
-            'Margo One SSO Portal (Auto)',
-            ['margo-one.ilmuna.my.id', 'localhost', '127.0.0.1'],
-            'HMAC-SHA256',
-            'all:read,ws:connect,events:read',
-            180
-        );
-
-        $defaults = margo_learn_default_urls();
-        if (!empty($created['public_key']) && !empty($created['private_key']) && function_exists('margo_sso_set_setting')) {
-            margo_sso_set_setting($ssoPdo, 'learn_api_endpoint', $defaults['endpoint_url'], false);
-            margo_sso_set_setting($ssoPdo, 'learn_api_public_key', $created['public_key'], false);
-            margo_sso_set_setting($ssoPdo, 'learn_api_private_key', $created['private_key'], true);
-            margo_sso_set_setting($ssoPdo, 'learn_api_sig_mode', 'HMAC-SHA256', false);
-            return [
-                'endpoint_url'    => $defaults['endpoint_url'],
-                'ws_url'          => $defaults['ws_url'],
-                'public_key'      => $created['public_key'],
-                'private_key'     => $created['private_key'],
-                'sig_mode'        => 'HMAC-SHA256',
-                'rsa_private_pem' => '',
-            ];
-        }
-    } catch (Throwable $e) {
-        error_log('[MargoOne] Learn API auto-provision skip: ' . $e->getMessage());
-    }
-
+    // Dinonaktifkan cross-app require_once agar tidak pernah terjadi bentrok BASE_PATH / open_basedir (HTTP 500 di cPanel).
+    // Konfigurasi kredensial pk_sso_* / sk_sso_* dibaca dari config.local.php atau tabel sso_settings.
     return null;
 }
 
@@ -327,55 +278,6 @@ function margo_learn_fetch_class_feed(PDO $ssoPdo, array $userSession, $includeW
             'ws_ticket' => $wsTicket,
         ];
     } catch (Throwable $eApi) {
-        // 2. Fallback Aman Local/Same-Server: pakai helper data & issuer Learn langsung bila file lokal tersedia
-        $learnDir = margo_learn_sibling_base_dir();
-        if ($learnDir !== null) {
-            try {
-                $lpdoRaw = margo_get_learn_db($ssoPdo);
-                $lpdo = is_array($lpdoRaw) ? ($lpdoRaw['pdo'] ?? null) : $lpdoRaw;
-                if ($lpdo instanceof PDO && file_exists($learnDir . '/includes/sso-api-data.php') && file_exists($learnDir . '/includes/sso-api-security.php')) {
-                    require_once $learnDir . '/includes/sso-api-security.php';
-                    require_once $learnDir . '/includes/sso-api-data.php';
-
-                    $learnCtx = ilmuna_sso_resolve_identity_context($lpdo, $identity);
-                    $data     = ilmuna_sso_build_unified_feed($lpdo, $identity, $learnCtx);
-
-                    $wsTicket = null;
-                    if ($includeWsTicket && function_exists('ilmuna_sso_api_issue_ws_ticket')) {
-                        $cfg = margo_learn_api_get_config($ssoPdo, false);
-                        $clientRow = ['id' => 0, 'public_key' => $cfg['public_key'] ?: 'pk_local_bridge'];
-                        if (!empty($cfg['public_key'])) {
-                            $stCl = $lpdo->prepare("SELECT id, public_key FROM sso_api_clients WHERE public_key = ? LIMIT 1");
-                            $stCl->execute([$cfg['public_key']]);
-                            $foundCl = $stCl->fetch(PDO::FETCH_ASSOC);
-                            if ($foundCl) {
-                                $clientRow = $foundCl;
-                            }
-                        }
-                        if (!empty($clientRow['id'])) {
-                            $issued   = ilmuna_sso_api_issue_ws_ticket($lpdo, $clientRow, $learnCtx, 300);
-                            $wsBase   = $cfg['ws_url'];
-                            $wsTicket = array_merge($issued, [
-                                'ws_url'         => $wsBase,
-                                'ws_connect_url' => rtrim($wsBase, '/') . '/?ticket=' . rawurlencode((string)$issued['ticket']),
-                            ]);
-                        }
-                    }
-
-                    return [
-                        'ok'        => true,
-                        'via'       => 'local_bridge_fallback',
-                        'api_error' => $eApi->getMessage(),
-                        'kelas_ids' => !empty($learnCtx['kelas_ids']) ? $learnCtx['kelas_ids'] : $idInfo['kelas_ids'],
-                        'feed'      => $data,
-                        'ws_ticket' => $wsTicket,
-                    ];
-                }
-            } catch (Throwable $eLocal) {
-                error_log('[MargoOne] Learn feed local fallback failed: ' . $eLocal->getMessage());
-            }
-        }
-
         return [
             'ok'        => false,
             'via'       => 'error',

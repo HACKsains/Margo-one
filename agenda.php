@@ -201,7 +201,7 @@ $userCtx        = margo_agenda_build_user_context($pdo, $currentUser);
 $isAdmin        = !empty($userCtx['is_admin']);
 $isGuru         = !empty($userCtx['is_guru']);
 $isSiswa        = !empty($userCtx['is_siswa']);
-$initialAgendas = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
+$initialAgendas = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500, 'skip_learn_sync' => true]);
 $agendaDbStatus = $isAdmin ? margo_agenda_get_status($pdo) : null;
 $focusId        = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
