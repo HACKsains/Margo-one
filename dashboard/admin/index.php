@@ -314,6 +314,32 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
         'origin'               => preg_replace('#^((https?://[^/]+)).*$#i', '$1', BASE_URL),
     ];
 
+    $learnApiInfo = [
+        'endpoint_url'       => 'https://learn.ilmuna.my.id/api/sso-broadcast.php',
+        'ws_url'             => 'wss://learn.ilmuna.my.id/ws/sso',
+        'public_key'         => '',
+        'has_private_key'    => false,
+        'private_key_masked' => '',
+        'sig_mode'           => 'HMAC-SHA256',
+        'configured'         => false,
+    ];
+    if (file_exists(BASE_PATH . '/includes/learn-realtime-bridge.php')) {
+        require_once BASE_PATH . '/includes/learn-realtime-bridge.php';
+        if (function_exists('margo_learn_api_get_config')) {
+            $lCfg = margo_learn_api_get_config($pdo, false);
+            $lPriv = (string)($lCfg['private_key'] ?? '');
+            $learnApiInfo = [
+                'endpoint_url'       => (string)($lCfg['endpoint_url'] ?? ''),
+                'ws_url'             => (string)($lCfg['ws_url'] ?? ''),
+                'public_key'         => (string)($lCfg['public_key'] ?? ''),
+                'has_private_key'    => ($lPriv !== ''),
+                'private_key_masked' => $lPriv !== '' ? (substr($lPriv, 0, 10) . str_repeat('*', max(4, strlen($lPriv) - 14)) . substr($lPriv, -4)) : '',
+                'sig_mode'           => (string)($lCfg['sig_mode'] ?? 'HMAC-SHA256'),
+                'configured'         => !empty($lCfg['configured']),
+            ];
+        }
+    }
+
     return [
         'endpoints' => [
             'issuer'     => SSO_ISSUER,
@@ -325,6 +351,7 @@ function margo_admin_build_bootstrap_data(PDO $pdo)
             'logout'     => BASE_URL . '/logout',
         ],
         'google_oauth'         => $googleOAuthInfo,
+        'learn_api'            => $learnApiInfo,
         'clients'              => $clientsOut,
         'sessions'             => $sessions,
         'active_session_count' => $activeSessionCnt,
@@ -1057,6 +1084,48 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             exit;
         }
 
+        // ---- SIMPAN & UJI KONFIGURASI ILMUNA LEARN REAL-TIME API ----
+        if ($act === 'save_learn_api_settings') {
+            $lEp   = trim((string)($_POST['learn_api_endpoint'] ?? 'https://learn.ilmuna.my.id/api/sso-broadcast.php'));
+            $lWs   = trim((string)($_POST['learn_ws_public_url'] ?? 'wss://learn.ilmuna.my.id/ws/sso'));
+            $lPub  = trim((string)($_POST['learn_api_public_key'] ?? ''));
+            $lPriv = trim((string)($_POST['learn_api_private_key'] ?? ''));
+            $lMode = strtoupper(trim((string)($_POST['learn_api_sig_mode'] ?? 'HMAC-SHA256')));
+            if (!in_array($lMode, ['HMAC-SHA256', 'RSA-SHA256', 'DUAL'], true)) {
+                $lMode = 'HMAC-SHA256';
+            }
+
+            if ($lEp === '' || $lPub === '') {
+                echo json_encode(['success' => false, 'message' => 'Endpoint URL dan Public Key (pk_sso_*) wajib diisi.']);
+                exit;
+            }
+            margo_sso_set_setting($pdo, 'learn_api_endpoint', $lEp, false);
+            margo_sso_set_setting($pdo, 'learn_ws_public_url', $lWs, false);
+            margo_sso_set_setting($pdo, 'learn_api_public_key', $lPub, false);
+            margo_sso_set_setting($pdo, 'learn_api_sig_mode', $lMode, false);
+            if ($lPriv !== '') {
+                margo_sso_set_setting($pdo, 'learn_api_private_key', $lPriv, true);
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'Konfigurasi API Ilmuna Learn berhasil disimpan terenkripsi ke database SSO.',
+            ]);
+            exit;
+        }
+
+        if ($act === 'test_learn_api_connection') {
+            require_once BASE_PATH . '/includes/learn-realtime-bridge.php';
+            $client = margo_learn_api_client($pdo);
+            $health = $client->request('health');
+            echo json_encode([
+                'success' => true,
+                'message' => 'Koneksi Zero-Trust ke Ilmuna Learn AKTIF! Klien: ' . ($health['client_name'] ?? 'OK') . ' (' . ($health['sig_mode'] ?? 'HMAC-SHA256') . ').',
+                'data'    => $health,
+            ]);
+            exit;
+        }
+
         // ---- ROTASI KUNCI RSA-2048 JWKS ----
         if ($act === 'rotate_jwks') {
             $graceHours = max(1, min(168, (int)($_POST['grace_hours'] ?? 24)));
@@ -1517,6 +1586,51 @@ require_once BASE_PATH . '/includes/header.php';
                         <iconify-icon icon="solar:diskette-bold"></iconify-icon>
                         <span>Simpan Google OAuth</span>
                     </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="ssoadm-card" style="margin-top:16px;">
+            <div class="ssoadm-card-head">
+                <h3 class="ssoadm-card-title">
+                    <iconify-icon icon="solar:bell-bing-bold" style="color:#0D7A87;font-size:20px;"></iconify-icon>
+                    Integrasi Real-Time Ilmuna Learn (Agenda Kelas &amp; Notifikasi Push)
+                </h3>
+                <span class="ssoadm-badge ssoadm-badge--teal" id="lblLearnApiStatus">Memuat...</span>
+            </div>
+            <form id="formLearnApiCfg" onsubmit="SSOADM.saveLearnApi(event)">
+                <div class="ssoadm-grid-2" style="margin-bottom:10px;">
+                    <div class="ssoadm-field">
+                        <label for="cfgLearnEndpoint">Endpoint REST API Learn</label>
+                        <input type="url" id="cfgLearnEndpoint" class="ssoadm-input" placeholder="https://learn.ilmuna.my.id/api/sso-broadcast.php" required>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="cfgLearnWsUrl">URL WebSocket (Opsional — Otomatis Fallback SSE)</label>
+                        <input type="text" id="cfgLearnWsUrl" class="ssoadm-input" placeholder="wss://learn.ilmuna.my.id/ws/sso">
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="cfgLearnPubKey">Public Key (<code>pk_sso_*</code>)</label>
+                        <input type="text" id="cfgLearnPubKey" class="ssoadm-input" placeholder="pk_sso_..." required>
+                    </div>
+                    <div class="ssoadm-field">
+                        <label for="cfgLearnPrivKey">Private Key (<code>sk_sso_*</code>) <span id="lblLearnPrivHint" style="font-weight:500;color:#64748B;"></span></label>
+                        <input type="password" id="cfgLearnPrivKey" class="ssoadm-input" placeholder="Kosongkan jika tidak ingin mengubah Private Key">
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div style="font-size:11.5px;color:#475569;">
+                        Sinkron otomatis Tugas (2 tanggal), Proyek (2 tanggal), Kelompok &amp; Asesmen per Kelas secara read-only + Push Real-Time (WS / Zero-CLI SSE).
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" class="ssoadm-btn ssoadm-btn--ghost ssoadm-btn--sm" onclick="SSOADM.testLearnApi()">
+                            <iconify-icon icon="solar:bolt-bold"></iconify-icon>
+                            <span>Uji Koneksi API</span>
+                        </button>
+                        <button type="submit" class="ssoadm-btn ssoadm-btn--primary ssoadm-btn--sm">
+                            <iconify-icon icon="solar:diskette-bold"></iconify-icon>
+                            <span>Simpan Kredensial Learn</span>
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -2549,6 +2663,18 @@ require_once BASE_PATH . '/includes/header.php';
         var gRed = document.getElementById('txtGoogleRedirect');
         if (gRed) gRed.textContent = goa.redirect_uri || '';
 
+        var la = (STATE.data && STATE.data.learn_api) || {};
+        var lEpEl = document.getElementById('cfgLearnEndpoint');
+        if (lEpEl && document.activeElement !== lEpEl) lEpEl.value = la.endpoint_url || 'https://learn.ilmuna.my.id/api/sso-broadcast.php';
+        var lWsEl = document.getElementById('cfgLearnWsUrl');
+        if (lWsEl && document.activeElement !== lWsEl) lWsEl.value = la.ws_url || 'wss://learn.ilmuna.my.id/ws/sso';
+        var lPubEl = document.getElementById('cfgLearnPubKey');
+        if (lPubEl && document.activeElement !== lPubEl) lPubEl.value = la.public_key || '';
+        var lStEl = document.getElementById('lblLearnApiStatus');
+        if (lStEl) lStEl.textContent = la.configured ? ('Terkonfigurasi (' + (la.sig_mode || 'HMAC-SHA256') + ')') : 'Belum Diatur';
+        var lHint = document.getElementById('lblLearnPrivHint');
+        if (lHint) lHint.textContent = la.has_private_key ? ('(Tersimpan: ' + la.private_key_masked + ')') : '(Belum tersimpan)';
+
         document.getElementById('txtJwksUrl').textContent = (STATE.data && STATE.data.endpoints && STATE.data.endpoints.jwks) || '';
 
         var jwksListEl = document.getElementById('jwksKeysList');
@@ -3289,6 +3415,30 @@ require_once BASE_PATH . '/includes/header.php';
                 await SSOADM.load();
             } else {
                 Ilmuna.error('Gagal', res.message || 'Gagal menyimpan konfigurasi Google OAuth.');
+            }
+        },
+        saveLearnApi: async function (e) {
+            e.preventDefault();
+            var res = await apiPost('save_learn_api_settings', {
+                learn_api_endpoint: (document.getElementById('cfgLearnEndpoint').value || '').trim(),
+                learn_ws_public_url: (document.getElementById('cfgLearnWsUrl').value || '').trim(),
+                learn_api_public_key: (document.getElementById('cfgLearnPubKey').value || '').trim(),
+                learn_api_private_key: (document.getElementById('cfgLearnPrivKey').value || '').trim()
+            });
+            if (res.success) {
+                document.getElementById('cfgLearnPrivKey').value = '';
+                Ilmuna.success('Kredensial Learn Tersimpan', res.message);
+                await SSOADM.load();
+            } else {
+                Ilmuna.error('Gagal', res.message || 'Gagal menyimpan kredensial Learn.');
+            }
+        },
+        testLearnApi: async function () {
+            var res = await apiPost('test_learn_api_connection', {});
+            if (res.success) {
+                Ilmuna.success('Koneksi API Learn Valid', res.message);
+            } else {
+                Ilmuna.error('Uji Koneksi Gagal', res.message || 'Pastikan Public Key dan Private Key sudah disimpan dengan benar.');
             }
         },
         openPortalAdd: function () {

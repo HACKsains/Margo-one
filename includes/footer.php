@@ -744,8 +744,11 @@ try {
             var wsUrl = t.ws_connect_url;
             var streamUrl = t.stream_connect_url || (t.stream_url && t.ticket ? (t.stream_url + '?ticket=' + encodeURIComponent(t.ticket)) : '');
 
-            // Jika server menginformasikan daemon WS port 8090 tidak aktif (mis. cPanel tanpa CLI), langsung pakai SSE Stream!
-            if (t.daemon_live === false && streamUrl) {
+            var preferSse = false;
+            try { preferSse = (sessionStorage.getItem('margo.learn.preferSse') === '1'); } catch (e) {}
+
+            // Jika server menginformasikan daemon WS tidak aktif ATAU WS pernah gagal proxy di cPanel, langsung pakai SSE Stream!
+            if ((t.daemon_live === false || preferSse) && streamUrl) {
                 connectSse(streamUrl);
                 return;
             }
@@ -785,8 +788,9 @@ try {
             ws.onclose = function () {
                 ws = null;
                 if (!openedOnce && streamUrl) {
-                    // WebSocket gagal tersambung -> langsung fallback ke SSE Stream dengan tiket baru
-                    scheduleReconnect(300, true);
+                    // WebSocket gagal tersambung -> tandai sesi memakai SSE Stream & fallback dengan tiket baru
+                    try { sessionStorage.setItem('margo.learn.preferSse', '1'); } catch (e) {}
+                    scheduleReconnect(250, true);
                     return;
                 }
                 if (liveDot) {
