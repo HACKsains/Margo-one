@@ -258,44 +258,6 @@ require_once BASE_PATH . '/includes/header.php';
     </div>
 </section>
 
-<?php if (!hasRole('admin')): ?>
-<!-- ========================================================================= -->
-<!-- 3. AKTIVITAS & LOGIN TERAKHIR (PAGINATED AJAX — ZERO RELOAD)              -->
-<!-- ========================================================================= -->
-<section class="margo-activity-panel" id="activitySection">
-    <div class="margo-section-bar" style="margin-bottom:14px;">
-        <h2 class="margo-section-h2">
-            <iconify-icon icon="solar:history-bold" style="color:#0D7A87;"></iconify-icon>
-            <span>Aktivitas &amp; Sesi Terakhir</span>
-        </h2>
-        <a href="<?= htmlspecialchars(BASE_URL . '/profile?tab=sessions', ENT_QUOTES, 'UTF-8') ?>" class="margo-rwidget-link" style="font-size:12.5px;">
-            <span>Kelola Perangkat</span>
-            <iconify-icon icon="solar:arrow-right-linear" width="14"></iconify-icon>
-        </a>
-    </div>
-
-    <div id="recentLoginsWrap" class="margo-login-cards">
-        <div class="margo-skel" style="height:68px;border-radius:14px;"></div>
-        <div class="margo-skel" style="height:68px;border-radius:14px;"></div>
-    </div>
-
-    <h3 class="margo-section-h3 is-muted" style="margin-top:4px;">
-        <iconify-icon icon="solar:shield-check-bold" width="16"></iconify-icon>
-        <span>Riwayat Autentikasi Akun Anda</span>
-    </h3>
-    <div id="activityLogsWrap" class="margo-activity-rows">
-        <div class="margo-skel" style="height:52px;border-radius:13px;"></div>
-        <div class="margo-skel" style="height:52px;border-radius:13px;"></div>
-        <div class="margo-skel" style="height:52px;border-radius:13px;"></div>
-    </div>
-
-    <div class="margo-pagination" id="activityPagination" style="display:none;">
-        <div id="activityPageInfo" style="font-size:12px;color:#64748B;"></div>
-        <div id="activityPageBtns" class="margo-page-btns"></div>
-    </div>
-</section>
-<?php endif; ?>
-
 <script>
 (function () {
     'use strict';

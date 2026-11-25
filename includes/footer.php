@@ -100,6 +100,28 @@ try {
         </div>
     </div>
 
+    <!-- GLOBAL POPUP DETAIL NOTIFIKASI (KLIK NOTIFIKASI -> POPUP DETAIL LENGKAP) -->
+    <div class="ilm-modal-backdrop" id="margoNotifDetailModal">
+        <div class="ilm-modal-dialog" style="max-width:520px;">
+            <div class="ilm-modal-header">
+                <div class="ilm-modal-header__brand">
+                    <div class="ilm-modal-header__icon" id="mndIcon"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon></div>
+                    <div style="min-width:0;">
+                        <h3 class="ilm-modal-header__title" id="mndTitle">Detail Notifikasi</h3>
+                        <p class="ilm-modal-header__subtitle" id="mndSub">Ekosistem Margo One</p>
+                    </div>
+                </div>
+                <button type="button" class="ilm-modal-header__close" onclick="closeIlmunaModal('margoNotifDetailModal')">
+                    <iconify-icon icon="solar:close-circle-bold"></iconify-icon>
+                </button>
+            </div>
+            <div class="ilm-modal-body" id="mndBody"></div>
+            <div class="ilm-modal-footer" id="mndFooter">
+                <button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal('margoNotifDetailModal')">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <script src="<?= htmlspecialchars(BASE_URL . '/assets/js/lumina-lms.js', ENT_QUOTES, 'UTF-8') ?>"></script>
     <script src="<?= htmlspecialchars(BASE_URL . '/assets/js/alert.js', ENT_QUOTES, 'UTF-8') ?>"></script>
     <?php require_once BASE_PATH . '/includes/alert.php'; ilmuna_render_alerts(); ?>
@@ -468,7 +490,9 @@ try {
         var unreadCount  = 0;
         var drawerOpen   = false;
         var audioCtx     = null;
-        var allNotifs    = [];   // [{id, type, title, sub, kelas, color, icon, url, ts}]
+        var activeFilter = 'all';
+        var allNotifs    = [];   // [{uid, id, group, type, badge, title, sub, full_body, kelas, location, date_label, color, icon, url, ts, unread}]
+        var swReg        = null;
 
         /* ── DOM refs ── */
         var bellBtn   = document.getElementById('margoLearnBellBtn');
@@ -476,7 +500,31 @@ try {
         var liveDot   = document.getElementById('margoLearnLiveDot');
         var drawer    = document.getElementById('margoLearnDrawer');
         var notifList = document.getElementById('margoLearnNotifList');
-        var emptyEl   = document.getElementById('margoLearnEmptyState');
+        var pushBar   = document.getElementById('margoPushBar');
+        var pushTxt   = document.getElementById('margoPushStatusText');
+        var pushBtn   = document.getElementById('margoPushToggleBtn');
+
+        /* ── Local read/dismissed storage ── */
+        function loadIdSet(key) {
+            try {
+                var arr = JSON.parse(localStorage.getItem(key) || '[]');
+                return Array.isArray(arr) ? arr : [];
+            } catch (e) { return []; }
+        }
+        function saveIdSet(key, arr) {
+            try { localStorage.setItem(key, JSON.stringify(arr.slice(-120))); } catch (e) {}
+        }
+        var readIds      = loadIdSet('margo.notif.readIds');
+        var dismissedIds = loadIdSet('margo.notif.dismissedIds');
+
+        function isRead(uid) { return readIds.indexOf(String(uid)) !== -1; }
+        function markRead(uid) {
+            var s = String(uid);
+            if (readIds.indexOf(s) === -1) {
+                readIds.push(s);
+                saveIdSet('margo.notif.readIds', readIds);
+            }
+        }
 
         /* ── Helpers ── */
         function esc(s) {
@@ -485,7 +533,9 @@ try {
             });
         }
         function relTime(ts) {
+            if (!ts) return 'Baru saja';
             var diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 0) return 'Mendatang';
             if (diff < 60) return 'Baru saja';
             if (diff < 3600) return Math.floor(diff/60) + ' mnt lalu';
             if (diff < 86400) return Math.floor(diff/3600) + ' jam lalu';
@@ -499,6 +549,10 @@ try {
                 'proyek_deadline': 'solar:hourglass-bold',
                 'asesmen':         'solar:test-tube-bold',
                 'kelompok':        'solar:users-group-rounded-bold',
+                'agenda_today':    'solar:calendar-date-bold',
+                'agenda_tomorrow': 'solar:calendar-mark-bold',
+                'agenda_soon':     'solar:calendar-bold',
+                'ecosystem_info':  'solar:megaphone-bold',
             };
             return m[type] || 'solar:bell-bing-bold';
         }
@@ -510,8 +564,35 @@ try {
                 'proyek_deadline': '#D97706',
                 'asesmen':         '#EA580C',
                 'kelompok':        '#52B2DC',
+                'agenda_today':    '#EF4444',
+                'agenda_tomorrow': '#F59E0B',
+                'agenda_soon':     '#0D7A87',
+                'ecosystem_info':  '#1D3B5E',
             };
             return m[type] || '#1D3B5E';
+        }
+        function typeBadgeLabel(type) {
+            var m = {
+                'tugas_buat':      'TUGAS KELAS',
+                'tugas_deadline':  'DEADLINE TUGAS',
+                'proyek_buat':     'PROYEK KELAS',
+                'proyek_deadline': 'DEADLINE PROYEK',
+                'asesmen':         'ASESMEN KELAS',
+                'kelompok':        'KELOMPOK KELAS',
+                'agenda_today':    'AGENDA HARI INI',
+                'agenda_tomorrow': 'AGENDA BESOK',
+                'agenda_soon':     'AGENDA MENDATANG',
+                'ecosystem_info':  'INFO EKOSISTEM',
+            };
+            return m[type] || 'NOTIFIKASI';
+        }
+
+        function recalcUnread() {
+            unreadCount = 0;
+            for (var i = 0; i < allNotifs.length; i++) {
+                if (allNotifs[i].unread) unreadCount++;
+            }
+            updateBadge();
         }
 
         /* ── Badge update ── */
@@ -525,29 +606,137 @@ try {
             }
         }
 
+        /* ── Upsert notifikasi unik ── */
+        function upsertNotif(n, showPopupToast) {
+            if (!n || !n.uid) return;
+            var uid = String(n.uid);
+            if (dismissedIds.indexOf(uid) !== -1) return;
+
+            var existsIdx = -1;
+            for (var i = 0; i < allNotifs.length; i++) {
+                if (String(allNotifs[i].uid) === uid) { existsIdx = i; break; }
+            }
+            n.uid   = uid;
+            n.group = n.group || (n.type && n.type.indexOf('agenda') === 0 ? 'agenda' : (n.type === 'ecosystem_info' ? 'info' : 'kelas'));
+            n.badge = n.badge || typeBadgeLabel(n.type);
+            n.color = n.color || typeColor(n.type);
+            n.icon  = n.icon  || typeIcon(n.type);
+            n.unread = !isRead(uid);
+
+            if (existsIdx >= 0) {
+                allNotifs[existsIdx] = Object.assign({}, allNotifs[existsIdx], n, { unread: allNotifs[existsIdx].unread && !isRead(uid) });
+            } else {
+                allNotifs.push(n);
+                if (allNotifs.length > 60) allNotifs = allNotifs.slice(-60);
+                if (showPopupToast && n.unread) {
+                    showToast(n);
+                }
+            }
+            recalcUnread();
+        }
+
         /* ── Render drawer list ── */
         function renderDrawer() {
             if (!notifList) return;
-            if (allNotifs.length === 0) {
+            var filtered = allNotifs.filter(function (n) {
+                if (activeFilter === 'all') return true;
+                return n.group === activeFilter;
+            });
+            filtered.sort(function (a, b) {
+                if ((a.priority || 5) !== (b.priority || 5) && a.group === 'agenda' && b.group === 'agenda') {
+                    return (a.priority || 5) - (b.priority || 5);
+                }
+                return (b.ts || 0) - (a.ts || 0);
+            });
+
+            if (filtered.length === 0) {
+                var empLabel = activeFilter === 'kelas' ? 'Belum ada notifikasi kelas'
+                    : (activeFilter === 'agenda' ? 'Tidak ada agenda hari ini atau besok'
+                    : (activeFilter === 'info' ? 'Belum ada info ekosistem' : 'Belum ada notifikasi'));
                 notifList.innerHTML = '<div class="mld-empty" id="margoLearnEmptyState">'
                     + '<iconify-icon icon="solar:bell-off-bold" width="28" style="opacity:.35;color:#0D7A87;"></iconify-icon>'
-                    + '<span>Belum ada notifikasi kelas</span></div>';
+                    + '<span>' + empLabel + '</span></div>';
                 return;
             }
             var html = '';
-            allNotifs.slice().reverse().forEach(function (n) {
-                var col = typeColor(n.type);
-                var ico = typeIcon(n.type);
-                html += '<div class="mld-item' + (n.unread ? ' is-unread' : '') + '" onclick="MargoLearnWS.openNotif(' + JSON.stringify(n.url || '') + ',' + n.id + ')">'
+            filtered.forEach(function (n) {
+                var col = n.color || typeColor(n.type);
+                var ico = n.icon || typeIcon(n.type);
+                var bdg = n.badge || typeBadgeLabel(n.type);
+                html += '<div class="mld-item' + (n.unread ? ' is-unread' : '') + '" onclick="MargoLearnWS.openDetail(' + JSON.stringify(String(n.uid)) + ')">'
                     + '<div class="mld-item-icon" style="background:' + col + ';">'
                     + '<iconify-icon icon="' + ico + '" width="18"></iconify-icon></div>'
                     + '<div class="mld-item-body">'
+                    + '<span class="mld-item-badge" style="background:' + col + '18;color:' + col + ';">' + esc(bdg) + '</span>'
                     + '<div class="mld-item-title">' + esc(n.title) + '</div>'
                     + '<div class="mld-item-sub">' + esc(n.sub || '') + '</div>'
-                    + '<div class="mld-item-time">' + relTime(n.ts) + (n.kelas ? ' · <strong>' + esc(n.kelas) + '</strong>' : '') + '</div>'
+                    + '<div class="mld-item-time">' + esc(n.date_label || relTime(n.ts)) + (n.kelas ? ' · <strong>' + esc(n.kelas) + '</strong>' : '') + '</div>'
                     + '</div></div>';
             });
             notifList.innerHTML = html;
+        }
+
+        /* ── Buka Popup Detail Notifikasi ── */
+        function openDetailModal(notif) {
+            if (!notif) return;
+            markRead(notif.uid);
+            notif.unread = false;
+            recalcUnread();
+            renderDrawer();
+            drawerOpen = false;
+            if (drawer) drawer.style.display = 'none';
+
+            var col = notif.color || typeColor(notif.type);
+            var ico = notif.icon || typeIcon(notif.type);
+            var bdg = notif.badge || typeBadgeLabel(notif.type);
+
+            var icoEl   = document.getElementById('mndIcon');
+            var titleEl = document.getElementById('mndTitle');
+            var subEl   = document.getElementById('mndSub');
+            var bodyEl  = document.getElementById('mndBody');
+            var footEl  = document.getElementById('mndFooter');
+
+            if (icoEl) {
+                icoEl.style.background = col;
+                icoEl.innerHTML = '<iconify-icon icon="' + esc(ico) + '"></iconify-icon>';
+            }
+            if (titleEl) titleEl.textContent = notif.title || 'Detail Notifikasi';
+            if (subEl) subEl.textContent = bdg + (notif.date_label ? (' · ' + notif.date_label) : '');
+
+            if (bodyEl) {
+                var chips = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">'
+                    + '<span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;background:' + col + '18;color:' + col + ';">' + esc(bdg) + '</span>';
+                if (notif.kelas) {
+                    chips += '<span style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;background:#F1F5F9;color:#1D3B5E;">' + esc(notif.kelas) + '</span>';
+                }
+                if (notif.location) {
+                    chips += '<span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;background:#F1F5F9;color:#475569;">📍 ' + esc(notif.location) + '</span>';
+                }
+                chips += '</div>';
+
+                var detailText = notif.full_body || notif.sub || 'Tidak ada keterangan tambahan.';
+                bodyEl.innerHTML = chips
+                    + '<div style="font-size:13.5px;line-height:1.68;color:#334155;white-space:pre-line;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;padding:14px 16px;">'
+                    + esc(detailText)
+                    + '</div>';
+            }
+
+            if (footEl) {
+                var fHtml = '<button type="button" class="ilm-modal-btn ilm-modal-btn--ghost" onclick="closeIlmunaModal(\'margoNotifDetailModal\')">Tutup</button>';
+                if (notif.url && notif.url !== '') {
+                    var isExt = notif.url.indexOf(window.location.origin) !== 0 && notif.url.indexOf('http') === 0;
+                    fHtml += '<a href="' + esc(notif.url) + '"' + (isExt ? ' target="_blank" rel="noopener noreferrer"' : '') + ' class="ilm-modal-btn ilm-modal-btn--primary" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">'
+                        + '<span>Buka Halaman Terkait</span><iconify-icon icon="solar:arrow-right-up-bold" width="16"></iconify-icon></a>';
+                }
+                footEl.innerHTML = fHtml;
+            }
+
+            if (typeof openIlmunaModal === 'function') {
+                openIlmunaModal('margoNotifDetailModal');
+            } else {
+                var modalEl = document.getElementById('margoNotifDetailModal');
+                if (modalEl) modalEl.classList.add('is-open');
+            }
         }
 
         /* ── Gentle WA-like chime (Web Audio API, graceful fallback) ── */
@@ -591,7 +780,7 @@ try {
                 dismissToast(el);
             });
             el.addEventListener('click', function () {
-                MargoLearnWS.openNotif(notif.url || '', notif.id);
+                MargoLearnWS.openDetail(String(notif.uid || notif.id));
                 dismissToast(el);
             });
             document.body.appendChild(el);
@@ -603,7 +792,7 @@ try {
                     new Notification(notif.title, {
                         body: notif.sub || '',
                         icon: BASE_URL + '/assets/images/logo-margo-one.png',
-                        tag: 'margo-learn-' + notif.id,
+                        tag: 'margo-notif-' + (notif.uid || notif.id),
                     });
                 } catch (eN) {}
             }
@@ -619,11 +808,11 @@ try {
         }
 
         /* ── Proses incoming event dari WebSocket atau boot PHP ── */
-        function processEvent(evt) {
+        function processEvent(evt, silentMode) {
             var payload = null;
             if (typeof evt === 'object' && evt !== null && evt.payload) {
                 payload = evt.payload;
-            } else if (typeof evt === 'object' && evt !== null && evt.id) {
+            } else if (typeof evt === 'object' && evt !== null && (evt.id || evt.event_id)) {
                 payload = evt;
             }
             if (!payload) return;
@@ -636,38 +825,37 @@ try {
                       : cat === 'kelompok' ? 'kelompok'
                       : (payload.type || 'tugas_buat');
 
+            var eid = evt.event_id || payload.id || Date.now();
             var notif = {
-                id:    Date.now(),
-                type:  type,
-                title: payload.judul_tugas || payload.nama_proyek || payload.judul_asesmen || payload.judul || 'Notifikasi Baru',
-                sub:   payload.deskripsi_ringkas || payload.sub || '',
-                kelas: (payload.kelas && payload.kelas.nama) || payload.target_kelas || '',
-                color: typeColor(type),
-                icon:  typeIcon(type),
-                url:   payload.portal_url || (BASE_URL + '/agenda'),
-                ts:    Date.now(),
-                unread: true,
+                uid:       'kelas_' + type + '_' + eid,
+                id:        eid,
+                group:     'kelas',
+                type:      type,
+                badge:     typeBadgeLabel(type),
+                title:     payload.judul_tugas || payload.nama_proyek || payload.judul_asesmen || payload.judul || evt.title || 'Notifikasi Kelas',
+                sub:       payload.deskripsi_ringkas || payload.sub || evt.summary || '',
+                full_body: payload.deskripsi_lengkap || payload.deskripsi_ringkas || payload.sub || evt.summary || 'Pembaruan terbaru dari kelas Ilmuna Learn.',
+                kelas:     (payload.kelas && payload.kelas.nama) || payload.target_kelas || evt.nama_kelas || '',
+                color:     typeColor(type),
+                icon:      typeIcon(type),
+                url:       payload.portal_url || evt.portal_url || (BASE_URL + '/agenda'),
+                ts:        Date.now(),
             };
 
-            allNotifs.push(notif);
-            if (allNotifs.length > 50) allNotifs = allNotifs.slice(-50);
-
-            unreadCount++;
-            updateBadge();
+            upsertNotif(notif, !silentMode);
             renderDrawer();
-            showToast(notif);
 
-            /* Trigger refresh agenda sidebar + calendar langsung (zero reload!) */
-            if (window.MargoShell && MargoShell.refreshRightWidgets) {
-                MargoShell.refreshRightWidgets();
-            }
-            /* Jika sedang di /agenda, trigger MARGO_AGENDA.syncLearn() agar kalender di-update */
-            if (typeof window.MARGO_AGENDA !== 'undefined' && typeof MARGO_AGENDA.syncLearn === 'function') {
-                MARGO_AGENDA.syncLearn();
+            if (!silentMode) {
+                /* Trigger refresh agenda sidebar + calendar langsung (zero reload!) */
+                if (window.MargoShell && MargoShell.refreshRightWidgets) {
+                    MargoShell.refreshRightWidgets();
+                }
+                if (typeof window.MARGO_AGENDA !== 'undefined' && typeof MARGO_AGENDA.syncLearn === 'function') {
+                    MARGO_AGENDA.syncLearn();
+                }
             }
 
-            /* Simpan ke localStorage agar tetap ada setelah reload ringan */
-            try { localStorage.setItem('margo.learn.notifs', JSON.stringify(allNotifs)); } catch (e) {}
+            try { localStorage.setItem('margo.learn.notifs', JSON.stringify(allNotifs.filter(function (x) { return x.group === 'kelas'; }).slice(-30))); } catch (e) {}
         }
 
         /* ── Koneksi Real-Time: WebSocket (jika daemon port 8090 aktif) -> Auto-Fallback SSE Stream (cPanel tanpa CLI) ── */
@@ -823,22 +1011,133 @@ try {
             }, waitMs);
         }
 
+        /* ── Muat notifikasi terpadu (Agenda Hari Ini/Besok + Info Ekosistem) dari server ── */
+        function loadUnifiedNotifications(allowToastForNew) {
+            fetch(BASE_URL + '/portal-data.php?resource=notifications', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            }).then(function (r) { return r.json(); })
+              .then(function (res) {
+                if (res && res.success && Array.isArray(res.data)) {
+                    res.data.forEach(function (item) {
+                        upsertNotif(item, !!allowToastForNew);
+                    });
+                    renderDrawer();
+                }
+              }).catch(function () {});
+        }
+
+        /* ── Background Web Push (Service Worker + PushManager VAPID) ── */
+        function urlBase64ToUint8Array(base64String) {
+            var padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            var base64  = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+            var rawData = window.atob(base64);
+            var output  = new Uint8Array(rawData.length);
+            for (var i = 0; i < rawData.length; ++i) {
+                output[i] = rawData.charCodeAt(i);
+            }
+            return output;
+        }
+
+        function updatePushBarUI(state) {
+            if (!pushBar || !pushTxt || !pushBtn) return;
+            if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+                pushBar.style.display = 'none';
+                return;
+            }
+            pushBar.style.display = 'flex';
+            if (state === 'subscribed') {
+                pushTxt.textContent = 'Notif latar belakang (luar web) aktif';
+                pushBtn.textContent = 'Uji Push';
+                pushBtn.classList.add('is-active');
+                pushBtn.onclick = function () {
+                    fetch(BASE_URL + '/api/push.php?action=test', { method: 'POST', credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            if (window.Ilmuna && Ilmuna.toast) {
+                                Ilmuna.toast(d && d.success ? 'Notifikasi push uji dikirim!' : 'Push terdaftar, tunggu notifikasi sistem.', d && d.success ? 'success' : 'info');
+                            }
+                        }).catch(function () {});
+                };
+            } else if (state === 'denied') {
+                pushTxt.textContent = 'Izin notifikasi diblokir di browser';
+                pushBtn.textContent = 'Info';
+                pushBtn.classList.remove('is-active');
+                pushBtn.onclick = function () {
+                    if (window.Ilmuna && Ilmuna.info) {
+                        Ilmuna.info('Aktifkan Notifikasi Browser', 'Buka pengaturan situs (ikon gembok di address bar browser), lalu ubah izin Notifications menjadi Allow/Izinkan agar notifikasi tetap masuk saat web ditutup.');
+                    }
+                };
+            } else {
+                pushTxt.textContent = 'Tetap dapat notif saat di luar web';
+                pushBtn.textContent = 'Aktifkan';
+                pushBtn.classList.remove('is-active');
+                pushBtn.onclick = function () { MargoLearnWS.enableBackgroundPush(); };
+            }
+        }
+
+        async function subscribePushInternal(askPermission) {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+            try {
+                if (!swReg) {
+                    swReg = await navigator.serviceWorker.register(BASE_URL + '/sw.js', { scope: BASE_URL + '/' });
+                    await navigator.serviceWorker.ready;
+                }
+                if (Notification.permission === 'denied') {
+                    updatePushBarUI('denied');
+                    return;
+                }
+                if (Notification.permission === 'default') {
+                    if (!askPermission) {
+                        updatePushBarUI('prompt');
+                        return;
+                    }
+                    var perm = await Notification.requestPermission();
+                    if (perm !== 'granted') {
+                        updatePushBarUI(perm === 'denied' ? 'denied' : 'prompt');
+                        return;
+                    }
+                }
+                var existing = await swReg.pushManager.getSubscription();
+                if (!existing) {
+                    var vkResp = await fetch(BASE_URL + '/api/push.php?action=vapid_key', { credentials: 'same-origin' });
+                    var vkJson = await vkResp.json();
+                    if (!vkJson || !vkJson.success || !vkJson.public_key) return;
+                    existing = await swReg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vkJson.public_key),
+                    });
+                }
+                if (existing) {
+                    await fetch(BASE_URL + '/api/push.php?action=subscribe', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(existing.toJSON()),
+                    });
+                    updatePushBarUI('subscribed');
+                }
+            } catch (eSw) {
+                updatePushBarUI('prompt');
+            }
+        }
+
         /* ── Muat notifikasi awal dari INIT_EVENTS (PHP server bootstrap) ── */
         function hydrateInitEvents() {
-            /* Juga dari localStorage sebagai fallback offline */
             try {
                 var saved = JSON.parse(localStorage.getItem('margo.learn.notifs') || '[]');
                 if (Array.isArray(saved) && saved.length > 0) {
-                    allNotifs = saved.slice(-30);
+                    saved.slice(-30).forEach(function (s) {
+                        if (!s.uid) s.uid = 'kelas_' + (s.type || 'evt') + '_' + (s.id || Date.now());
+                        upsertNotif(s, false);
+                    });
                 }
             } catch (e) {}
 
             if (Array.isArray(INIT_EVENTS)) {
-                INIT_EVENTS.forEach(function (evt) { processEvent(evt); });
+                INIT_EVENTS.forEach(function (evt) { processEvent(evt, true); });
             }
-            if (allNotifs.length > 0) {
-                renderDrawer();
-            }
+            renderDrawer();
         }
 
         /* ── Toggles ── */
@@ -846,12 +1145,12 @@ try {
             drawerOpen = !drawerOpen;
             if (drawer) drawer.style.display = drawerOpen ? 'flex' : 'none';
             if (drawerOpen) {
-                /* Mark all as read */
-                allNotifs.forEach(function (n) { n.unread = false; });
-                unreadCount = 0;
-                updateBadge();
                 renderDrawer();
             }
+        }
+        function closeDrawer() {
+            drawerOpen = false;
+            if (drawer) drawer.style.display = 'none';
         }
 
         /* ── Close drawer saat klik di luar ── */
@@ -859,43 +1158,88 @@ try {
             if (!drawerOpen) return;
             var mount = document.getElementById('margoLearnNotifMount');
             if (mount && !mount.contains(e.target)) {
-                drawerOpen = false;
-                if (drawer) drawer.style.display = 'none';
+                closeDrawer();
             }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && drawerOpen) closeDrawer();
         });
 
         /* ── Public API ── */
         window.MargoLearnWS = {
             toggleDrawer: toggleDrawer,
+            closeDrawer: closeDrawer,
+            setFilter: function (filter) {
+                activeFilter = filter || 'all';
+                document.querySelectorAll('#margoNotifTabs .mld-tab').forEach(function (btn) {
+                    btn.classList.toggle('is-active', btn.getAttribute('data-filter') === activeFilter);
+                });
+                renderDrawer();
+            },
             clearAll: function () {
+                allNotifs.forEach(function (n) {
+                    if (n.uid && dismissedIds.indexOf(String(n.uid)) === -1) {
+                        dismissedIds.push(String(n.uid));
+                    }
+                });
+                saveIdSet('margo.notif.dismissedIds', dismissedIds);
                 allNotifs = [];
                 unreadCount = 0;
                 updateBadge();
                 renderDrawer();
                 try { localStorage.removeItem('margo.learn.notifs'); } catch (e) {}
             },
-            openNotif: function (url, id) {
-                /* Mark notif as read */
-                allNotifs.forEach(function (n) { if (n.id === id) n.unread = false; });
-                renderDrawer();
-                drawerOpen = false;
-                if (drawer) drawer.style.display = 'none';
-                if (url && url !== '') {
-                    window.open(url, '_blank', 'noopener');
-                } else {
-                    window.location.href = BASE_URL + '/agenda';
+            openDetail: function (uid) {
+                var found = null;
+                for (var i = 0; i < allNotifs.length; i++) {
+                    if (String(allNotifs[i].uid) === String(uid) || String(allNotifs[i].id) === String(uid)) {
+                        found = allNotifs[i];
+                        break;
+                    }
                 }
+                if (found) {
+                    openDetailModal(found);
+                }
+            },
+            openNotif: function (url, id) {
+                MargoLearnWS.openDetail(id);
+            },
+            enableBackgroundPush: function () {
+                subscribePushInternal(true);
             },
             requestNotifPermission: function () {
-                if (window.Notification && Notification.permission === 'default') {
-                    Notification.requestPermission().catch(function(){});
-                }
+                subscribePushInternal(false);
             },
         };
+
+        /* ── Tangkap klik dari Service Worker OS Notification -> buka popup detail ── */
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', function (ev) {
+                if (ev.data && ev.data.type === 'MARGO_PUSH_CLICK' && ev.data.payload) {
+                    var p = ev.data.payload;
+                    if (p.notif_id) {
+                        MargoLearnWS.openDetail(p.notif_id);
+                    } else {
+                        openDetailModal({
+                            uid: 'push_' + Date.now(),
+                            type: p.category || 'ecosystem_info',
+                            title: p.title || 'Notifikasi Margo One',
+                            sub: p.body || '',
+                            full_body: p.body || '',
+                            url: p.url || (BASE_URL + '/gateway'),
+                            ts: Date.now()
+                        });
+                    }
+                }
+            });
+        }
 
         /* ── Init (Async agar tidak memblokir render halaman / #entrySlide) ── */
         document.addEventListener('DOMContentLoaded', function () {
             hydrateInitEvents();
+            loadUnifiedNotifications(false);
+            subscribePushInternal(false);
+
             if (WS_BOOT && WS_BOOT.ok && WS_BOOT.ws_ticket) {
                 connect();
             } else {
@@ -906,20 +1250,9 @@ try {
                   .then(function (res) {
                     if (res && res.success && res.data) {
                         WS_BOOT = { ok: true, ws_ticket: res.data };
-                        if (Array.isArray(res.recent_events) && res.recent_events.length > 0 && allNotifs.length === 0) {
+                        if (Array.isArray(res.recent_events) && res.recent_events.length > 0) {
                             res.recent_events.forEach(function (evt) {
-                                var p = evt.payload || evt;
-                                if (!p) return;
-                                allNotifs.push({
-                                    id: Number(evt.event_id || Date.now()),
-                                    type: (p.kategori_item || 'tugas') + '_buat',
-                                    title: p.judul_tugas || p.nama_proyek || p.judul_asesmen || evt.title || 'Notifikasi Kelas',
-                                    sub: p.deskripsi_ringkas || evt.summary || '',
-                                    kelas: (p.kelas && p.kelas.nama) || evt.nama_kelas || '',
-                                    url: p.portal_url || evt.portal_url || (BASE_URL + '/agenda'),
-                                    ts: Date.now(),
-                                    unread: false
-                                });
+                                processEvent(evt, true);
                             });
                             renderDrawer();
                         }
@@ -930,11 +1263,13 @@ try {
                     }
                   }).catch(function () {});
             }
-            /* Request browser notification permission dengan lembut setelah interaksi pertama pengguna */
-            document.addEventListener('click', function permReq() {
-                MargoLearnWS.requestNotifPermission();
-                document.removeEventListener('click', permReq);
-            }, { once: true });
+
+            /* Segarkan agenda & info ekosistem secara ringan saat pengguna kembali membuka tab */
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) {
+                    loadUnifiedNotifications(true);
+                }
+            });
         });
     })();
     </script>

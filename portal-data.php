@@ -414,6 +414,106 @@ try {
         exit;
     }
 
+    // ------------------------------------------------------------------
+    // 7. PUSAT NOTIFIKASI TERPADU (AGENDA HARI INI/BESOK + INFO EKOSISTEM)
+    // ------------------------------------------------------------------
+    if ($resource === 'notifications') {
+        $items    = [];
+        $today    = date('Y-m-d');
+        $tomorrow = date('Y-m-d', strtotime('+1 day'));
+        $soonEnd  = date('Y-m-d', strtotime('+3 days'));
+
+        // A. Agenda Hari Ini, Besok & Mendatang (terfilter sesuai role & kelas)
+        try {
+            $agList = margo_agenda_fetch_visible($pdo, $currentUser, [
+                'upcoming'        => true,
+                'limit'           => 30,
+                'skip_learn_sync' => true,
+            ]);
+            foreach ($agList as $ag) {
+                $sd = (string)($ag['start_date'] ?? '');
+                $ed = (string)($ag['end_date'] ?: $sd);
+                $agId = (int)($ag['id'] ?? 0);
+                if ($agId <= 0 || $sd === '') {
+                    continue;
+                }
+
+                $isToday    = ($sd <= $today && $ed >= $today);
+                $isTomorrow = (!$isToday && $sd === $tomorrow);
+                $isSoon     = (!$isToday && !$isTomorrow && $sd > $tomorrow && $sd <= $soonEnd);
+                if (!$isToday && !$isTomorrow && !$isSoon) {
+                    continue;
+                }
+
+                $cat   = $isToday ? 'agenda_today' : ($isTomorrow ? 'agenda_tomorrow' : 'agenda_soon');
+                $badge = $isToday ? 'AGENDA HARI INI' : ($isTomorrow ? 'AGENDA BESOK' : 'AGENDA MENDATANG');
+                $color = $isToday ? '#EF4444' : ($isTomorrow ? '#F59E0B' : '#0D7A87');
+                $icon  = $isToday ? 'solar:calendar-date-bold' : 'solar:calendar-mark-bold';
+                $timeStr = !empty($ag['start_time']) ? (' · Pukul ' . substr((string)$ag['start_time'], 0, 5) . ' WIB') : '';
+                $dateLbl = ($isToday ? 'Hari Ini' : ($isTomorrow ? 'Besok' : date('d M Y', strtotime($sd)))) . $timeStr;
+                $loc     = trim((string)($ag['location'] ?? ''));
+                $desc    = trim((string)($ag['description'] ?? ''));
+                $visLbl  = trim((string)($ag['visibility_label'] ?? ''));
+                $subLine = $dateLbl . ($loc !== '' ? ' · ' . $loc : ($visLbl !== '' ? ' · ' . $visLbl : ''));
+
+                $items[] = [
+                    'uid'        => $cat . '_' . $agId . '_' . ($isToday ? $today : $sd),
+                    'type'       => $cat,
+                    'group'      => 'agenda',
+                    'badge'      => $badge,
+                    'title'      => (string)$ag['title'],
+                    'sub'        => $subLine,
+                    'full_body'  => $desc !== '' ? $desc : ('Jadwal agenda: ' . $ag['title'] . ' (' . $dateLbl . ').'),
+                    'kelas'      => (string)($ag['target_kelas_name'] ?? $visLbl),
+                    'location'   => $loc,
+                    'date_label' => $dateLbl,
+                    'color'      => $color,
+                    'icon'       => $icon,
+                    'url'        => !empty($ag['link_url']) ? margo_portal_resolve_url($ag['link_url']) : (BASE_URL . '/agenda'),
+                    'ts'         => ($isToday ? time() : (strtotime($sd . ' 07:00:00') ?: time())) * 1000,
+                    'priority'   => $isToday ? 1 : ($isTomorrow ? 2 : 3),
+                ];
+            }
+        } catch (Throwable $eAgN) {}
+
+        // B. Info Ekosistem (sso_announcements)
+        try {
+            $nwRows = $pdo->query("
+                SELECT id, title, excerpt, link_url, badge_label, published_at
+                FROM sso_announcements
+                WHERE is_active = 1
+                ORDER BY published_at DESC, id DESC
+                LIMIT 10
+            ")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($nwRows as $nw) {
+                $nwId = (int)$nw['id'];
+                $tsN  = strtotime((string)$nw['published_at']) ?: time();
+                $dateH = date('d M Y, H:i', $tsN) . ' WIB';
+                $excerpt = trim((string)($nw['excerpt'] ?? ''));
+                $items[] = [
+                    'uid'        => 'eco_info_' . $nwId,
+                    'type'       => 'ecosystem_info',
+                    'group'      => 'info',
+                    'badge'      => 'INFO EKOSISTEM · ' . strtoupper((string)($nw['badge_label'] ?: 'INFO')),
+                    'title'      => (string)$nw['title'],
+                    'sub'        => $excerpt !== '' ? $excerpt : ('Dipublikasikan ' . $dateH),
+                    'full_body'  => $excerpt !== '' ? $excerpt : 'Informasi resmi dari ekosistem digital Ilmuna.',
+                    'kelas'      => 'Ekosistem Ilmuna',
+                    'location'   => '',
+                    'date_label' => $dateH,
+                    'color'      => '#1D3B5E',
+                    'icon'       => 'solar:megaphone-bold',
+                    'url'        => !empty($nw['link_url']) ? margo_portal_resolve_url($nw['link_url']) : (BASE_URL . '/gateway'),
+                    'ts'         => $tsN * 1000,
+                    'priority'   => 2,
+                ];
+            }
+        } catch (Throwable $eNwN) {}
+
+        echo json_encode(['success' => true, 'data' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     echo json_encode(['success' => false, 'message' => 'Resource tidak dikenali.']);
 } catch (Throwable $e) {
     http_response_code(500);

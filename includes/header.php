@@ -91,23 +91,42 @@ if (!empty($extraHead)) {
                 <div class="margo-header-right">
                     <div class="margo-learn-notif-wrap" id="margoLearnNotifMount">
                         <button type="button" class="margo-icon-btn margo-learn-bell-btn" id="margoLearnBellBtn"
-                                aria-label="Notifikasi Real-Time Ilmuna Learn" title="Notifikasi Kelas Ilmuna Learn"
+                                aria-label="Pusat Notifikasi Real-Time" title="Notifikasi Kelas, Agenda &amp; Info Ekosistem"
                                 onclick="MargoLearnWS && MargoLearnWS.toggleDrawer()">
                             <iconify-icon icon="solar:bell-bing-bold" id="margoLearnBellIcon"></iconify-icon>
                             <span class="margo-learn-badge" id="margoLearnBadge" style="display:none">0</span>
                             <span class="margo-learn-live-dot" id="margoLearnLiveDot" title="Koneksi real-time aktif"></span>
                         </button>
-                        <div class="margo-learn-drawer" id="margoLearnDrawer" style="display:none">
+                        <div class="margo-learn-drawer" id="margoLearnDrawer" style="display:none" role="dialog" aria-label="Pusat Notifikasi">
                             <div class="mld-header">
-                                <span class="mld-title"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon> Notifikasi Kelas</span>
-                                <button type="button" class="mld-clear-btn" id="margoLearnClearBtn" onclick="MargoLearnWS && MargoLearnWS.clearAll()">
-                                    <iconify-icon icon="solar:trash-bin-minimalistic-bold" width="14"></iconify-icon> Bersihkan
-                                </button>
+                                <span class="mld-title"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon> Pusat Notifikasi</span>
+                                <div class="mld-header-actions">
+                                    <button type="button" class="mld-clear-btn" id="margoLearnClearBtn" onclick="MargoLearnWS && MargoLearnWS.clearAll()" title="Bersihkan notifikasi">
+                                        <iconify-icon icon="solar:trash-bin-minimalistic-bold" width="14"></iconify-icon>
+                                        <span>Bersihkan</span>
+                                    </button>
+                                    <button type="button" class="mld-close-mobile-btn" onclick="MargoLearnWS && MargoLearnWS.closeDrawer()" aria-label="Tutup Notifikasi">
+                                        <iconify-icon icon="solar:close-circle-bold" width="18"></iconify-icon>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mld-tabs" id="margoNotifTabs">
+                                <button type="button" class="mld-tab is-active" data-filter="all" onclick="MargoLearnWS && MargoLearnWS.setFilter('all')">Semua</button>
+                                <button type="button" class="mld-tab" data-filter="kelas" onclick="MargoLearnWS && MargoLearnWS.setFilter('kelas')">Kelas</button>
+                                <button type="button" class="mld-tab" data-filter="agenda" onclick="MargoLearnWS && MargoLearnWS.setFilter('agenda')">Agenda</button>
+                                <button type="button" class="mld-tab" data-filter="info" onclick="MargoLearnWS && MargoLearnWS.setFilter('info')">Info</button>
+                            </div>
+                            <div class="mld-push-bar" id="margoPushBar" style="display:none;">
+                                <div class="mld-push-info">
+                                    <iconify-icon icon="solar:bell-bing-bold-duotone" width="16" style="color:#0D7A87;flex-shrink:0;"></iconify-icon>
+                                    <span id="margoPushStatusText">Aktifkan notifikasi saat di luar web</span>
+                                </div>
+                                <button type="button" class="mld-push-btn" id="margoPushToggleBtn" onclick="MargoLearnWS && MargoLearnWS.enableBackgroundPush()">Aktifkan</button>
                             </div>
                             <div class="mld-list" id="margoLearnNotifList">
                                 <div class="mld-empty" id="margoLearnEmptyState">
                                     <iconify-icon icon="solar:bell-off-bold" width="28" style="opacity:.35;color:#0D7A87;"></iconify-icon>
-                                    <span>Belum ada notifikasi kelas</span>
+                                    <span>Belum ada notifikasi</span>
                                 </div>
                             </div>
                         </div>

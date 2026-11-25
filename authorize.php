@@ -104,6 +104,27 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
     }
     $inisial = margo_mb_strtoupper($inisial ?: 'MO');
 
+    $userAvatarUrl = '';
+    if (!empty($user['avatar'])) {
+        $userAvatarUrl = (string)(margo_resolve_avatar_url($user['avatar']) ?: '');
+    }
+    if ($userAvatarUrl === '' && !empty($user['id'])) {
+        try {
+            $pdoAv = getDBConnection();
+            $stAv = $pdoAv->prepare("SELECT foto_profil FROM users WHERE id = ? LIMIT 1");
+            $stAv->execute([(int)$user['id']]);
+            $rawAv = (string)($stAv->fetchColumn() ?: '');
+            if ($rawAv === '') {
+                $stAv2 = $pdoAv->prepare("SELECT avatar FROM sso_users WHERE id = ? LIMIT 1");
+                $stAv2->execute([(int)$user['id']]);
+                $rawAv = (string)($stAv2->fetchColumn() ?: '');
+            }
+            if ($rawAv !== '') {
+                $userAvatarUrl = (string)(margo_resolve_avatar_url($rawAv) ?: '');
+            }
+        } catch (Throwable $eAv) {}
+    }
+
     $queryParams = [
         'client_id'             => $pending['client_id'],
         'redirect_uri'          => $pending['redirect_uri'],
@@ -350,13 +371,21 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
             gap: 12px;
         }
         .account-avatar {
-            width: 42px; height: 42px; border-radius: 50%;
+            width: 46px; height: 46px; border-radius: 50%;
             background: linear-gradient(135deg, #1D3B5E, #0D7A87);
             color: #FFFFFF; font-family: var(--font-h);
-            font-size: 14px; font-weight: 800;
+            font-size: 15px; font-weight: 800;
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0;
+            overflow: hidden;
+            border: 2px solid #FFFFFF;
             box-shadow: 0 4px 12px rgba(13, 122, 135, 0.25);
+        }
+        .account-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
         }
         .account-meta { min-width: 0; flex: 1; }
         .account-name {
@@ -524,7 +553,14 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
                     <span class="account-role-pill"><?= htmlspecialchars($roleLabel, ENT_QUOTES, 'UTF-8') ?></span>
                 </div>
                 <div class="account-user-row">
-                    <div class="account-avatar"><?= htmlspecialchars($inisial, ENT_QUOTES, 'UTF-8') ?></div>
+                    <div class="account-avatar">
+                        <?php if ($userAvatarUrl !== ''): ?>
+                            <img src="<?= htmlspecialchars($userAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?>" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';">
+                            <span style="display:none;"><?= htmlspecialchars($inisial, ENT_QUOTES, 'UTF-8') ?></span>
+                        <?php else: ?>
+                            <?= htmlspecialchars($inisial, ENT_QUOTES, 'UTF-8') ?>
+                        <?php endif; ?>
+                    </div>
                     <div class="account-meta">
                         <div class="account-name"><?= htmlspecialchars($fullName, ENT_QUOTES, 'UTF-8') ?></div>
                         <div class="account-email"><?= htmlspecialchars($subIdent, ENT_QUOTES, 'UTF-8') ?></div>
