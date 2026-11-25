@@ -476,7 +476,52 @@ try {
             }
         } catch (Throwable $eAgN) {}
 
-        // B. Info Ekosistem (sso_announcements)
+        // B. Notifikasi Agenda Khusus (Kelas & Mapel, Semua Kelas, Sesama Guru, Sesama Siswa, Kelompok Tugas/Proyek)
+        try {
+            $agNotifs = margo_agenda_fetch_user_notifications($pdo, $userId, 20);
+            foreach ($agNotifs as $an) {
+                $anId    = (int)$an['id'];
+                $agId    = (int)$an['agenda_id'];
+                $tsAn    = strtotime((string)$an['created_at']) ?: time();
+                $sd      = (string)($an['start_date'] ?? '');
+                $tmStr   = !empty($an['start_time']) ? (' · ' . substr((string)$an['start_time'], 0, 5) . ' WIB') : '';
+                $dateLbl = ($sd !== '' ? date('d M Y', strtotime($sd)) : date('d M Y', $tsAn)) . $tmStr;
+                $scType  = (string)($an['scope_type'] ?? 'kelas');
+                $scColorMap = [
+                    'kelas'       => '#0284C7',
+                    'semua_kelas' => '#0284C7',
+                    'peer_guru'   => '#4F46E5',
+                    'peer_siswa'  => '#0D7A87',
+                    'kelompok'    => '#8B5CF6',
+                ];
+                $scIconMap = [
+                    'kelas'       => 'solar:buildings-2-bold',
+                    'semua_kelas' => 'solar:buildings-2-bold',
+                    'peer_guru'   => 'solar:user-speak-bold',
+                    'peer_siswa'  => 'solar:users-group-two-rounded-bold',
+                    'kelompok'    => 'solar:users-group-rounded-bold',
+                ];
+                $items[] = [
+                    'uid'        => 'ag_invite_' . $anId,
+                    'type'       => 'agenda_invite_' . $scType,
+                    'group'      => 'agenda',
+                    'badge'      => (string)($an['badge_label'] ?: 'AGENDA BARU'),
+                    'title'      => (string)$an['title'],
+                    'sub'        => trim((string)($an['sender_name'] ? ('Dari ' . $an['sender_name'] . ' · ') : '') . ($an['meta_label'] ?: $dateLbl)),
+                    'full_body'  => (string)($an['body'] ?: ('Agenda baru: ' . $an['title'] . ' (' . $dateLbl . ').')),
+                    'kelas'      => (string)($an['meta_label'] ?: ''),
+                    'location'   => '',
+                    'date_label' => $dateLbl,
+                    'color'      => $scColorMap[$scType] ?? '#0D7A87',
+                    'icon'       => $scIconMap[$scType] ?? 'solar:calendar-mark-bold',
+                    'url'        => !empty($an['url']) ? margo_portal_resolve_url($an['url']) : (BASE_URL . '/agenda?id=' . $agId),
+                    'ts'         => $tsAn * 1000,
+                    'priority'   => 1,
+                ];
+            }
+        } catch (Throwable $eAn) {}
+
+        // C. Info Ekosistem (sso_announcements)
         try {
             $nwRows = $pdo->query("
                 SELECT id, title, excerpt, link_url, badge_label, published_at

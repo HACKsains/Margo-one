@@ -788,3 +788,92 @@ function margo_learn_issue_user_ws_bootstrap(PDO $ssoPdo, array $userSession)
         'kelas_ids'     => $wrap['kelas_ids'] ?? [],
     ];
 }
+
+/**
+ * Ambil opsi target Agenda (Kelas+Mapel Guru, Sesama Guru, Sesama Siswa, Kelompok Tugas/Proyek Ketua Kelompok)
+ * melalui endpoint broadcast terpadu Ilmuna Learn (`api/sso-broadcast.php?resource=agenda_options`)
+ */
+function margo_learn_fetch_agenda_options(PDO $ssoPdo, array $userSession, $force = false)
+{
+    static $memCache = [];
+    $uid = (int)($userSession['id'] ?? 0);
+    if (!$force && $uid > 0 && isset($memCache[$uid])) {
+        return $memCache[$uid];
+    }
+
+    $cacheFile = $uid > 0 ? (sys_get_temp_dir() . '/margo_learn_agenda_opt_v1_' . $uid . '.json') : '';
+    if (!$force && $cacheFile !== '' && file_exists($cacheFile) && (time() - (int)filemtime($cacheFile)) < 60) {
+        $cached = json_decode((string)@file_get_contents($cacheFile), true);
+        if (is_array($cached) && !empty($cached['ok'])) {
+            $memCache[$uid] = $cached;
+            return $cached;
+        }
+    }
+
+    $roles = isset($userSession['roles']) && is_array($userSession['roles'])
+        ? array_values(array_unique(array_map('strtolower', $userSession['roles'])))
+        : [];
+    $roleTag = in_array('admin', $roles, true) ? 'admin' : (in_array('guru', $roles, true) ? 'guru' : 'siswa');
+
+    $uRow = $userSession;
+    if ($uid > 0) {
+        try {
+            $stU = $ssoPdo->prepare("SELECT * FROM sso_users WHERE id = ? LIMIT 1");
+            $stU->execute([$uid]);
+            $dbU = $stU->fetch(PDO::FETCH_ASSOC);
+            if ($dbU) {
+                $uRow = $dbU;
+            }
+        } catch (Throwable $eU1) {
+            try {
+                $stU2 = $ssoPdo->prepare("SELECT * FROM users WHERE id = ? LIMIT 1");
+                $stU2->execute([$uid]);
+                $dbU2 = $stU2->fetch(PDO::FETCH_ASSOC);
+                if ($dbU2) {
+                    $uRow = $dbU2;
+                }
+            } catch (Throwable $eU2) {}
+        }
+    }
+
+    $unameVal   = trim((string)($uRow['username'] ?? ($userSession['username'] ?? '')));
+    $nisnNipVal = trim((string)($uRow['nisn_nip'] ?? ($userSession['nisn_nip'] ?? '')));
+    $nisVal     = trim((string)($uRow['nis'] ?? ($roleTag === 'siswa' && ctype_digit($unameVal) ? $unameVal : '')));
+    $nisnVal    = trim((string)($uRow['nisn'] ?? ($roleTag === 'siswa' ? $nisnNipVal : '')));
+    $nipVal     = trim((string)($uRow['nip'] ?? ($roleTag === 'guru' ? ($nisnNipVal ?: $unameVal) : '')));
+    $emailVal   = trim((string)(($uRow['email_google'] ?? '') !== '' ? $uRow['email_google'] : ($uRow['email'] ?? ($userSession['email'] ?? ''))));
+
+    $params = [
+        'role'     => $roleTag,
+        'username' => $unameVal,
+        'nisn_nip' => $nisnNipVal,
+        'email'    => $emailVal,
+        'nis'      => $nisVal,
+        'nisn'     => $nisnVal,
+        'nip'      => $nipVal,
+    ];
+
+    try {
+        $client = margo_learn_api_client($ssoPdo);
+        $data   = $client->request('agenda_options', $params, 'GET');
+        $res    = [
+            'ok'   => true,
+            'via'  => 'signed_rest_api',
+            'data' => is_array($data) ? $data : [],
+        ];
+        if ($cacheFile !== '') {
+            @file_put_contents($cacheFile, json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+        if ($uid > 0) {
+            $memCache[$uid] = $res;
+        }
+        return $res;
+    } catch (Throwable $e) {
+        return [
+            'ok'    => false,
+            'via'   => 'error',
+            'error' => $e->getMessage(),
+            'data'  => [],
+        ];
+    }
+}

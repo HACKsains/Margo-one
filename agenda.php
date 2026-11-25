@@ -361,6 +361,16 @@ $extraHead = '<style>
 .mag-dur-btn{border:1px solid #CBD5E1;background:#F8FAFC;color:#1D3B5E;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;cursor:pointer;font-family:inherit}
 .mag-dur-btn:hover{background:#0D7A87;color:#fff;border-color:#0D7A87}
 .mag-lock-banner{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border-radius:12px;background:rgba(29,59,94,0.07);border:1px solid rgba(29,59,94,0.22);color:#1D3B5E;font-size:12.5px;line-height:1.45;margin-bottom:12px}
+.mag-peer-box{border:1.5px solid #CBD5E1;border-radius:11px;background:#F8FAFC;padding:9px;margin-top:6px}
+.mag-peer-search{width:100%;padding:7px 10px;border:1px solid #CBD5E1;border-radius:8px;font-size:12.5px;background:#fff;margin-bottom:7px;font-family:inherit;outline:none}
+.mag-peer-search:focus{border-color:#0D7A87}
+.mag-peer-list{max-height:165px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.mag-peer-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;background:#fff;border:1px solid #E2E8F0;cursor:pointer;font-size:12.5px;color:#0F172A;transition:border-color .14s}
+.mag-peer-item:hover{border-color:#0D7A87}
+.mag-peer-item input[type=checkbox]{accent-color:#0D7A87;width:15px;height:15px;flex-shrink:0}
+.mag-peer-sub{font-size:11px;color:#64748B;margin-left:auto;white-space:nowrap}
+.mag-peer-count{font-size:11.5px;font-weight:700;color:#0D7A87;margin-top:6px}
+.mag-group-members{margin-top:6px;padding:8px 10px;border-radius:9px;background:#F5F3FF;border:1px solid #DDD6FE;font-size:12px;color:#5B21B6;line-height:1.45}
 @media(max-width:600px){.mag-grid-2,.mag-scope-grid{grid-template-columns:1fr}.mag-item{flex-direction:column}.mag-date-box{width:100%;flex-direction:row;gap:8px;justify-content:flex-start;padding:8px 12px}}
 </style>';
 
@@ -375,7 +385,14 @@ require_once BASE_PATH . '/includes/header.php';
             <button type="button" class="ilmuna-pill-btn" data-scope="kaldik">Kaldik (Semua &amp; KBM)</button>
             <button type="button" class="ilmuna-pill-btn" data-scope="admin">Ekosistem / Rapat</button>
             <?php if ($isGuru || !empty($userCtx['siswa_kelas_id'])): ?>
-                <button type="button" class="ilmuna-pill-btn" data-scope="kelas">Kelas</button>
+                <button type="button" class="ilmuna-pill-btn" data-scope="kelas">Kelas &amp; Mapel</button>
+            <?php endif; ?>
+            <?php if ($isGuru || $isAdmin): ?>
+                <button type="button" class="ilmuna-pill-btn" data-scope="peer_guru">Sesama Guru</button>
+            <?php endif; ?>
+            <?php if ($isSiswa): ?>
+                <button type="button" class="ilmuna-pill-btn" data-scope="peer_siswa">Sesama Siswa</button>
+                <button type="button" class="ilmuna-pill-btn" data-scope="kelompok">Kelompok</button>
             <?php endif; ?>
             <button type="button" class="ilmuna-pill-btn" data-scope="private">Pribadi Saya</button>
         </div>
@@ -432,11 +449,11 @@ require_once BASE_PATH . '/includes/header.php';
     <div class="mag-role-hint">
         <iconify-icon icon="solar:hand-stars-bold" width="16" style="color:#0D7A87;"></iconify-icon>
         <?php if ($isAdmin): ?>
-            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Semua / Guru / Siswa</strong>. Kaldik tersinkron utuh &amp; terkunci.</span>
+            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Semua / Guru / Siswa / Sesama Guru</strong>. Kaldik tersinkron utuh &amp; terkunci.</span>
         <?php elseif ($isGuru): ?>
-            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Diri Sendiri</strong> atau <strong>Kelas yang Anda Ampu</strong>.</span>
+            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Kelas &amp; Mapel (atau Semua Kelas)</strong>, <strong>Sesama Guru</strong>, atau <strong>Diri Sendiri</strong>.</span>
         <?php else: ?>
-            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Pribadi</strong> (hanya diketahui oleh Anda sendiri).</span>
+            <span><strong>Tip Drag:</strong> Seret tanggal untuk buat agenda <strong>Pribadi</strong>, <strong>Sesama Siswa</strong><?= !empty($userCtx['ketua_kelompok']) ? ', atau <strong>Kelompok Tugas/Proyek</strong> (Ketua Kelompok)' : '' ?>.</span>
         <?php endif; ?>
     </div>
 </div>
@@ -543,20 +560,36 @@ require_once BASE_PATH . '/includes/header.php';
         <select id="magDragScope" class="mag-drag-select" onchange="MARGO_AGENDA.onDragScopeChange()">
             <option value="private">Hanya Diri Sendiri</option>
             <?php if (!empty($userCtx['guru_classes'])): ?>
-                <option value="kelas">Kelas yang Diampu</option>
+                <option value="kelas">Kelas &amp; Mapel</option>
             <?php endif; ?>
+            <option value="peer_guru">Sesama Guru (Form Lengkap)</option>
         </select>
         <?php if (!empty($userCtx['guru_classes'])): ?>
-            <select id="magDragKelas" class="mag-drag-select" style="display:none;">
+            <select id="magDragKelas" class="mag-drag-select" style="display:none;" onchange="MARGO_AGENDA.onDragKelasChange()">
+                <option value="all">Semua Kelas</option>
                 <?php foreach ($userCtx['guru_classes'] as $gc): ?>
                     <option value="<?= (int)$gc['id'] ?>"><?= htmlspecialchars($gc['nama_kelas'], ENT_QUOTES, 'UTF-8') ?></option>
                 <?php endforeach; ?>
             </select>
+            <select id="magDragMapel" class="mag-drag-select" style="display:none;">
+                <option value="">-- Pilih Mapel --</option>
+            </select>
         <?php endif; ?>
     <?php else: ?>
-        <span style="padding:5px 10px;border-radius:8px;background:rgba(219,39,119,0.28);font-size:11.5px;font-weight:700;">
-            <iconify-icon icon="solar:lock-keyhole-minimalistic-bold"></iconify-icon> Pribadi (Saya Saja)
-        </span>
+        <select id="magDragScope" class="mag-drag-select" onchange="MARGO_AGENDA.onDragScopeChange()">
+            <option value="private">Pribadi (Saya Saja)</option>
+            <option value="peer_siswa">Sesama Siswa (Form Lengkap)</option>
+            <?php if (!empty($userCtx['ketua_kelompok'])): ?>
+                <option value="kelompok">Kelompok Tugas/Proyek</option>
+            <?php endif; ?>
+        </select>
+        <?php if (!empty($userCtx['ketua_kelompok'])): ?>
+            <select id="magDragKelompok" class="mag-drag-select" style="display:none;">
+                <?php foreach ($userCtx['ketua_kelompok'] as $kk): ?>
+                    <option value="<?= htmlspecialchars($kk['group_key'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($kk['nama_kelompok'] . ' · ' . $kk['judul_induk'], ENT_QUOTES, 'UTF-8') ?></option>
+                <?php endforeach; ?>
+            </select>
+        <?php endif; ?>
     <?php endif; ?>
     <button type="button" class="mag-drag-btn mag-drag-btn--save" onclick="MARGO_AGENDA.submitDragQuick()">
         <iconify-icon icon="solar:diskette-bold"></iconify-icon> Simpan Cepat
@@ -631,6 +664,16 @@ require_once BASE_PATH . '/includes/header.php';
                                 <iconify-icon icon="solar:square-academic-cap-2-bold" width="20" style="color:#0284C7;"></iconify-icon>
                                 <div><strong>Khusus Siswa</strong><small>Siswa &amp; Ketua Kelas</small></div>
                             </button>
+                            <button type="button" class="mag-scope-card" data-val="peer_guru" onclick="MARGO_AGENDA.selectModalScope('peer_guru')">
+                                <iconify-icon icon="solar:users-group-two-rounded-bold" width="20" style="color:#6366F1;"></iconify-icon>
+                                <div><strong>Guru Tertentu</strong><small>Pilih guru spesifik</small></div>
+                            </button>
+                            <?php if (!empty($userCtx['guru_classes'])): ?>
+                                <button type="button" class="mag-scope-card" data-val="kelas" onclick="MARGO_AGENDA.selectModalScope('kelas')">
+                                    <iconify-icon icon="solar:buildings-2-bold" width="20" style="color:#0284C7;"></iconify-icon>
+                                    <div><strong>Kelas &amp; Mapel</strong><small>Pilih kelas &amp; mapel</small></div>
+                                </button>
+                            <?php endif; ?>
                             <button type="button" class="mag-scope-card" data-val="private" onclick="MARGO_AGENDA.selectModalScope('private')">
                                 <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;"></iconify-icon>
                                 <div><strong>Pribadi Admin</strong><small>Hanya Diri Sendiri</small></div>
@@ -644,26 +687,118 @@ require_once BASE_PATH . '/includes/header.php';
                             </button>
                             <button type="button" class="mag-scope-card" data-val="kelas" onclick="MARGO_AGENDA.selectModalScope('kelas')" <?= empty($userCtx['guru_classes']) ? 'disabled style="opacity:.55;cursor:not-allowed;"' : '' ?>>
                                 <iconify-icon icon="solar:buildings-2-bold" width="20" style="color:#0284C7;"></iconify-icon>
-                                <div><strong>Kelas yang Diampu</strong><small><?= !empty($userCtx['guru_classes']) ? (count($userCtx['guru_classes']) . ' rombel tersedia') : 'Belum ada kelas diampu' ?></small></div>
+                                <div><strong>Kelas &amp; Mapel</strong><small><?= !empty($userCtx['guru_classes']) ? (count($userCtx['guru_classes']) . ' rombel / Semua Kelas') : 'Belum ada kelas diampu' ?></small></div>
+                            </button>
+                            <button type="button" class="mag-scope-card" data-val="peer_guru" onclick="MARGO_AGENDA.selectModalScope('peer_guru')">
+                                <iconify-icon icon="solar:user-speak-bold" width="20" style="color:#4F46E5;"></iconify-icon>
+                                <div><strong>Sesama Guru</strong><small>Undang guru tertentu + notif</small></div>
                             </button>
                         </div>
-                        <div class="mag-field" id="agKelasWrap" style="display:none;margin-top:8px;margin-bottom:0;">
-                            <label for="agKelasId">Pilih Kelas yang Anda Ampu</label>
-                            <select id="agKelasId" class="mag-input">
-                                <option value="">-- Pilih Kelas --</option>
-                                <?php foreach ($userCtx['guru_classes'] as $gc): ?>
-                                    <option value="<?= (int)$gc['id'] ?>"><?= htmlspecialchars($gc['nama_kelas'] . (!empty($gc['mapel_list']) ? ' (' . $gc['mapel_list'] . ')' : ''), ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
                     <?php else: ?>
-                        <div class="mag-lock-banner" style="margin-bottom:0;">
-                            <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;flex-shrink:0;margin-top:1px;"></iconify-icon>
-                            <div>
-                                <strong>Hanya Diri Sendiri (Pribadi)</strong><br>
-                                Agenda yang dibuat oleh siswa bersifat pribadi dan hanya dapat dilihat oleh akun Anda sendiri.
+                        <div class="mag-scope-grid" id="agScopePicker">
+                            <button type="button" class="mag-scope-card is-active" data-val="private" onclick="MARGO_AGENDA.selectModalScope('private')">
+                                <iconify-icon icon="solar:lock-keyhole-minimalistic-bold" width="20" style="color:#DB2777;"></iconify-icon>
+                                <div><strong>Diri Sendiri</strong><small>Hanya terlihat oleh Anda</small></div>
+                            </button>
+                            <button type="button" class="mag-scope-card" data-val="peer_siswa" onclick="MARGO_AGENDA.selectModalScope('peer_siswa')">
+                                <iconify-icon icon="solar:users-group-two-rounded-bold" width="20" style="color:#0D7A87;"></iconify-icon>
+                                <div><strong>Sesama Siswa</strong><small>Undang teman + notifikasi</small></div>
+                            </button>
+                            <?php if (!empty($userCtx['ketua_kelompok'])): ?>
+                                <button type="button" class="mag-scope-card" data-val="kelompok" onclick="MARGO_AGENDA.selectModalScope('kelompok')">
+                                    <iconify-icon icon="solar:users-group-rounded-bold" width="20" style="color:#8B5CF6;"></iconify-icon>
+                                    <div><strong>Kelompok Tugas / Proyek</strong><small>Khusus Ketua (<?= count($userCtx['ketua_kelompok']) ?> kelompok)</small></div>
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($isGuru || $isAdmin): ?>
+                        <!-- STEP 1 & 2: PILIH KELAS (ATAU SEMUA KELAS) -> PILIH MAPEL -->
+                        <div id="agKelasWrap" style="display:none;margin-top:8px;">
+                            <div class="mag-grid-2">
+                                <div class="mag-field" style="margin-bottom:0;">
+                                    <label for="agKelasId">1. Pilih Kelas</label>
+                                    <select id="agKelasId" class="mag-input" onchange="MARGO_AGENDA.onModalKelasChange()">
+                                        <option value="">-- Pilih Kelas --</option>
+                                        <option value="all">Semua Kelas yang Diampu (<?= count($userCtx['guru_classes'] ?? []) ?> Rombel)</option>
+                                        <?php foreach (($userCtx['guru_classes'] ?? []) as $gc): ?>
+                                            <option value="<?= (int)$gc['id'] ?>"><?= htmlspecialchars($gc['nama_kelas'], ENT_QUOTES, 'UTF-8') ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="mag-field" style="margin-bottom:0;">
+                                    <label for="agMapelId">2. Pilih Mata Pelajaran</label>
+                                    <select id="agMapelId" class="mag-input">
+                                        <option value="">-- Pilih Kelas Dahulu --</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- PILIH SESAMA GURU (MULTI-SELECT) -->
+                        <div id="agPeerGuruWrap" style="display:none;margin-top:8px;">
+                            <label style="font-size:12px;font-weight:700;color:#1D3B5E;">Pilih Guru Penerima Agenda (Akan Mendapat Notifikasi)</label>
+                            <div class="mag-peer-box">
+                                <input type="text" class="mag-peer-search" id="agPeerGuruSearch" placeholder="Cari nama guru atau NIP..." oninput="MARGO_AGENDA.filterPeerChecks('agPeerGuruList', this.value)">
+                                <div class="mag-peer-list" id="agPeerGuruList">
+                                    <?php if (empty($userCtx['peers_guru'])): ?>
+                                        <div style="font-size:12px;color:#64748B;padding:8px;text-align:center;">Belum ada akun sesama guru yang terdaftar di SSO.</div>
+                                    <?php else: ?>
+                                        <?php foreach ($userCtx['peers_guru'] as $pg): ?>
+                                            <label class="mag-peer-item" data-hay="<?= htmlspecialchars(strtolower($pg['full_name'] . ' ' . ($pg['nip'] ?? '') . ' ' . ($pg['kode_guru'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
+                                                <input type="checkbox" name="peer_guru_ids[]" value="<?= (int)$pg['user_id'] ?>" onchange="MARGO_AGENDA.updatePeerCount('agPeerGuruList','agPeerGuruCount')">
+                                                <span><?= htmlspecialchars($pg['full_name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                                <?php if (!empty($pg['nip'])): ?>
+                                                    <span class="mag-peer-sub">NIP <?= htmlspecialchars($pg['nip'], ENT_QUOTES, 'UTF-8') ?></span>
+                                                <?php endif; ?>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="mag-peer-count" id="agPeerGuruCount">0 guru dipilih</div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($isSiswa): ?>
+                        <!-- PILIH SESAMA SISWA (MULTI-SELECT) -->
+                        <div id="agPeerSiswaWrap" style="display:none;margin-top:8px;">
+                            <label style="font-size:12px;font-weight:700;color:#1D3B5E;">Pilih Sesama Siswa Penerima Agenda (Akan Mendapat Notifikasi)</label>
+                            <div class="mag-peer-box">
+                                <input type="text" class="mag-peer-search" id="agPeerSiswaSearch" placeholder="Cari nama siswa atau kelas..." oninput="MARGO_AGENDA.filterPeerChecks('agPeerSiswaList', this.value)">
+                                <div class="mag-peer-list" id="agPeerSiswaList">
+                                    <?php if (empty($userCtx['peers_siswa'])): ?>
+                                        <div style="font-size:12px;color:#64748B;padding:8px;text-align:center;">Belum ada akun sesama siswa yang terdaftar di SSO.</div>
+                                    <?php else: ?>
+                                        <?php foreach ($userCtx['peers_siswa'] as $ps): ?>
+                                            <label class="mag-peer-item" data-hay="<?= htmlspecialchars(strtolower($ps['full_name'] . ' ' . ($ps['nama_kelas'] ?? '') . ' ' . ($ps['nis'] ?? '')), ENT_QUOTES, 'UTF-8') ?>">
+                                                <input type="checkbox" name="peer_siswa_ids[]" value="<?= (int)$ps['user_id'] ?>" onchange="MARGO_AGENDA.updatePeerCount('agPeerSiswaList','agPeerSiswaCount')">
+                                                <span><?= htmlspecialchars($ps['full_name'], ENT_QUOTES, 'UTF-8') ?></span>
+                                                <span class="mag-peer-sub"><?= htmlspecialchars(($ps['same_class'] ? 'Sekelas · ' : '') . ($ps['nama_kelas'] ?: ($ps['nis'] ?: 'Siswa')), ENT_QUOTES, 'UTF-8') ?></span>
+                                            </label>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="mag-peer-count" id="agPeerSiswaCount">0 siswa dipilih</div>
+                            </div>
+                        </div>
+
+                        <?php if (!empty($userCtx['ketua_kelompok'])): ?>
+                            <!-- PILIH KELOMPOK TUGAS / PROYEK (KHUSUS KETUA KELOMPOK) -->
+                            <div id="agKelompokWrap" style="display:none;margin-top:8px;">
+                                <label for="agGroupKey" style="font-size:12px;font-weight:700;color:#1D3B5E;">Pilih Kelompok Tugas / Proyek yang Anda Pimpin</label>
+                                <select id="agGroupKey" class="mag-input" onchange="MARGO_AGENDA.onModalGroupChange()">
+                                    <option value="">-- Pilih Kelompok --</option>
+                                    <?php foreach ($userCtx['ketua_kelompok'] as $kk): ?>
+                                        <option value="<?= htmlspecialchars($kk['group_key'], ENT_QUOTES, 'UTF-8') ?>">
+                                            <?= htmlspecialchars('[' . strtoupper($kk['sumber']) . '] ' . $kk['nama_kelompok'] . ' — ' . $kk['judul_induk'] . (!empty($kk['nama_mapel']) ? ' (' . $kk['nama_mapel'] . ')' : ''), ENT_QUOTES, 'UTF-8') ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div id="agGroupMembersPreview" class="mag-group-members" style="display:none;"></div>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
 
@@ -877,10 +1012,13 @@ require_once BASE_PATH . '/includes/header.php';
         return (STATE.items || []).filter(function (ag) {
             if (STATE.scopeFilter === 'kaldik' && ag.source !== 'kaldik') return false;
             if (STATE.scopeFilter === 'admin' && ag.source !== 'admin') return false;
-            if (STATE.scopeFilter === 'kelas' && ag.visibility_scope !== 'kelas') return false;
+            if (STATE.scopeFilter === 'kelas' && ag.visibility_scope !== 'kelas' && ag.visibility_scope !== 'semua_kelas') return false;
+            if (STATE.scopeFilter === 'peer_guru' && ag.visibility_scope !== 'peer_guru') return false;
+            if (STATE.scopeFilter === 'peer_siswa' && ag.visibility_scope !== 'peer_siswa') return false;
+            if (STATE.scopeFilter === 'kelompok' && ag.visibility_scope !== 'kelompok') return false;
             if (STATE.scopeFilter === 'private' && ag.visibility_scope !== 'private') return false;
             if (q) {
-                var hay = ((ag.title || '') + ' ' + (ag.description || '') + ' ' + (ag.location || '') + ' ' + (ag.visibility_label || '') + ' ' + (ag.status_hari || '') + ' ' + (ag.category || '')).toLowerCase();
+                var hay = ((ag.title || '') + ' ' + (ag.description || '') + ' ' + (ag.location || '') + ' ' + (ag.visibility_label || '') + ' ' + (ag.target_mapel_name || '') + ' ' + (ag.target_user_names || '') + ' ' + (ag.target_group_name || '') + ' ' + (ag.status_hari || '') + ' ' + (ag.category || '')).toLowerCase();
                 if (hay.indexOf(q) === -1) return false;
             }
             return true;
@@ -1335,9 +1473,83 @@ require_once BASE_PATH . '/includes/header.php';
         onDragScopeChange: function () {
             var sc = document.getElementById('magDragScope');
             var kl = document.getElementById('magDragKelas');
-            if (sc && kl) {
-                kl.style.display = (sc.value === 'kelas') ? '' : 'none';
+            var mp = document.getElementById('magDragMapel');
+            var grp = document.getElementById('magDragKelompok');
+            var val = sc ? sc.value : '';
+            if (kl) kl.style.display = (val === 'kelas') ? '' : 'none';
+            if (mp) mp.style.display = (val === 'kelas') ? '' : 'none';
+            if (grp) grp.style.display = (val === 'kelompok') ? '' : 'none';
+            if (val === 'kelas') MARGO_AGENDA.onDragKelasChange();
+        },
+        onDragKelasChange: function () {
+            var kl = document.getElementById('magDragKelas');
+            var mp = document.getElementById('magDragMapel');
+            if (!kl || !mp) return;
+            MARGO_AGENDA.populateMapelOptions(mp, kl.value, '');
+        },
+        populateMapelOptions: function (selectEl, kelasVal, selectedMapelId) {
+            if (!selectEl) return;
+            var list = [];
+            if (kelasVal === 'all') {
+                list = USER_CTX.guru_mapel_all || [];
+            } else if (kelasVal) {
+                var gc = (USER_CTX.guru_classes || []).find(function (c) { return String(c.id) === String(kelasVal); });
+                if (gc && Array.isArray(gc.mapel)) {
+                    list = gc.mapel;
+                }
             }
+            if (!kelasVal) {
+                selectEl.innerHTML = '<option value="">-- Pilih Kelas Dahulu --</option>';
+                return;
+            }
+            if (!list.length) {
+                selectEl.innerHTML = '<option value="">-- Tidak ada mapel --</option>';
+                return;
+            }
+            var html = '<option value="">-- Pilih Mata Pelajaran --</option>';
+            list.forEach(function (m) {
+                var mid = String(m.id_mapel || '');
+                var sel = (selectedMapelId && String(selectedMapelId) === mid) || (list.length === 1 && !selectedMapelId) ? ' selected' : '';
+                html += '<option value="' + esc(mid) + '" data-name="' + esc(m.nama_mapel || '') + '"' + sel + '>' + esc(m.nama_mapel || '') + '</option>';
+            });
+            selectEl.innerHTML = html;
+        },
+        onModalKelasChange: function (selectedMapelId) {
+            var kSel = document.getElementById('agKelasId');
+            var mSel = document.getElementById('agMapelId');
+            if (kSel && mSel) {
+                MARGO_AGENDA.populateMapelOptions(mSel, kSel.value, selectedMapelId || '');
+            }
+        },
+        filterPeerChecks: function (listId, q) {
+            var needle = String(q || '').toLowerCase().trim();
+            document.querySelectorAll('#' + listId + ' .mag-peer-item').forEach(function (lbl) {
+                var hay = lbl.getAttribute('data-hay') || '';
+                lbl.style.display = (!needle || hay.indexOf(needle) !== -1) ? '' : 'none';
+            });
+        },
+        updatePeerCount: function (listId, countId) {
+            var checked = document.querySelectorAll('#' + listId + ' input[type="checkbox"]:checked').length;
+            var el = document.getElementById(countId);
+            if (el) {
+                var unit = (listId.indexOf('Guru') !== -1) ? 'guru' : 'siswa';
+                el.textContent = checked + ' ' + unit + ' dipilih';
+            }
+        },
+        onModalGroupChange: function () {
+            var gSel = document.getElementById('agGroupKey');
+            var prev = document.getElementById('agGroupMembersPreview');
+            if (!gSel || !prev) return;
+            var gKey = gSel.value;
+            var grp = (USER_CTX.ketua_kelompok || []).find(function (k) { return String(k.group_key) === String(gKey); });
+            if (!grp) {
+                prev.style.display = 'none';
+                prev.innerHTML = '';
+                return;
+            }
+            var memNames = (grp.anggota || []).map(function (a) { return esc(a.nama) + (a.peran === 'Ketua' ? ' (Ketua)' : ''); });
+            prev.innerHTML = '<strong>Anggota Kelompok (' + (grp.jumlah_anggota || memNames.length) + '):</strong><br>' + (memNames.join(', ') || '-');
+            prev.style.display = '';
         },
         cancelDrag: function () {
             hideDragBar();
@@ -1348,8 +1560,12 @@ require_once BASE_PATH . '/includes/header.php';
             var quickTitle = (document.getElementById('magDragTitle').value || '').trim();
             var quickScopeEl = document.getElementById('magDragScope');
             var quickKelasEl = document.getElementById('magDragKelas');
+            var quickMapelEl = document.getElementById('magDragMapel');
+            var quickGrpEl   = document.getElementById('magDragKelompok');
             var chosenScope = quickScopeEl ? quickScopeEl.value : defaultScopeForRole();
             var chosenKelas = quickKelasEl ? quickKelasEl.value : '';
+            var chosenMapel = quickMapelEl ? quickMapelEl.value : '';
+            var chosenGrp   = quickGrpEl ? quickGrpEl.value : '';
             var cCat = STATE.dragCat || STATE.brushCat;
             var cCol = STATE.dragColor || STATE.brushColor;
             hideDragBar();
@@ -1360,11 +1576,23 @@ require_once BASE_PATH . '/includes/header.php';
                 category: cCat,
                 color_hex: cCol,
                 visibility_scope: chosenScope,
-                target_kelas_id: chosenKelas
+                target_kelas_id: chosenKelas,
+                target_mapel_id: chosenMapel,
+                target_group_key: chosenGrp
             });
         },
         submitDragQuick: async function () {
             if (!STATE.selectedDates.length) return;
+            var scEl  = document.getElementById('magDragScope');
+            var klEl  = document.getElementById('magDragKelas');
+            var mpEl  = document.getElementById('magDragMapel');
+            var grpEl = document.getElementById('magDragKelompok');
+            var scopeVal = scEl ? scEl.value : defaultScopeForRole();
+
+            if (scopeVal === 'peer_guru' || scopeVal === 'peer_siswa') {
+                MARGO_AGENDA.openModalFromDrag();
+                return;
+            }
             var title = (document.getElementById('magDragTitle').value || '').trim();
             if (!title) {
                 if (window.Ilmuna) Ilmuna.warning('Judul Diperlukan', 'Isi judul agenda/rapat pada kotak di bar bawah sebelum menyimpan.');
@@ -1372,18 +1600,30 @@ require_once BASE_PATH . '/includes/header.php';
                 if (inp) inp.focus();
                 return;
             }
-            var scEl = document.getElementById('magDragScope');
-            var klEl = document.getElementById('magDragKelas');
-            var scopeVal = scEl ? scEl.value : defaultScopeForRole();
             var kelasVal = (scopeVal === 'kelas' && klEl) ? klEl.value : '';
+            var mapelVal = (scopeVal === 'kelas' && mpEl) ? mpEl.value : '';
+            var mapelName = (scopeVal === 'kelas' && mpEl && mpEl.selectedOptions && mpEl.selectedOptions[0]) ? (mpEl.selectedOptions[0].getAttribute('data-name') || '') : '';
+            var grpVal   = (scopeVal === 'kelompok' && grpEl) ? grpEl.value : '';
+
+            if (scopeVal === 'kelas' && (!kelasVal || !mapelVal)) {
+                if (window.Ilmuna) Ilmuna.warning('Pilih Kelas & Mapel', 'Tentukan kelas (atau Semua Kelas) dan mata pelajaran terlebih dahulu.');
+                return;
+            }
+            if (scopeVal === 'kelompok' && !grpVal) {
+                if (window.Ilmuna) Ilmuna.warning('Pilih Kelompok', 'Pilih kelompok tugas/proyek terlebih dahulu.');
+                return;
+            }
 
             var res = await apiPost('save_batch', {
                 dates: STATE.selectedDates,
                 title: title,
                 category: STATE.dragCat || STATE.brushCat,
                 color_hex: STATE.dragColor || STATE.brushColor,
-                visibility_scope: scopeVal,
-                target_kelas_id: kelasVal
+                visibility_scope: (scopeVal === 'kelas' && kelasVal === 'all') ? 'semua_kelas' : scopeVal,
+                target_kelas_id: kelasVal,
+                target_mapel_id: mapelVal,
+                target_mapel_name: mapelName,
+                target_group_key: grpVal
             });
             if (res && res.success) {
                 document.getElementById('magDragTitle').value = '';
@@ -1397,13 +1637,20 @@ require_once BASE_PATH . '/includes/header.php';
             }
         },
         selectModalScope: function (val) {
+            var uiVal = (val === 'semua_kelas') ? 'kelas' : val;
             var inp = document.getElementById('agScope');
-            if (inp) inp.value = val;
+            if (inp) inp.value = uiVal;
             document.querySelectorAll('#agScopePicker .mag-scope-card').forEach(function (btn) {
-                btn.classList.toggle('is-active', btn.getAttribute('data-val') === val);
+                btn.classList.toggle('is-active', btn.getAttribute('data-val') === uiVal);
             });
-            var kWrap = document.getElementById('agKelasWrap');
-            if (kWrap) kWrap.style.display = (val === 'kelas') ? '' : 'none';
+            var kWrap  = document.getElementById('agKelasWrap');
+            var pgWrap = document.getElementById('agPeerGuruWrap');
+            var psWrap = document.getElementById('agPeerSiswaWrap');
+            var klWrap = document.getElementById('agKelompokWrap');
+            if (kWrap)  kWrap.style.display  = (uiVal === 'kelas') ? '' : 'none';
+            if (pgWrap) pgWrap.style.display = (uiVal === 'peer_guru') ? '' : 'none';
+            if (psWrap) psWrap.style.display = (uiVal === 'peer_siswa') ? '' : 'none';
+            if (klWrap) klWrap.style.display = (uiVal === 'kelompok') ? '' : 'none';
         },
         pickModalColor: function (hex) {
             var norm = String(hex || '#0D7A87').toUpperCase();
@@ -1514,8 +1761,11 @@ require_once BASE_PATH . '/includes/header.php';
 
             bodyHtml += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">'
                 + scopeBadgeHtml(ag)
+                + (ag.target_mapel_name ? '<span class="ilmuna-badge ilmuna-badge--teal"><iconify-icon icon="solar:book-2-bold"></iconify-icon> ' + esc(ag.target_mapel_name) + '</span>' : '')
+                + (ag.target_group_name ? '<span class="ilmuna-badge" style="background:#F5F3FF;color:#5B21B6;border:1px solid #DDD6FE;"><iconify-icon icon="solar:users-group-rounded-bold"></iconify-icon> ' + esc(ag.target_group_name) + '</span>' : '')
                 + (ag.location ? '<span class="ilmuna-badge ilmuna-badge--navy"><iconify-icon icon="solar:map-point-bold"></iconify-icon> ' + esc(ag.location) + '</span>' : '')
                 + '</div>'
+                + (ag.target_user_names ? '<div style="font-size:12px;color:#475569;margin-bottom:8px;"><strong>Penerima:</strong> ' + esc(ag.target_user_names) + '</div>' : '')
                 + '<p style="margin:0 0 10px;font-size:13.5px;line-height:1.65;color:#334155;white-space:pre-line;">' + esc(ag.description || 'Tidak ada catatan tambahan.') + '</p>'
                 + (ag.created_by_name ? '<div style="font-size:12px;color:#64748B;">Dibuat oleh: <strong style="color:#1D3B5E;">' + esc(ag.created_by_name) + '</strong></div>' : '');
 
@@ -1535,6 +1785,14 @@ require_once BASE_PATH . '/includes/header.php';
         },
         openFormModal: function (id, preset) {
             document.getElementById('formAgendaUniversal').reset();
+            document.querySelectorAll('#agPeerGuruList input[type="checkbox"], #agPeerSiswaList input[type="checkbox"]').forEach(function (cb) { cb.checked = false; });
+            MARGO_AGENDA.updatePeerCount('agPeerGuruList', 'agPeerGuruCount');
+            MARGO_AGENDA.updatePeerCount('agPeerSiswaList', 'agPeerSiswaCount');
+            MARGO_AGENDA.filterPeerChecks('agPeerGuruList', '');
+            MARGO_AGENDA.filterPeerChecks('agPeerSiswaList', '');
+            var grpPrev = document.getElementById('agGroupMembersPreview');
+            if (grpPrev) { grpPrev.style.display = 'none'; grpPrev.innerHTML = ''; }
+
             if (id) {
                 var ag = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });
                 if (!ag) return;
@@ -1561,8 +1819,31 @@ require_once BASE_PATH . '/includes/header.php';
                 document.getElementById('agDesc').value = ag.description || '';
                 MARGO_AGENDA.selectModalScope(ag.visibility_scope || defaultScopeForRole());
                 MARGO_AGENDA.pickModalColor(getEventColor(ag));
+
                 var kSel = document.getElementById('agKelasId');
-                if (kSel && ag.target_kelas_id) kSel.value = String(ag.target_kelas_id);
+                if (kSel) {
+                    if (ag.visibility_scope === 'semua_kelas') {
+                        kSel.value = 'all';
+                    } else if (ag.target_kelas_id) {
+                        kSel.value = String(ag.target_kelas_id);
+                    }
+                    MARGO_AGENDA.onModalKelasChange(ag.target_mapel_id || '');
+                }
+                if (Array.isArray(ag.target_user_ids) && ag.target_user_ids.length) {
+                    var uidSet = {};
+                    ag.target_user_ids.forEach(function (u) { uidSet[String(u)] = true; });
+                    var targetListId = (ag.visibility_scope === 'peer_guru') ? 'agPeerGuruList' : 'agPeerSiswaList';
+                    document.querySelectorAll('#' + targetListId + ' input[type="checkbox"]').forEach(function (cb) {
+                        cb.checked = !!uidSet[String(cb.value)];
+                    });
+                    MARGO_AGENDA.updatePeerCount('agPeerGuruList', 'agPeerGuruCount');
+                    MARGO_AGENDA.updatePeerCount('agPeerSiswaList', 'agPeerSiswaCount');
+                }
+                var gSel = document.getElementById('agGroupKey');
+                if (gSel && ag.target_group_key) {
+                    gSel.value = String(ag.target_group_key);
+                    MARGO_AGENDA.onModalGroupChange();
+                }
             } else {
                 var p = preset || {};
                 var cCat = p.category || STATE.brushCat || 'akademik';
@@ -1575,7 +1856,15 @@ require_once BASE_PATH . '/includes/header.php';
                 MARGO_AGENDA.selectModalScope(p.visibility_scope || defaultScopeForRole());
                 MARGO_AGENDA.pickModalColor(p.color_hex || CAT_COLORS[cCat] || '#0D7A87');
                 var kSel2 = document.getElementById('agKelasId');
-                if (kSel2 && p.target_kelas_id) kSel2.value = String(p.target_kelas_id);
+                if (kSel2) {
+                    kSel2.value = p.target_kelas_id ? String(p.target_kelas_id) : '';
+                    MARGO_AGENDA.onModalKelasChange(p.target_mapel_id || '');
+                }
+                var gSel2 = document.getElementById('agGroupKey');
+                if (gSel2 && p.target_group_key) {
+                    gSel2.value = String(p.target_group_key);
+                    MARGO_AGENDA.onModalGroupChange();
+                }
             }
             openIlmunaModal('modalAgendaForm');
         },
@@ -1583,11 +1872,49 @@ require_once BASE_PATH . '/includes/header.php';
             e.preventDefault();
             var scopeVal = document.getElementById('agScope') ? document.getElementById('agScope').value : defaultScopeForRole();
             var kSel = document.getElementById('agKelasId');
-            var kelasVal = (scopeVal === 'kelas' && kSel) ? kSel.value : '';
-            if (scopeVal === 'kelas' && !kelasVal) {
-                if (window.Ilmuna) Ilmuna.warning('Pilih Kelas', 'Pilih salah satu kelas yang Anda ampu terlebih dahulu.');
-                return;
+            var mSel = document.getElementById('agMapelId');
+            var gSel = document.getElementById('agGroupKey');
+
+            var kelasVal  = (scopeVal === 'kelas' && kSel) ? kSel.value : '';
+            var mapelVal  = (scopeVal === 'kelas' && mSel) ? mSel.value : '';
+            var mapelName = (scopeVal === 'kelas' && mSel && mSel.selectedOptions && mSel.selectedOptions[0])
+                ? (mSel.selectedOptions[0].getAttribute('data-name') || '') : '';
+            var groupKey  = (scopeVal === 'kelompok' && gSel) ? gSel.value : '';
+
+            var targetUids = [];
+            if (scopeVal === 'peer_guru') {
+                document.querySelectorAll('#agPeerGuruList input[type="checkbox"]:checked').forEach(function (cb) {
+                    targetUids.push(cb.value);
+                });
+                if (!targetUids.length) {
+                    if (window.Ilmuna) Ilmuna.warning('Pilih Guru', 'Pilih minimal 1 sesama guru penerima agenda.');
+                    return;
+                }
+            } else if (scopeVal === 'peer_siswa') {
+                document.querySelectorAll('#agPeerSiswaList input[type="checkbox"]:checked').forEach(function (cb) {
+                    targetUids.push(cb.value);
+                });
+                if (!targetUids.length) {
+                    if (window.Ilmuna) Ilmuna.warning('Pilih Siswa', 'Pilih minimal 1 sesama siswa penerima agenda.');
+                    return;
+                }
+            } else if (scopeVal === 'kelas') {
+                if (!kelasVal) {
+                    if (window.Ilmuna) Ilmuna.warning('Pilih Kelas', 'Pilih kelas yang Anda ampu atau Semua Kelas terlebih dahulu.');
+                    return;
+                }
+                if (!mapelVal) {
+                    if (window.Ilmuna) Ilmuna.warning('Pilih Mata Pelajaran', 'Pilih mata pelajaran terlebih dahulu sebelum menyimpan agenda.');
+                    return;
+                }
+            } else if (scopeVal === 'kelompok') {
+                if (!groupKey) {
+                    if (window.Ilmuna) Ilmuna.warning('Pilih Kelompok', 'Pilih kelompok tugas/proyek yang Anda pimpin terlebih dahulu.');
+                    return;
+                }
             }
+
+            var finalScope = (scopeVal === 'kelas' && kelasVal === 'all') ? 'semua_kelas' : scopeVal;
             var res = await apiPost('save', {
                 id: document.getElementById('agId').value,
                 title: document.getElementById('agTitle').value.trim(),
@@ -1599,8 +1926,12 @@ require_once BASE_PATH . '/includes/header.php';
                 location: document.getElementById('agLocation').value.trim(),
                 link_url: document.getElementById('agLink').value.trim(),
                 description: document.getElementById('agDesc').value.trim(),
-                visibility_scope: scopeVal,
+                visibility_scope: finalScope,
                 target_kelas_id: kelasVal,
+                target_mapel_id: mapelVal,
+                target_mapel_name: mapelName,
+                target_user_ids: targetUids,
+                target_group_key: groupKey,
                 is_active: '1'
             });
             if (res && res.success) {

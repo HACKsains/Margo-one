@@ -219,9 +219,15 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
             `tahun_pelajaran` VARCHAR(30) NULL DEFAULT NULL,
             `semester` VARCHAR(20) NULL DEFAULT NULL,
             `link_url` VARCHAR(255) NULL,
-            `visibility_scope` ENUM('all','guru','siswa','kelas','private') NOT NULL DEFAULT 'all',
+            `visibility_scope` VARCHAR(32) NOT NULL DEFAULT 'all',
             `target_kelas_id` INT NULL DEFAULT NULL,
             `target_kelas_name` VARCHAR(120) NULL DEFAULT NULL,
+            `target_mapel_id` INT NULL DEFAULT NULL,
+            `target_mapel_name` VARCHAR(150) NULL DEFAULT NULL,
+            `target_user_ids` TEXT NULL DEFAULT NULL,
+            `target_user_names` TEXT NULL DEFAULT NULL,
+            `target_group_key` VARCHAR(120) NULL DEFAULT NULL,
+            `target_group_name` VARCHAR(200) NULL DEFAULT NULL,
             `created_by` INT NULL DEFAULT NULL,
             `created_by_name` VARCHAR(150) NULL DEFAULT NULL,
             `created_by_role` VARCHAR(30) NULL DEFAULT NULL,
@@ -235,7 +241,7 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
-    // Migrasi skema tabel agendas eksisting: source ENUM -> VARCHAR(32) + source_ref_id INT -> BIGINT + kolom color_hex
+    // Migrasi skema tabel agendas eksisting: source ENUM -> VARCHAR(32), visibility_scope ENUM -> VARCHAR(32), kolom mapel/peer/kelompok
     try {
         $agCols = $apdo->query("SHOW COLUMNS FROM `agendas`")->fetchAll(PDO::FETCH_ASSOC);
         $colMap = [];
@@ -243,22 +249,65 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
             $colMap[strtolower((string)$col['Field'])] = strtolower((string)($col['Type'] ?? ''));
         }
 
-        // Migrasi source: ENUM -> VARCHAR(32) agar menerima nilai 'learn_tugas_buat', 'learn_tugas_deadline', dll
         if (isset($colMap['source']) && strpos($colMap['source'], 'enum') === 0) {
             $apdo->exec("ALTER TABLE `agendas` MODIFY COLUMN `source` VARCHAR(32) NOT NULL DEFAULT 'admin'");
         }
-
-        // Migrasi source_ref_id: INT -> BIGINT agar menerima nilai encoded asesmen multi-kelas
+        if (isset($colMap['visibility_scope']) && strpos($colMap['visibility_scope'], 'enum') === 0) {
+            $apdo->exec("ALTER TABLE `agendas` MODIFY COLUMN `visibility_scope` VARCHAR(32) NOT NULL DEFAULT 'all'");
+        }
         if (isset($colMap['source_ref_id']) && strpos($colMap['source_ref_id'], 'bigint') === false) {
             $apdo->exec("ALTER TABLE `agendas` MODIFY COLUMN `source_ref_id` BIGINT NULL DEFAULT NULL");
         }
-
-        // Tambah color_hex jika belum ada
         if (!isset($colMap['color_hex'])) {
             $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `color_hex` VARCHAR(20) NULL DEFAULT NULL AFTER `category`");
         }
+        if (!isset($colMap['target_mapel_id'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_mapel_id` INT NULL DEFAULT NULL AFTER `target_kelas_name`");
+        }
+        if (!isset($colMap['target_mapel_name'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_mapel_name` VARCHAR(150) NULL DEFAULT NULL AFTER `target_mapel_id`");
+        }
+        if (!isset($colMap['target_user_ids'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_user_ids` TEXT NULL DEFAULT NULL AFTER `target_mapel_name`");
+        }
+        if (!isset($colMap['target_user_names'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_user_names` TEXT NULL DEFAULT NULL AFTER `target_user_ids`");
+        }
+        if (!isset($colMap['target_group_key'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_group_key` VARCHAR(120) NULL DEFAULT NULL AFTER `target_user_names`");
+        }
+        if (!isset($colMap['target_group_name'])) {
+            $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `target_group_name` VARCHAR(200) NULL DEFAULT NULL AFTER `target_group_key`");
+        }
     } catch (Throwable $eCol) {
         error_log('[MargoOne] Agenda schema migration warning: ' . $eCol->getMessage());
+    }
+
+    // Tabel Notifikasi In-App Agenda (Kelas/Mapel, Sesama Guru, Sesama Siswa, Kelompok Tugas/Proyek)
+    try {
+        $apdo->exec("
+            CREATE TABLE IF NOT EXISTS `agenda_notifications` (
+                `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+                `agenda_id` INT NOT NULL,
+                `recipient_user_id` INT NOT NULL,
+                `sender_user_id` INT NULL DEFAULT NULL,
+                `sender_name` VARCHAR(150) NOT NULL DEFAULT '',
+                `scope_type` VARCHAR(32) NOT NULL DEFAULT 'kelas',
+                `badge_label` VARCHAR(80) NOT NULL DEFAULT 'AGENDA BARU',
+                `title` VARCHAR(220) NOT NULL,
+                `body` TEXT NULL,
+                `meta_label` VARCHAR(220) NULL DEFAULT NULL,
+                `start_date` DATE NOT NULL,
+                `start_time` VARCHAR(12) NULL DEFAULT NULL,
+                `url` VARCHAR(255) NULL DEFAULT NULL,
+                `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `uq_ag_notif_user` (`agenda_id`, `recipient_user_id`),
+                INDEX `idx_ag_notif_recip` (`recipient_user_id`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Throwable $eNotifTbl) {
+        error_log('[MargoOne] Agenda notifications schema warning: ' . $eNotifTbl->getMessage());
     }
 
     // Bersihkan sekali data dummy bawaan lama (yang created_by IS NULL) agar agenda 100% murni dari database nyata (Kaldik + input pengguna)
@@ -909,9 +958,293 @@ function margo_agenda_get_siswa_kelas(PDO $ssoPdo, array $userSession)
 }
 
 /**
+ * Helper: ambil daftar user SSO berdasarkan role (mendukung tabel `sso_users` maupun `users`)
+ */
+function margo_agenda_fetch_sso_users_by_role(PDO $ssoPdo, array $roleCodes, $excludeUserId = 0)
+{
+    $roleCodes = array_values(array_unique(array_filter(array_map('strtolower', $roleCodes))));
+    if (empty($roleCodes)) {
+        return [];
+    }
+    $excludeUserId = (int)$excludeUserId;
+    $inR = implode(',', array_fill(0, count($roleCodes), '?'));
+
+    $combos = [
+        ['sso_users', 'sso_user_roles', 'sso_roles'],
+        ['users', 'user_roles', 'roles'],
+    ];
+
+    foreach ($combos as $c) {
+        list($uTbl, $urTbl, $rTbl) = $c;
+        try {
+            $hasU = (bool)$ssoPdo->query("SHOW TABLES LIKE '{$uTbl}'")->fetch();
+            $hasUr = (bool)$ssoPdo->query("SHOW TABLES LIKE '{$urTbl}'")->fetch();
+            $hasR = (bool)$ssoPdo->query("SHOW TABLES LIKE '{$rTbl}'")->fetch();
+            if (!$hasU || !$hasUr || !$hasR) {
+                continue;
+            }
+            $urCols = $ssoPdo->query("SHOW COLUMNS FROM `{$urTbl}`")->fetchAll(PDO::FETCH_COLUMN);
+            $rCols  = $ssoPdo->query("SHOW COLUMNS FROM `{$rTbl}`")->fetchAll(PDO::FETCH_COLUMN);
+            $uidCol = in_array('user_id', $urCols, true) ? 'user_id' : 'id_user';
+            $ridCol = in_array('role_id', $urCols, true) ? 'role_id' : 'id_roles';
+            $codeCol = in_array('code', $rCols, true) ? 'code' : (in_array('slug', $rCols, true) ? 'slug' : 'code');
+
+            $sql = "
+                SELECT DISTINCT u.id, u.username, u.full_name,
+                       COALESCE(NULLIF(u.email_google, ''), u.email, '') AS email,
+                       COALESCE(u.nisn_nip, '') AS nisn_nip
+                FROM `{$uTbl}` u
+                JOIN `{$urTbl}` ur ON ur.`{$uidCol}` = u.id
+                JOIN `{$rTbl}` r ON r.id = ur.`{$ridCol}`
+                WHERE LOWER(r.`{$codeCol}`) IN ({$inR})
+                  AND (? <= 0 OR u.id <> ?)
+                ORDER BY u.full_name ASC
+            ";
+            $st = $ssoPdo->prepare($sql);
+            $st->execute(array_merge($roleCodes, [$excludeUserId, $excludeUserId]));
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+            $out = [];
+            foreach ($rows as $r) {
+                $out[] = [
+                    'user_id'   => (int)$r['id'],
+                    'username'  => (string)($r['username'] ?? ''),
+                    'full_name' => (string)($r['full_name'] ?: ($r['username'] ?? 'Pengguna')),
+                    'email'     => strtolower(trim((string)($r['email'] ?? ''))),
+                    'nisn_nip'  => trim((string)($r['nisn_nip'] ?? '')),
+                ];
+            }
+            return $out;
+        } catch (Throwable $e) {
+            continue;
+        }
+    }
+    return [];
+}
+
+/**
+ * Helper: cocokan daftar identitas Learn (guru/siswa/anggota kelompok) ke user_id SSO
+ */
+function margo_agenda_build_sso_lookup(array $ssoUsers)
+{
+    $byKey = [];
+    foreach ($ssoUsers as $u) {
+        $uid = (int)$u['user_id'];
+        if ($uid <= 0) {
+            continue;
+        }
+        $keys = [
+            strtolower(trim((string)($u['username'] ?? ''))),
+            strtolower(trim((string)($u['email'] ?? ''))),
+            strtolower(trim((string)($u['nisn_nip'] ?? ''))),
+        ];
+        foreach ($keys as $k) {
+            if ($k !== '' && !isset($byKey[$k])) {
+                $byKey[$k] = $u;
+            }
+        }
+    }
+    return $byKey;
+}
+
+/**
+ * Helper: ambil daftar SSO user_id siswa yang berada pada kelas-kelas tertentu (untuk notifikasi)
+ */
+function margo_agenda_resolve_kelas_student_sso_ids(PDO $ssoPdo, array $kelasIds, $excludeUserId = 0)
+{
+    $kelasIds = array_values(array_unique(array_filter(array_map('intval', $kelasIds))));
+    if (empty($kelasIds)) {
+        return [];
+    }
+    $ssoSiswa = margo_agenda_fetch_sso_users_by_role($ssoPdo, ['siswa', 'ketua_kelas'], $excludeUserId);
+    if (empty($ssoSiswa)) {
+        return [];
+    }
+    $lookup = margo_agenda_build_sso_lookup($ssoSiswa);
+
+    $matchedIds = [];
+    $learnInfo = margo_get_learn_db($ssoPdo);
+    if ($learnInfo) {
+        try {
+            $inK = implode(',', array_fill(0, count($kelasIds), '?'));
+            $st = $learnInfo['pdo']->prepare("
+                SELECT nis, nisn, COALESCE(gmail, '') AS email
+                FROM `siswa`
+                WHERE `id_kelas` IN ({$inK})
+            ");
+            $st->execute($kelasIds);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $sr) {
+                foreach (['nis', 'nisn', 'email'] as $col) {
+                    $k = strtolower(trim((string)($sr[$col] ?? '')));
+                    if ($k !== '' && isset($lookup[$k])) {
+                        $matchedIds[(int)$lookup[$k]['user_id']] = (int)$lookup[$k]['user_id'];
+                        break;
+                    }
+                }
+            }
+        } catch (Throwable $e) {}
+    }
+
+    return array_values($matchedIds);
+}
+
+/**
+ * Helper: simpan notifikasi In-App ke `agenda_notifications` + kirim Web Push ke penerima agenda
+ */
+function margo_agenda_dispatch_notifications(PDO $ssoPdo, PDO $apdo, array $agendaRow, array $ctx, array $recipientUserIds)
+{
+    $senderId   = (int)($ctx['user_id'] ?? 0);
+    $senderName = (string)($ctx['full_name'] ?? 'Pengguna');
+    $agendaId   = (int)($agendaRow['id'] ?? 0);
+    $scope      = (string)($agendaRow['visibility_scope'] ?? 'private');
+
+    if ($agendaId <= 0 || $scope === 'private') {
+        return 0;
+    }
+
+    $recips = [];
+    foreach ($recipientUserIds as $rid) {
+        $rid = (int)$rid;
+        if ($rid > 0 && $rid !== $senderId) {
+            $recips[$rid] = $rid;
+        }
+    }
+    $recips = array_values($recips);
+    if (empty($recips)) {
+        return 0;
+    }
+
+    $badgeMap = [
+        'kelas'       => 'AGENDA KELAS & MAPEL',
+        'semua_kelas' => 'AGENDA SEMUA KELAS',
+        'peer_guru'   => 'AGENDA SESAMA GURU',
+        'peer_siswa'  => 'AGENDA SESAMA SISWA',
+        'kelompok'    => 'AGENDA KELOMPOK',
+        'guru'        => 'AGENDA GURU',
+        'siswa'       => 'AGENDA SISWA',
+        'all'         => 'AGENDA EKOSISTEM',
+    ];
+    $badge = $badgeMap[$scope] ?? 'AGENDA BARU';
+
+    $metaParts = [];
+    if (!empty($agendaRow['target_kelas_name'])) {
+        $metaParts[] = (string)$agendaRow['target_kelas_name'];
+    }
+    if (!empty($agendaRow['target_mapel_name'])) {
+        $metaParts[] = 'Mapel: ' . (string)$agendaRow['target_mapel_name'];
+    }
+    if (!empty($agendaRow['target_group_name'])) {
+        $metaParts[] = (string)$agendaRow['target_group_name'];
+    }
+    if (empty($metaParts) && !empty($agendaRow['target_user_names'])) {
+        $metaParts[] = (string)$agendaRow['target_user_names'];
+    }
+    $metaLabel = implode(' · ', $metaParts);
+
+    $title     = (string)($agendaRow['title'] ?? 'Agenda Baru');
+    $startDate = (string)($agendaRow['start_date'] ?? date('Y-m-d'));
+    $startTime = trim((string)($agendaRow['start_time'] ?? ''));
+    $desc      = trim((string)($agendaRow['description'] ?? ''));
+    $dateInfo  = $startDate . ($startTime !== '' ? (' pukul ' . substr($startTime, 0, 5) . ' WIB') : '');
+    $bodyText  = ($senderName !== '' ? ($senderName . ' membuat agenda: ') : '') . $title
+        . ($metaLabel !== '' ? (' (' . $metaLabel . ')') : '')
+        . ' pada ' . $dateInfo
+        . ($desc !== '' ? (' — ' . margo_mb_substr($desc, 0, 180)) : '');
+    $url       = '/agenda?id=' . $agendaId;
+
+    // 1. Simpan notifikasi in-app persisten
+    try {
+        $stN = $apdo->prepare("
+            INSERT INTO `agenda_notifications`
+                (`agenda_id`, `recipient_user_id`, `sender_user_id`, `sender_name`, `scope_type`,
+                 `badge_label`, `title`, `body`, `meta_label`, `start_date`, `start_time`, `url`, `is_read`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ON DUPLICATE KEY UPDATE
+                `title`      = VALUES(`title`),
+                `body`       = VALUES(`body`),
+                `meta_label` = VALUES(`meta_label`),
+                `start_date` = VALUES(`start_date`),
+                `start_time` = VALUES(`start_time`),
+                `is_read`    = 0,
+                `created_at` = CURRENT_TIMESTAMP
+        ");
+        foreach ($recips as $rid) {
+            $stN->execute([
+                $agendaId,
+                $rid,
+                $senderId ?: null,
+                margo_mb_substr($senderName, 0, 150),
+                $scope,
+                $badge,
+                margo_mb_substr($title, 0, 220),
+                $bodyText,
+                $metaLabel !== '' ? margo_mb_substr($metaLabel, 0, 220) : null,
+                $startDate,
+                $startTime !== '' ? margo_mb_substr($startTime, 0, 12) : null,
+                $url,
+            ]);
+        }
+    } catch (Throwable $eInApp) {
+        error_log('[MargoOne] In-app agenda notif warning: ' . $eInApp->getMessage());
+    }
+
+    // 2. Kirim Web Push Notification (non-blocking, batasi maksimal 40 penerima agar respons tetap cepat)
+    $pushFile = BASE_PATH . '/includes/webpush-engine.php';
+    if (file_exists($pushFile)) {
+        try {
+            require_once $pushFile;
+            if (function_exists('margo_push_send_to_user')) {
+                $pushPayload = [
+                    'title'    => '📅 ' . $badge . ': ' . $title,
+                    'body'     => margo_mb_substr($bodyText, 0, 220),
+                    'category' => 'agenda_' . $scope,
+                    'tag'      => 'agenda-new-' . $agendaId,
+                    'url'      => rtrim(BASE_URL, '/') . $url,
+                    'notif_id' => 'ag_invite_' . $agendaId,
+                ];
+                $dedupKey = 'ag_new_' . $agendaId . '_' . md5($startDate . '|' . $title);
+                $pushLimit = array_slice($recips, 0, 40);
+                foreach ($pushLimit as $rid) {
+                    @margo_push_send_to_user($ssoPdo, $rid, $pushPayload, $dedupKey);
+                }
+            }
+        } catch (Throwable $ePush) {}
+    }
+
+    return count($recips);
+}
+
+/**
+ * Ambil daftar notifikasi agenda khusus milik user (dipanggil oleh portal-data.php?resource=notifications)
+ */
+function margo_agenda_fetch_user_notifications(PDO $ssoPdo, $userId, $limit = 20)
+{
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return [];
+    }
+    try {
+        $agInfo = margo_agenda_ensure_schema($ssoPdo);
+        $apdo   = $agInfo['pdo'];
+        $lim    = max(1, min(50, (int)$limit));
+        $st = $apdo->prepare("
+            SELECT n.*
+            FROM `agenda_notifications` n
+            JOIN `agendas` a ON a.id = n.agenda_id AND a.is_active = 1
+            WHERE n.recipient_user_id = ?
+            ORDER BY n.created_at DESC, n.id DESC
+            LIMIT {$lim}
+        ");
+        $st->execute([$userId]);
+        return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
  * Bangun konteks hak akses agenda untuk pengguna yang sedang login
  */
-function margo_agenda_build_user_context(PDO $ssoPdo, array $userSession)
+function margo_agenda_build_user_context(PDO $ssoPdo, array $userSession, $includeOptions = true)
 {
     $roles = isset($userSession['roles']) && is_array($userSession['roles'])
         ? array_values(array_unique(array_map('strtolower', $userSession['roles'])))
@@ -919,12 +1252,43 @@ function margo_agenda_build_user_context(PDO $ssoPdo, array $userSession)
     $isAdmin = in_array('admin', $roles, true);
     $isGuru  = in_array('guru', $roles, true);
     $isSiswa = in_array('siswa', $roles, true) || in_array('ketua_kelas', $roles, true);
+    $uidCtx  = (int)($userSession['id'] ?? 0);
 
-    $guruClasses = ($isGuru || $isAdmin) ? margo_agenda_get_guru_classes($ssoPdo, $userSession) : [];
-    $siswaKelas  = ($isSiswa || !$isAdmin) ? margo_agenda_get_siswa_kelas($ssoPdo, $userSession) : ['kelas_id' => null, 'nama_kelas' => null];
+    // 1. Tarik opsi terpadu dari Ilmuna Learn (api/sso-broadcast.php?resource=agenda_options)
+    $learnOpts = [];
+    if ($includeOptions) {
+        $bridgeFile = BASE_PATH . '/includes/learn-realtime-bridge.php';
+        if (file_exists($bridgeFile)) {
+            try {
+                require_once $bridgeFile;
+                if (function_exists('margo_learn_fetch_agenda_options')) {
+                    $optWrap = margo_learn_fetch_agenda_options($ssoPdo, $userSession, false);
+                    if (!empty($optWrap['ok']) && is_array($optWrap['data'])) {
+                        $learnOpts = $optWrap['data'];
+                    }
+                }
+            } catch (Throwable $eOpt) {}
+        }
+    }
 
-    // Fallback dari hasil resolve kelas Ilmuna Learn API (session atau cache file)
-    $uidCtx = (int)($userSession['id'] ?? 0);
+    // 2. Kelas & Mapel yang diampu Guru (prioritas dari API Learn, fallback query langsung Learn DB)
+    $guruClasses  = [];
+    $guruMapelAll = [];
+    if ($isGuru || $isAdmin) {
+        if (!empty($learnOpts['guru_classes']) && is_array($learnOpts['guru_classes'])) {
+            $guruClasses  = $learnOpts['guru_classes'];
+            $guruMapelAll = is_array($learnOpts['guru_mapel_all'] ?? null) ? $learnOpts['guru_mapel_all'] : [];
+        } else {
+            $guruClasses = margo_agenda_get_guru_classes($ssoPdo, $userSession);
+        }
+    }
+
+    // 3. Info Kelas Siswa
+    $siswaKelas = ($isSiswa || !$isAdmin) ? margo_agenda_get_siswa_kelas($ssoPdo, $userSession) : ['kelas_id' => null, 'nama_kelas' => null];
+    if (empty($siswaKelas['kelas_id']) && !empty($learnOpts['identity_context']['siswa']['id_kelas'])) {
+        $siswaKelas['kelas_id']   = (int)$learnOpts['identity_context']['siswa']['id_kelas'];
+        $siswaKelas['nama_kelas'] = (string)($learnOpts['identity_context']['siswa']['nama_kelas'] ?? '');
+    }
     if ($uidCtx > 0 && empty($siswaKelas['kelas_id'])) {
         if (!empty($_SESSION['margo_learn_kelas_ids_' . $uidCtx][0])) {
             $siswaKelas['kelas_id']   = (int)$_SESSION['margo_learn_kelas_ids_' . $uidCtx][0];
@@ -941,35 +1305,142 @@ function margo_agenda_build_user_context(PDO $ssoPdo, array $userSession)
         }
     }
 
+    // 4. Daftar Sesama Guru (untuk Guru / Admin) — gabungkan user SSO ber-role guru + metadata dari Learn API
+    $peersGuru = [];
+    if ($includeOptions && ($isGuru || $isAdmin)) {
+        $ssoGurus = margo_agenda_fetch_sso_users_by_role($ssoPdo, ['guru'], $uidCtx);
+        $learnGuruByKey = [];
+        foreach (($learnOpts['peers_guru'] ?? []) as $lg) {
+            foreach (['nip', 'username', 'email'] as $kCol) {
+                $kv = strtolower(trim((string)($lg[$kCol] ?? '')));
+                if ($kv !== '' && !isset($learnGuruByKey[$kv])) {
+                    $learnGuruByKey[$kv] = $lg;
+                }
+            }
+        }
+        foreach ($ssoGurus as $sg) {
+            $meta = null;
+            foreach (['nisn_nip', 'username', 'email'] as $kCol) {
+                $kv = strtolower(trim((string)($sg[$kCol] ?? '')));
+                if ($kv !== '' && isset($learnGuruByKey[$kv])) {
+                    $meta = $learnGuruByKey[$kv];
+                    break;
+                }
+            }
+            $peersGuru[] = [
+                'user_id'   => (int)$sg['user_id'],
+                'full_name' => (string)$sg['full_name'],
+                'nip'       => (string)($meta['nip'] ?? $sg['nisn_nip'] ?? ''),
+                'kode_guru' => (string)($meta['kode_guru'] ?? ''),
+                'email'     => (string)$sg['email'],
+            ];
+        }
+    }
+
+    // 5. Daftar Sesama Siswa & Kelompok Tugas/Proyek (untuk Siswa)
+    $peersSiswa          = [];
+    $ketuaKelompok       = [];
+    $anggotaKelompokKeys = is_array($learnOpts['anggota_kelompok_keys'] ?? null)
+        ? array_values(array_unique(array_filter(array_map('strval', $learnOpts['anggota_kelompok_keys']))))
+        : [];
+
+    if ($includeOptions && $isSiswa) {
+        $ssoSiswas = margo_agenda_fetch_sso_users_by_role($ssoPdo, ['siswa', 'ketua_kelas'], $uidCtx);
+        $ssoSiswaAll = margo_agenda_fetch_sso_users_by_role($ssoPdo, ['siswa', 'ketua_kelas'], 0);
+        $ssoLookupAll = margo_agenda_build_sso_lookup($ssoSiswaAll);
+
+        $learnSiswaByKey = [];
+        foreach (($learnOpts['peers_siswa'] ?? []) as $ls) {
+            foreach (['nis', 'nisn', 'email'] as $kCol) {
+                $kv = strtolower(trim((string)($ls[$kCol] ?? '')));
+                if ($kv !== '' && !isset($learnSiswaByKey[$kv])) {
+                    $learnSiswaByKey[$kv] = $ls;
+                }
+            }
+        }
+
+        foreach ($ssoSiswas as $ss) {
+            $meta = null;
+            foreach (['username', 'nisn_nip', 'email'] as $kCol) {
+                $kv = strtolower(trim((string)($ss[$kCol] ?? '')));
+                if ($kv !== '' && isset($learnSiswaByKey[$kv])) {
+                    $meta = $learnSiswaByKey[$kv];
+                    break;
+                }
+            }
+            $sameClass = !empty($meta['same_class']);
+            $peersSiswa[] = [
+                'user_id'    => (int)$ss['user_id'],
+                'full_name'  => (string)$ss['full_name'],
+                'nis'        => (string)($meta['nis'] ?? $ss['username'] ?? ''),
+                'nama_kelas' => (string)($meta['nama_kelas'] ?? ''),
+                'same_class' => $sameClass,
+            ];
+        }
+        usort($peersSiswa, function ($a, $b) {
+            if ($a['same_class'] !== $b['same_class']) {
+                return $a['same_class'] ? -1 : 1;
+            }
+            return strcasecmp($a['full_name'], $b['full_name']);
+        });
+
+        // Kelompok di mana siswa ini adalah KETUA KELOMPOK (resolve SSO user_id tiap anggota)
+        foreach (($learnOpts['ketua_kelompok'] ?? []) as $kk) {
+            $memberSsoIds = [];
+            foreach (($kk['anggota'] ?? []) as $ag) {
+                foreach (['nis', 'nisn', 'email'] as $kCol) {
+                    $kv = strtolower(trim((string)($ag[$kCol] ?? '')));
+                    if ($kv !== '' && isset($ssoLookupAll[$kv])) {
+                        $mid = (int)$ssoLookupAll[$kv]['user_id'];
+                        $memberSsoIds[$mid] = $mid;
+                        break;
+                    }
+                }
+            }
+            $kk['member_sso_ids'] = array_values($memberSsoIds);
+            $ketuaKelompok[] = $kk;
+        }
+    }
+
     // Daftar scope audiens yang diizinkan untuk dibuat oleh user ini
     $allowedScopes = [];
     if ($isAdmin) {
-        $allowedScopes = ['all', 'guru', 'siswa', 'private'];
+        $allowedScopes = ['all', 'guru', 'siswa', 'peer_guru', 'private'];
         if (!empty($guruClasses)) {
             $allowedScopes[] = 'kelas';
+            $allowedScopes[] = 'semua_kelas';
         }
     } elseif ($isGuru) {
-        $allowedScopes = ['private'];
+        $allowedScopes = ['private', 'peer_guru'];
         if (!empty($guruClasses)) {
             $allowedScopes[] = 'kelas';
+            $allowedScopes[] = 'semua_kelas';
         }
     } else {
-        // Siswa / Ketua Kelas: hanya diketahui oleh dirinya sendiri saja
-        $allowedScopes = ['private'];
+        // Siswa: pribadi, sesama siswa, dan kelompok (khusus jika menjadi Ketua Kelompok Tugas/Proyek)
+        $allowedScopes = ['private', 'peer_siswa'];
+        if (!empty($ketuaKelompok)) {
+            $allowedScopes[] = 'kelompok';
+        }
     }
 
     return [
-        'user_id'        => (int)($userSession['id'] ?? 0),
-        'full_name'      => (string)($userSession['full_name'] ?? $userSession['username'] ?? 'Pengguna'),
-        'roles'          => $roles,
-        'primary_role'   => (string)($userSession['primary_role'] ?? ($roles[0] ?? 'siswa')),
-        'is_admin'       => $isAdmin,
-        'is_guru'        => $isGuru,
-        'is_siswa'       => $isSiswa,
-        'guru_classes'   => $guruClasses,
-        'siswa_kelas_id' => $siswaKelas['kelas_id'],
-        'siswa_kelas'    => $siswaKelas['nama_kelas'],
-        'allowed_scopes' => $allowedScopes,
+        'user_id'               => $uidCtx,
+        'full_name'             => (string)($userSession['full_name'] ?? $userSession['username'] ?? 'Pengguna'),
+        'roles'                 => $roles,
+        'primary_role'          => (string)($userSession['primary_role'] ?? ($roles[0] ?? 'siswa')),
+        'is_admin'              => $isAdmin,
+        'is_guru'               => $isGuru,
+        'is_siswa'              => $isSiswa,
+        'guru_classes'          => $guruClasses,
+        'guru_mapel_all'        => $guruMapelAll,
+        'peers_guru'            => $peersGuru,
+        'peers_siswa'           => $peersSiswa,
+        'ketua_kelompok'        => $ketuaKelompok,
+        'anggota_kelompok_keys' => $anggotaKelompokKeys,
+        'siswa_kelas_id'        => $siswaKelas['kelas_id'],
+        'siswa_kelas'           => $siswaKelas['nama_kelas'],
+        'allowed_scopes'        => $allowedScopes,
     ];
 }
 
@@ -1004,13 +1475,29 @@ function margo_agenda_format_row(array $r, array $ctx)
     }
 
     $scope = (string)($r['visibility_scope'] ?? 'all');
+    $mapelSuffix = !empty($r['target_mapel_name']) ? (' · ' . (string)$r['target_mapel_name']) : '';
     $scopeLabelMap = [
-        'all'     => 'Semua Orang',
-        'guru'    => 'Khusus Guru',
-        'siswa'   => 'Khusus Siswa',
-        'kelas'   => !empty($r['target_kelas_name']) ? ('Kelas ' . $r['target_kelas_name']) : 'Kelas Diampu',
-        'private' => 'Pribadi (Saya Saja)',
+        'all'         => 'Semua Orang',
+        'guru'        => 'Khusus Guru',
+        'siswa'       => 'Khusus Siswa',
+        'kelas'       => (!empty($r['target_kelas_name']) ? ('Kelas ' . $r['target_kelas_name']) : 'Kelas Diampu') . $mapelSuffix,
+        'semua_kelas' => (!empty($r['target_kelas_name']) ? (string)$r['target_kelas_name'] : 'Semua Kelas') . $mapelSuffix,
+        'peer_guru'   => !empty($r['target_user_names']) ? ('Sesama Guru · ' . $r['target_user_names']) : 'Sesama Guru',
+        'peer_siswa'  => !empty($r['target_user_names']) ? ('Sesama Siswa · ' . $r['target_user_names']) : 'Sesama Siswa',
+        'kelompok'    => !empty($r['target_group_name']) ? ('Kelompok · ' . $r['target_group_name']) : 'Kelompok Tugas/Proyek',
+        'private'     => 'Pribadi (Saya Saja)',
     ];
+
+    $rawTargetUids = trim((string)($r['target_user_ids'] ?? ''), ', ');
+    $targetUserIdsArr = [];
+    if ($rawTargetUids !== '') {
+        foreach (explode(',', $rawTargetUids) as $pUid) {
+            $iv = (int)trim($pUid);
+            if ($iv > 0) {
+                $targetUserIdsArr[] = $iv;
+            }
+        }
+    }
 
     // Label sumber yang lebih informatif untuk agenda dari Ilmuna Learn
     $learnSourceLabels = [
@@ -1057,6 +1544,12 @@ function margo_agenda_format_row(array $r, array $ctx)
         'visibility_label'  => $scopeLabel,
         'target_kelas_id'   => $r['target_kelas_id'] !== null ? (int)$r['target_kelas_id'] : null,
         'target_kelas_name' => (string)($r['target_kelas_name'] ?? ''),
+        'target_mapel_id'   => isset($r['target_mapel_id']) && $r['target_mapel_id'] !== null ? (int)$r['target_mapel_id'] : null,
+        'target_mapel_name' => (string)($r['target_mapel_name'] ?? ''),
+        'target_user_ids'   => $targetUserIdsArr,
+        'target_user_names' => (string)($r['target_user_names'] ?? ''),
+        'target_group_key'  => (string)($r['target_group_key'] ?? ''),
+        'target_group_name' => (string)($r['target_group_name'] ?? ''),
         'created_by'        => $creatorId ?: null,
         'created_by_name'   => (string)($r['created_by_name'] ?? ''),
         'created_by_role'   => (string)($r['created_by_role'] ?? ''),
@@ -1139,10 +1632,31 @@ function margo_agenda_fetch_visible(PDO $ssoPdo, array $userSession, array $opti
         }
     }
 
-    // Siswa / Ketua Kelas melihat agenda kelas yang dibuat Guru atau tersinkron dari Learn untuk kelasnya
+    // Siswa / Ketua Kelas melihat agenda kelas & semua_kelas yang ditujukan ke kelasnya
     if (!empty($ctx['siswa_kelas_id'])) {
+        $skId = (int)$ctx['siswa_kelas_id'];
         $visClauses[] = "(`visibility_scope` = 'kelas' AND `target_kelas_id` = ?)";
-        $params[] = (int)$ctx['siswa_kelas_id'];
+        $params[] = $skId;
+        $visClauses[] = "(`visibility_scope` = 'semua_kelas' AND FIND_IN_SET(?, REPLACE(COALESCE(`target_group_key`, ''), 'kelas_ids:', '')) > 0)";
+        $params[] = (string)$skId;
+    }
+
+    // Peer-to-peer (Sesama Guru, Sesama Siswa) & Kelompok berdasarkan target_user_ids (,id,)
+    if ($ctx['user_id'] > 0) {
+        $visClauses[] = "(`visibility_scope` IN ('peer_guru', 'peer_siswa', 'kelompok') AND `target_user_ids` LIKE ?)";
+        $params[] = '%,' . (int)$ctx['user_id'] . ',%';
+    }
+
+    // Anggota Kelompok Tugas/Proyek melihat agenda kelompok berdasarkan target_group_key
+    if (!empty($ctx['anggota_kelompok_keys']) && is_array($ctx['anggota_kelompok_keys'])) {
+        $gkList = array_values(array_unique(array_filter(array_map('strval', $ctx['anggota_kelompok_keys']))));
+        if (!empty($gkList)) {
+            $gkIn = implode(',', array_fill(0, count($gkList), '?'));
+            $visClauses[] = "(`visibility_scope` = 'kelompok' AND `target_group_key` IN ({$gkIn}))";
+            foreach ($gkList as $gkVal) {
+                $params[] = $gkVal;
+            }
+        }
     }
 
     // Guru melihat agenda kelas untuk SEMUA kelas yang ia ampu (termasuk agenda Learn yang tersinkron)
@@ -1280,58 +1794,266 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
     }
 
     // Validasi & paksa aturan audiens sesuai Role
-    $reqScope   = strtolower(trim((string)($input['visibility_scope'] ?? '')));
-    $reqKelasId = (int)($input['target_kelas_id'] ?? 0);
-    $kelasName  = null;
-    $kelasId    = null;
+    $reqScope     = strtolower(trim((string)($input['visibility_scope'] ?? '')));
+    $rawKelasIn   = trim((string)($input['target_kelas_id'] ?? ''));
+    $reqKelasId   = ($rawKelasIn === 'all') ? 0 : (int)$rawKelasIn;
+    $reqMapelId   = (int)($input['target_mapel_id'] ?? 0);
+    $reqMapelName = trim((string)($input['target_mapel_name'] ?? ''));
+    $reqGroupKey  = trim((string)($input['target_group_key'] ?? ''));
+
+    // Parse target_user_ids (array atau comma-separated string)
+    $rawUids = $input['target_user_ids'] ?? [];
+    if (is_string($rawUids)) {
+        $decU = json_decode($rawUids, true);
+        $rawUids = is_array($decU) ? $decU : explode(',', $rawUids);
+    }
+    $reqTargetUids = [];
+    foreach ((array)$rawUids as $ru) {
+        $iv = (int)trim((string)$ru);
+        if ($iv > 0 && $iv !== (int)$ctx['user_id']) {
+            $reqTargetUids[$iv] = $iv;
+        }
+    }
+    $reqTargetUids = array_values($reqTargetUids);
+
+    $kelasId         = null;
+    $kelasName       = null;
+    $mapelId         = null;
+    $mapelName       = null;
+    $targetUserIdsDb = null;
+    $targetUserNames = null;
+    $targetGroupKey  = null;
+    $targetGroupName = null;
+    $notifRecipients = [];
+
+    // Helper validasi Kelas & Mapel untuk Guru / Admin
+    $resolveKelasMapel = function($isAllKelas) use ($ctx, $reqKelasId, $reqMapelId, $reqMapelName) {
+        if ($isAllKelas) {
+            if (empty($ctx['guru_classes'])) {
+                return ['ok' => false, 'message' => 'Anda belum memiliki kelas yang diampu di Ilmuna Learn.'];
+            }
+            $matchedMapel = null;
+            foreach (($ctx['guru_mapel_all'] ?? []) as $gm) {
+                if (($reqMapelId > 0 && (int)$gm['id_mapel'] === $reqMapelId)
+                    || ($reqMapelName !== '' && strcasecmp((string)$gm['nama_mapel'], $reqMapelName) === 0)
+                ) {
+                    $matchedMapel = $gm;
+                    break;
+                }
+            }
+            // Jika hanya ada 1 mapel di semua kelas, bisa auto-pilih; jika tidak, wajib pilih mapel
+            if (!$matchedMapel && !empty($ctx['guru_mapel_all'])) {
+                return ['ok' => false, 'message' => 'Pilih Mata Pelajaran terlebih dahulu untuk agenda Semua Kelas.'];
+            }
+            $kIds = [];
+            $kNames = [];
+            $allowedKidSet = $matchedMapel && !empty($matchedMapel['kelas_ids'])
+                ? array_map('intval', $matchedMapel['kelas_ids'])
+                : [];
+            foreach ($ctx['guru_classes'] as $kc) {
+                $kid = (int)$kc['id'];
+                if (empty($allowedKidSet) || in_array($kid, $allowedKidSet, true)) {
+                    $kIds[]   = $kid;
+                    $kNames[] = (string)$kc['nama_kelas'];
+                }
+            }
+            $kLbl = count($kNames) <= 3
+                ? ('Semua Kelas (' . implode(', ', $kNames) . ')')
+                : ('Semua Kelas (' . count($kNames) . ' Rombel)');
+            return [
+                'ok'         => true,
+                'kelas_id'   => null,
+                'kelas_ids'  => $kIds,
+                'kelas_name' => $kLbl,
+                'group_key'  => 'kelas_ids:' . implode(',', $kIds),
+                'mapel_id'   => $matchedMapel ? (int)$matchedMapel['id_mapel'] : ($reqMapelId ?: null),
+                'mapel_name' => $matchedMapel ? (string)$matchedMapel['nama_mapel'] : ($reqMapelName ?: null),
+            ];
+        }
+
+        $matchedClass = null;
+        foreach (($ctx['guru_classes'] ?? []) as $kc) {
+            if ((int)$kc['id'] === $reqKelasId) {
+                $matchedClass = $kc;
+                break;
+            }
+        }
+        if (!$matchedClass) {
+            return ['ok' => false, 'message' => 'Pilih Kelas yang Anda ampu terlebih dahulu.'];
+        }
+        $classMapels = is_array($matchedClass['mapel'] ?? null) ? $matchedClass['mapel'] : [];
+        $matchedMapel = null;
+        if (!empty($classMapels)) {
+            foreach ($classMapels as $mp) {
+                if (($reqMapelId > 0 && (int)$mp['id_mapel'] === $reqMapelId)
+                    || ($reqMapelName !== '' && strcasecmp((string)$mp['nama_mapel'], $reqMapelName) === 0)
+                ) {
+                    $matchedMapel = $mp;
+                    break;
+                }
+            }
+            if (!$matchedMapel) {
+                return ['ok' => false, 'message' => 'Pilih Mata Pelajaran pada kelas ' . $matchedClass['nama_kelas'] . ' terlebih dahulu.'];
+            }
+        }
+        return [
+            'ok'         => true,
+            'kelas_id'   => (int)$matchedClass['id'],
+            'kelas_ids'  => [(int)$matchedClass['id']],
+            'kelas_name' => (string)$matchedClass['nama_kelas'],
+            'group_key'  => null,
+            'mapel_id'   => $matchedMapel ? (int)$matchedMapel['id_mapel'] : ($reqMapelId ?: null),
+            'mapel_name' => $matchedMapel ? (string)$matchedMapel['nama_mapel'] : ($reqMapelName ?: null),
+        ];
+    };
+
+    // Jika user memilih scope 'kelas' tapi target_kelas_id = 'all', konversi ke 'semua_kelas'
+    if ($reqScope === 'kelas' && $rawKelasIn === 'all') {
+        $reqScope = 'semua_kelas';
+    }
 
     if ($ctx['is_admin']) {
         $source = 'admin';
         $roleTag = 'admin';
-        if (!in_array($reqScope, ['all', 'guru', 'siswa', 'private', 'kelas'], true)) {
+        if (!in_array($reqScope, ['all', 'guru', 'siswa', 'private', 'kelas', 'semua_kelas', 'peer_guru'], true)) {
             $reqScope = 'all';
         }
-        if ($reqScope === 'kelas') {
-            $matchedClass = null;
-            foreach ($ctx['guru_classes'] as $kc) {
-                if ((int)$kc['id'] === $reqKelasId) {
-                    $matchedClass = $kc;
-                    break;
+        if ($reqScope === 'kelas' || $reqScope === 'semua_kelas') {
+            $kmRes = $resolveKelasMapel($reqScope === 'semua_kelas');
+            if (!$kmRes['ok']) {
+                return ['success' => false, 'message' => $kmRes['message']];
+            }
+            $kelasId        = $kmRes['kelas_id'];
+            $kelasName      = $kmRes['kelas_name'];
+            $targetGroupKey = $kmRes['group_key'];
+            $mapelId        = $kmRes['mapel_id'];
+            $mapelName      = $kmRes['mapel_name'];
+            $notifRecipients = margo_agenda_resolve_kelas_student_sso_ids($ssoPdo, $kmRes['kelas_ids'], $ctx['user_id']);
+        } elseif ($reqScope === 'peer_guru') {
+            $validPeers = [];
+            $peerNames  = [];
+            $peerById = [];
+            foreach (($ctx['peers_guru'] ?? []) as $pg) {
+                $peerById[(int)$pg['user_id']] = $pg;
+            }
+            foreach ($reqTargetUids as $ru) {
+                if (isset($peerById[$ru])) {
+                    $validPeers[] = $ru;
+                    $peerNames[]  = (string)$peerById[$ru]['full_name'];
                 }
             }
-            if (!$matchedClass) {
-                return ['success' => false, 'message' => 'Pilih kelas yang valid untuk agenda khusus kelas.'];
+            if (empty($validPeers)) {
+                return ['success' => false, 'message' => 'Pilih minimal 1 guru penerima agenda.'];
             }
-            $kelasId   = (int)$matchedClass['id'];
-            $kelasName = (string)$matchedClass['nama_kelas'];
+            $targetUserIdsDb = ',' . implode(',', $validPeers) . ',';
+            $targetUserNames = count($peerNames) <= 3 ? implode(', ', $peerNames) : ($peerNames[0] . ', ' . $peerNames[1] . ' +' . (count($peerNames) - 2) . ' guru');
+            $notifRecipients = $validPeers;
+        } elseif ($reqScope === 'guru') {
+            foreach (margo_agenda_fetch_sso_users_by_role($ssoPdo, ['guru'], $ctx['user_id']) as $gu) {
+                $notifRecipients[] = (int)$gu['user_id'];
+            }
+        } elseif ($reqScope === 'siswa') {
+            foreach (margo_agenda_fetch_sso_users_by_role($ssoPdo, ['siswa', 'ketua_kelas'], $ctx['user_id']) as $su) {
+                $notifRecipients[] = (int)$su['user_id'];
+            }
+        } elseif ($reqScope === 'all') {
+            foreach (margo_agenda_fetch_sso_users_by_role($ssoPdo, ['guru', 'siswa', 'ketua_kelas'], $ctx['user_id']) as $au) {
+                $notifRecipients[] = (int)$au['user_id'];
+            }
         }
     } elseif ($ctx['is_guru']) {
         $source  = 'guru';
         $roleTag = 'guru';
-        if (!in_array($reqScope, ['private', 'kelas'], true)) {
+        if (!in_array($reqScope, ['private', 'kelas', 'semua_kelas', 'peer_guru'], true)) {
             $reqScope = 'private';
         }
-        if ($reqScope === 'kelas') {
-            $matchedClass = null;
-            foreach ($ctx['guru_classes'] as $kc) {
-                if ((int)$kc['id'] === $reqKelasId) {
-                    $matchedClass = $kc;
+        if ($reqScope === 'kelas' || $reqScope === 'semua_kelas') {
+            $kmRes = $resolveKelasMapel($reqScope === 'semua_kelas');
+            if (!$kmRes['ok']) {
+                return ['success' => false, 'message' => $kmRes['message']];
+            }
+            $kelasId        = $kmRes['kelas_id'];
+            $kelasName      = $kmRes['kelas_name'];
+            $targetGroupKey = $kmRes['group_key'];
+            $mapelId        = $kmRes['mapel_id'];
+            $mapelName      = $kmRes['mapel_name'];
+            $notifRecipients = margo_agenda_resolve_kelas_student_sso_ids($ssoPdo, $kmRes['kelas_ids'], $ctx['user_id']);
+        } elseif ($reqScope === 'peer_guru') {
+            $validPeers = [];
+            $peerNames  = [];
+            $peerById = [];
+            foreach (($ctx['peers_guru'] ?? []) as $pg) {
+                $peerById[(int)$pg['user_id']] = $pg;
+            }
+            foreach ($reqTargetUids as $ru) {
+                if (isset($peerById[$ru])) {
+                    $validPeers[] = $ru;
+                    $peerNames[]  = (string)$peerById[$ru]['full_name'];
+                }
+            }
+            if (empty($validPeers)) {
+                return ['success' => false, 'message' => 'Pilih minimal 1 sesama guru penerima agenda.'];
+            }
+            $targetUserIdsDb = ',' . implode(',', $validPeers) . ',';
+            $targetUserNames = count($peerNames) <= 3 ? implode(', ', $peerNames) : ($peerNames[0] . ', ' . $peerNames[1] . ' +' . (count($peerNames) - 2) . ' guru');
+            $notifRecipients = $validPeers;
+        }
+    } else {
+        // Siswa / Ketua Kelas: pribadi, sesama siswa, atau kelompok tugas/proyek (khusus Ketua Kelompok!)
+        $source  = 'siswa';
+        $roleTag = $ctx['primary_role'] ?: 'siswa';
+        if (!in_array($reqScope, ['private', 'peer_siswa', 'kelompok'], true)) {
+            $reqScope = 'private';
+        }
+        if ($reqScope === 'peer_siswa') {
+            $validPeers = [];
+            $peerNames  = [];
+            $peerById = [];
+            foreach (($ctx['peers_siswa'] ?? []) as $ps) {
+                $peerById[(int)$ps['user_id']] = $ps;
+            }
+            foreach ($reqTargetUids as $ru) {
+                if (isset($peerById[$ru])) {
+                    $validPeers[] = $ru;
+                    $peerNames[]  = (string)$peerById[$ru]['full_name'];
+                }
+            }
+            if (empty($validPeers)) {
+                return ['success' => false, 'message' => 'Pilih minimal 1 sesama siswa penerima agenda.'];
+            }
+            $targetUserIdsDb = ',' . implode(',', $validPeers) . ',';
+            $targetUserNames = count($peerNames) <= 3 ? implode(', ', $peerNames) : ($peerNames[0] . ', ' . $peerNames[1] . ' +' . (count($peerNames) - 2) . ' siswa');
+            $notifRecipients = $validPeers;
+        } elseif ($reqScope === 'kelompok') {
+            $matchedGroup = null;
+            foreach (($ctx['ketua_kelompok'] ?? []) as $kk) {
+                if ((string)$kk['group_key'] === $reqGroupKey) {
+                    $matchedGroup = $kk;
                     break;
                 }
             }
-            if (!$matchedClass) {
-                return ['success' => false, 'message' => 'Guru hanya dapat membagikan agenda ke kelas yang ia ampu.'];
+            if (!$matchedGroup) {
+                return ['success' => false, 'message' => 'Hanya Ketua Kelompok Tugas/Proyek yang dapat membuat agenda untuk kelompoknya.'];
             }
-            $kelasId   = (int)$matchedClass['id'];
-            $kelasName = (string)$matchedClass['nama_kelas'];
+            $targetGroupKey  = (string)$matchedGroup['group_key'];
+            $sumberLbl       = ((string)$matchedGroup['sumber'] === 'proyek') ? 'Proyek' : 'Tugas';
+            $targetGroupName = margo_mb_substr($matchedGroup['nama_kelompok'] . ' · ' . $sumberLbl . ': ' . $matchedGroup['judul_induk'], 0, 200);
+            $mapelName       = !empty($matchedGroup['nama_mapel']) ? (string)$matchedGroup['nama_mapel'] : null;
+            $kelasName       = !empty($matchedGroup['nama_kelas']) ? (string)$matchedGroup['nama_kelas'] : null;
+
+            $memberSsoIds = array_values(array_unique(array_filter(array_map('intval', $matchedGroup['member_sso_ids'] ?? []))));
+            if (!empty($memberSsoIds)) {
+                $targetUserIdsDb = ',' . implode(',', $memberSsoIds) . ',';
+            }
+            $memNames = [];
+            foreach (($matchedGroup['anggota'] ?? []) as $ag) {
+                if (!empty($ag['nama'])) {
+                    $memNames[] = (string)$ag['nama'];
+                }
+            }
+            $targetUserNames = !empty($memNames) ? margo_mb_substr(implode(', ', $memNames), 0, 250) : null;
+            $notifRecipients = $memberSsoIds;
         }
-    } else {
-        // Siswa / Ketua Kelas: DIKUNCI KETAT ke 'private' (hanya diketahui oleh dirinya sendiri)
-        $source   = 'siswa';
-        $roleTag  = $ctx['primary_role'] ?: 'siswa';
-        $reqScope = 'private';
-        $kelasId  = null;
-        $kelasName = null;
     }
 
     $defColor = margo_agenda_default_color($source, '', $category, $reqScope);
@@ -1359,7 +2081,9 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
             UPDATE `agendas`
             SET `title` = ?, `description` = ?, `start_date` = ?, `end_date` = ?, `start_time` = ?,
                 `location` = ?, `category` = ?, `color_hex` = ?, `link_url` = ?, `visibility_scope` = ?,
-                `target_kelas_id` = ?, `target_kelas_name` = ?, `is_active` = ?
+                `target_kelas_id` = ?, `target_kelas_name` = ?, `target_mapel_id` = ?, `target_mapel_name` = ?,
+                `target_user_ids` = ?, `target_user_names` = ?, `target_group_key` = ?, `target_group_name` = ?,
+                `is_active` = ?
             WHERE `id` = ? AND `source` != 'kaldik' AND `is_locked` = 0
         ");
         $stUpd->execute([
@@ -1375,6 +2099,12 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
             $reqScope,
             $kelasId,
             $kelasName,
+            $mapelId,
+            $mapelName !== null ? margo_mb_substr($mapelName, 0, 150) : null,
+            $targetUserIdsDb,
+            $targetUserNames,
+            $targetGroupKey,
+            $targetGroupName,
             $isActive,
             $id,
         ]);
@@ -1383,20 +2113,28 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
         $stFresh->execute([$id]);
         $fresh = $stFresh->fetch(PDO::FETCH_ASSOC);
 
+        $notifiedCnt = 0;
+        if ($fresh && !empty($notifRecipients)) {
+            $notifiedCnt = margo_agenda_dispatch_notifications($ssoPdo, $apdo, $fresh, $ctx, $notifRecipients);
+        }
+
         return [
-            'success' => true,
-            'message' => 'Agenda "' . $title . '" berhasil diperbarui.',
-            'data'    => $fresh ? margo_agenda_format_row($fresh, $ctx) : ['id' => $id],
+            'success'  => true,
+            'message'  => 'Agenda "' . $title . '" berhasil diperbarui' . ($notifiedCnt > 0 ? (' & notifikasi dikirim ke ' . $notifiedCnt . ' penerima.') : '.'),
+            'notified' => $notifiedCnt,
+            'data'     => $fresh ? margo_agenda_format_row($fresh, $ctx) : ['id' => $id],
         ];
     }
 
     $stIns = $apdo->prepare("
         INSERT INTO `agendas`
             (`source`, `source_ref_id`, `is_locked`, `title`, `description`, `start_date`, `end_date`, `start_time`,
-             `location`, `category`, `color_hex`, `link_url`, `visibility_scope`, `target_kelas_id`, `target_kelas_name`,
+             `location`, `category`, `color_hex`, `link_url`, `visibility_scope`,
+             `target_kelas_id`, `target_kelas_name`, `target_mapel_id`, `target_mapel_name`,
+             `target_user_ids`, `target_user_names`, `target_group_key`, `target_group_name`,
              `created_by`, `created_by_name`, `created_by_role`, `is_active`)
         VALUES
-            (?, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (?, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     $stIns->execute([
         $source,
@@ -1412,6 +2150,12 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
         $reqScope,
         $kelasId,
         $kelasName,
+        $mapelId,
+        $mapelName !== null ? margo_mb_substr($mapelName, 0, 150) : null,
+        $targetUserIdsDb,
+        $targetUserNames,
+        $targetGroupKey,
+        $targetGroupName,
         $ctx['user_id'],
         margo_mb_substr($ctx['full_name'], 0, 150),
         $roleTag,
@@ -1423,10 +2167,16 @@ function margo_agenda_save(PDO $ssoPdo, array $userSession, array $input)
     $stFresh->execute([$newId]);
     $fresh = $stFresh->fetch(PDO::FETCH_ASSOC);
 
+    $notifiedCnt = 0;
+    if ($fresh && !empty($notifRecipients)) {
+        $notifiedCnt = margo_agenda_dispatch_notifications($ssoPdo, $apdo, $fresh, $ctx, $notifRecipients);
+    }
+
     return [
-        'success' => true,
-        'message' => 'Agenda baru "' . $title . '" berhasil disimpan.',
-        'data'    => $fresh ? margo_agenda_format_row($fresh, $ctx) : ['id' => $newId],
+        'success'  => true,
+        'message'  => 'Agenda baru "' . $title . '" berhasil disimpan' . ($notifiedCnt > 0 ? (' & notifikasi dikirim ke ' . $notifiedCnt . ' penerima.') : '.'),
+        'notified' => $notifiedCnt,
+        'data'     => $fresh ? margo_agenda_format_row($fresh, $ctx) : ['id' => $newId],
     ];
 }
 
@@ -1513,6 +2263,11 @@ function margo_agenda_fetch_by_id(PDO $ssoPdo, array $userSession, $id)
         $allowed = true;
     } elseif ($scope === 'kelas' && !empty($ctx['siswa_kelas_id']) && (int)($r['target_kelas_id'] ?? 0) === (int)$ctx['siswa_kelas_id']) {
         $allowed = true;
+    } elseif ($scope === 'semua_kelas' && !empty($ctx['siswa_kelas_id'])) {
+        $kList = explode(',', str_replace('kelas_ids:', '', (string)($r['target_group_key'] ?? '')));
+        if (in_array((string)$ctx['siswa_kelas_id'], array_map('trim', $kList), true)) {
+            $allowed = true;
+        }
     } elseif ($scope === 'kelas' && $ctx['is_guru'] && !empty($ctx['guru_classes'])) {
         $tid = (int)($r['target_kelas_id'] ?? 0);
         foreach ($ctx['guru_classes'] as $kc) {
@@ -1520,6 +2275,12 @@ function margo_agenda_fetch_by_id(PDO $ssoPdo, array $userSession, $id)
                 $allowed = true;
                 break;
             }
+        }
+    } elseif (in_array($scope, ['peer_guru', 'peer_siswa', 'kelompok'], true) && $ctx['user_id'] > 0) {
+        if (strpos((string)($r['target_user_ids'] ?? ''), ',' . (int)$ctx['user_id'] . ',') !== false) {
+            $allowed = true;
+        } elseif ($scope === 'kelompok' && !empty($r['target_group_key']) && in_array((string)$r['target_group_key'], $ctx['anggota_kelompok_keys'] ?? [], true)) {
+            $allowed = true;
         }
     }
 
