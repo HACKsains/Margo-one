@@ -923,6 +923,24 @@ function margo_agenda_build_user_context(PDO $ssoPdo, array $userSession)
     $guruClasses = ($isGuru || $isAdmin) ? margo_agenda_get_guru_classes($ssoPdo, $userSession) : [];
     $siswaKelas  = ($isSiswa || !$isAdmin) ? margo_agenda_get_siswa_kelas($ssoPdo, $userSession) : ['kelas_id' => null, 'nama_kelas' => null];
 
+    // Fallback dari hasil resolve kelas Ilmuna Learn API (session atau cache file)
+    $uidCtx = (int)($userSession['id'] ?? 0);
+    if ($uidCtx > 0 && empty($siswaKelas['kelas_id'])) {
+        if (!empty($_SESSION['margo_learn_kelas_ids_' . $uidCtx][0])) {
+            $siswaKelas['kelas_id']   = (int)$_SESSION['margo_learn_kelas_ids_' . $uidCtx][0];
+            $siswaKelas['nama_kelas'] = (string)($_SESSION['margo_learn_kelas_nama_' . $uidCtx] ?? ($siswaKelas['nama_kelas'] ?? ''));
+        } else {
+            $kCacheFile = sys_get_temp_dir() . '/margo_learn_user_kelas_' . $uidCtx . '.json';
+            if (file_exists($kCacheFile)) {
+                $kCache = json_decode((string)@file_get_contents($kCacheFile), true);
+                if (!empty($kCache['kelas_ids'][0])) {
+                    $siswaKelas['kelas_id']   = (int)$kCache['kelas_ids'][0];
+                    $siswaKelas['nama_kelas'] = (string)($kCache['nama_kelas'] ?? ($siswaKelas['nama_kelas'] ?? ''));
+                }
+            }
+        }
+    }
+
     // Daftar scope audiens yang diizinkan untuk dibuat oleh user ini
     $allowedScopes = [];
     if ($isAdmin) {

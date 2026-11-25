@@ -208,13 +208,23 @@ function margo_learn_user_identity_payload(PDO $ssoPdo, array $userSession)
         }
     }
 
+    $unameVal   = trim((string)($uRow['username'] ?? ($userSession['username'] ?? '')));
+    $nisnNipVal = trim((string)($uRow['nisn_nip'] ?? ($userSession['nisn_nip'] ?? '')));
+    $nisVal     = trim((string)($uRow['nis'] ?? ($userSession['nis'] ?? ($roleTag === 'siswa' && ctype_digit($unameVal) ? $unameVal : ''))));
+    $nisnVal    = trim((string)($uRow['nisn'] ?? ($userSession['nisn'] ?? ($roleTag === 'siswa' ? $nisnNipVal : ''))));
+    $nipVal     = trim((string)($uRow['nip'] ?? ($userSession['nip'] ?? ($roleTag === 'guru' ? ($nisnNipVal ?: $unameVal) : ''))));
+    $emailVal   = trim((string)(($uRow['email_google'] ?? '') !== '' ? $uRow['email_google'] : ($uRow['email'] ?? ($userSession['email'] ?? ''))));
+
     $payload = [
-        'role'     => $roleTag,
-        'email'    => trim((string)(($uRow['email_google'] ?? '') !== '' ? $uRow['email_google'] : ($uRow['email'] ?? ($userSession['email'] ?? '')))),
-        'nis'      => trim((string)($uRow['nis'] ?? ($userSession['nis'] ?? ''))),
-        'nisn'     => trim((string)($uRow['nisn'] ?? ($userSession['nisn'] ?? ''))),
-        'nip'      => trim((string)($uRow['nip'] ?? ($userSession['nip'] ?? ''))),
-        'kelas_id' => !empty($kelasIds) ? implode(',', $kelasIds) : '',
+        'role'       => $roleTag,
+        'username'   => $unameVal,
+        'nisn_nip'   => $nisnNipVal,
+        'email'      => $emailVal,
+        'nis'        => $nisVal,
+        'nisn'       => $nisnVal,
+        'nip'        => $nipVal,
+        'kelas_id'   => !empty($kelasIds) ? implode(',', $kelasIds) : '',
+        'nama_kelas' => trim((string)($ctx['siswa_kelas'] ?? '')),
     ];
 
     return [
@@ -232,8 +242,16 @@ function margo_learn_fetch_class_feed(PDO $ssoPdo, array $userSession, $includeW
     $idInfo   = margo_learn_user_identity_payload($ssoPdo, $userSession);
     $identity = $idInfo['identity'];
 
-    // Jika non-admin dan sama sekali tidak punya kelas_id serta nis/nisn/nip/email kosong, jangan tarik data kelas acak
-    if ($identity['role'] !== 'admin' && $identity['kelas_id'] === '' && $identity['nis'] === '' && $identity['nisn'] === '' && $identity['nip'] === '') {
+    // Jika non-admin dan sama sekali tidak punya identitas maupun kelas_id, jangan tarik data kelas acak
+    if ($identity['role'] !== 'admin'
+        && $identity['kelas_id'] === ''
+        && ($identity['username'] ?? '') === ''
+        && ($identity['nisn_nip'] ?? '') === ''
+        && $identity['nis'] === ''
+        && $identity['nisn'] === ''
+        && $identity['nip'] === ''
+        && $identity['email'] === ''
+    ) {
         return [
             'ok'        => true,
             'via'       => 'empty_class_binding',
@@ -270,10 +288,38 @@ function margo_learn_fetch_class_feed(PDO $ssoPdo, array $userSession, $includeW
             }
         }
 
+        // Simpan hasil resolve kelas dari Learn ke session agar agenda.php & header cocok meski DB lokal berbeda
+        $resolvedKelasIds = $idInfo['kelas_ids'];
+        if (!empty($data['identity_context']['kelas_list']) && is_array($data['identity_context']['kelas_list'])) {
+            $fromApi = [];
+            foreach ($data['identity_context']['kelas_list'] as $kl) {
+                if (!empty($kl['id'])) {
+                    $fromApi[] = (int)$kl['id'];
+                }
+            }
+            if (!empty($fromApi)) {
+                $resolvedKelasIds = array_values(array_unique($fromApi));
+            }
+        }
+        $uidSess = (int)($userSession['id'] ?? 0);
+        if ($uidSess > 0 && !empty($resolvedKelasIds)) {
+            $kNama = (string)($data['identity_context']['siswa']['nama_kelas'] ?? '');
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                $_SESSION['margo_learn_kelas_ids_' . $uidSess] = $resolvedKelasIds;
+                if ($kNama !== '') {
+                    $_SESSION['margo_learn_kelas_nama_' . $uidSess] = $kNama;
+                }
+            }
+            @file_put_contents(
+                sys_get_temp_dir() . '/margo_learn_user_kelas_' . $uidSess . '.json',
+                json_encode(['kelas_ids' => $resolvedKelasIds, 'nama_kelas' => $kNama])
+            );
+        }
+
         return [
             'ok'        => true,
             'via'       => 'signed_rest_api',
-            'kelas_ids' => $idInfo['kelas_ids'],
+            'kelas_ids' => $resolvedKelasIds,
             'feed'      => $data,
             'ws_ticket' => $wsTicket,
         ];
