@@ -171,6 +171,10 @@ try {
 
     echo json_encode(['success' => false, 'message' => 'Aksi push tidak dikenali.']);
 } catch (Throwable $e) {
+    error_log('[MargoPush] Error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Terjadi kesalahan pada layanan Web Push.']);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Terjadi kesalahan pada layanan Web Push.' . ($isAdmin ? (' (' . $e->getMessage() . ')') : ''),
+    ]);
 }

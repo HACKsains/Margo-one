@@ -469,26 +469,56 @@ function margo_push_dispatch_daily_agendas(PDO $pdo)
     foreach ($userIds as $uidRaw) {
         $uid = (int)$uidRaw;
         // Bangun minimal userSession untuk filter agenda sesuai role & kelas
-        $stU = $pdo->prepare("SELECT id, username, full_name, email, role FROM users WHERE id = ? LIMIT 1");
-        $stU->execute([$uid]);
-        $uRow = $stU->fetch(PDO::FETCH_ASSOC);
+        $uRow = null;
+        try {
+            $stU = $pdo->prepare("SELECT id, username, full_name, email, email_google, nisn_nip FROM users WHERE id = ? LIMIT 1");
+            $stU->execute([$uid]);
+            $uRow = $stU->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $eU1) {}
+        if (!$uRow) {
+            try {
+                $stU2 = $pdo->prepare("SELECT id, username, full_name, email, email_google, nisn_nip FROM sso_users WHERE id = ? LIMIT 1");
+                $stU2->execute([$uid]);
+                $uRow = $stU2->fetch(PDO::FETCH_ASSOC);
+            } catch (Throwable $eU2) {}
+        }
         if (!$uRow) {
             continue;
         }
+
         $roles = [];
         try {
-            $stR = $pdo->prepare("SELECT role_code FROM user_roles WHERE user_id = ?");
+            $stR = $pdo->prepare("
+                SELECT r.code
+                FROM user_roles ur
+                INNER JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = ?
+            ");
             $stR->execute([$uid]);
             $roles = $stR->fetchAll(PDO::FETCH_COLUMN) ?: [];
-        } catch (Throwable $eR) {}
-        if (empty($roles) && !empty($uRow['role'])) {
-            $roles = [(string)$uRow['role']];
+        } catch (Throwable $eR1) {}
+        if (empty($roles)) {
+            try {
+                $stR2 = $pdo->prepare("
+                    SELECT r.code
+                    FROM sso_user_roles ur
+                    INNER JOIN sso_roles r ON r.id = ur.role_id
+                    WHERE ur.user_id = ?
+                ");
+                $stR2->execute([$uid]);
+                $roles = $stR2->fetchAll(PDO::FETCH_COLUMN) ?: [];
+            } catch (Throwable $eR2) {}
         }
+        if (empty($roles)) {
+            $roles = ['siswa'];
+        }
+
         $uSess = [
             'id'        => $uid,
-            'username'  => (string)$uRow['username'],
-            'full_name' => (string)$uRow['full_name'],
-            'email'     => (string)($uRow['email'] ?? ''),
+            'username'  => (string)($uRow['username'] ?? ''),
+            'full_name' => (string)($uRow['full_name'] ?? ''),
+            'email'     => (string)(($uRow['email_google'] ?? '') !== '' ? $uRow['email_google'] : ($uRow['email'] ?? '')),
+            'nisn_nip'  => (string)($uRow['nisn_nip'] ?? ''),
             'roles'     => $roles,
         ];
 
