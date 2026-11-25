@@ -89,6 +89,51 @@ if (!empty($extraHead)) {
                 </div>
 
                 <div class="margo-header-right">
+                    <?php
+                    // ── LEARN REAL-TIME NOTIFICATION BELL ────────────────────────────────
+                    // Muat bridge + terbitkan WS Ticket server-side agar TIDAK ada Private Key bocor ke browser
+                    $margoLearnWsBootstrap = null;
+                    $margoLearnNotifEvents = [];
+                    try {
+                        $learnBridgePath = BASE_PATH . '/includes/learn-realtime-bridge.php';
+                        if (file_exists($learnBridgePath)) {
+                            require_once $learnBridgePath;
+                            $footUserHdr = function_exists('getCurrentUser') ? getCurrentUser() : null;
+                            $learnPdoHdr = function_exists('getDBConnection') ? getDBConnection() : null;
+                            if ($footUserHdr && $learnPdoHdr) {
+                                $margoLearnWsBootstrap = margo_learn_issue_user_ws_bootstrap($learnPdoHdr, $footUserHdr);
+                                if (!empty($margoLearnWsBootstrap['recent_events']) && is_array($margoLearnWsBootstrap['recent_events'])) {
+                                    $margoLearnNotifEvents = $margoLearnWsBootstrap['recent_events'];
+                                }
+                            }
+                        }
+                    } catch (Throwable $eLearnHdr) {
+                        // Non-fatal: bell tampil kosong, WS connect ulang otomatis di JS
+                    }
+                    ?>
+                    <div class="margo-learn-notif-wrap" id="margoLearnNotifMount">
+                        <button type="button" class="margo-icon-btn margo-learn-bell-btn" id="margoLearnBellBtn"
+                                aria-label="Notifikasi Real-Time Ilmuna Learn" title="Notifikasi Kelas Ilmuna Learn"
+                                onclick="MargoLearnWS && MargoLearnWS.toggleDrawer()">
+                            <iconify-icon icon="solar:bell-bing-bold" id="margoLearnBellIcon"></iconify-icon>
+                            <span class="margo-learn-badge" id="margoLearnBadge" style="display:none">0</span>
+                            <span class="margo-learn-live-dot" id="margoLearnLiveDot" title="Koneksi real-time aktif"></span>
+                        </button>
+                        <div class="margo-learn-drawer" id="margoLearnDrawer" style="display:none">
+                            <div class="mld-header">
+                                <span class="mld-title"><iconify-icon icon="solar:bell-bing-bold"></iconify-icon> Notifikasi Kelas</span>
+                                <button type="button" class="mld-clear-btn" id="margoLearnClearBtn" onclick="MargoLearnWS && MargoLearnWS.clearAll()">
+                                    <iconify-icon icon="solar:trash-bin-minimalistic-bold" width="14"></iconify-icon> Bersihkan
+                                </button>
+                            </div>
+                            <div class="mld-list" id="margoLearnNotifList">
+                                <div class="mld-empty" id="margoLearnEmptyState">
+                                    <iconify-icon icon="solar:bell-off-bold" width="28" style="opacity:.35;color:#0D7A87;"></iconify-icon>
+                                    <span>Belum ada notifikasi kelas</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <a href="<?= htmlspecialchars(BASE_URL . '/agenda', ENT_QUOTES, 'UTF-8') ?>" class="margo-icon-btn" title="Agenda Ekosistem" aria-label="Agenda Ekosistem">
                         <iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>
                     </a>

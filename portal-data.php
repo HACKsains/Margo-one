@@ -20,6 +20,7 @@ if (!defined('ILMUNA_SKIP_GD_WAF_INTERSTITIAL')) {
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/auth.php';
 require_once BASE_PATH . '/includes/agenda-engine.php';
+require_once BASE_PATH . '/includes/learn-realtime-bridge.php';
 
 while (ob_get_level()) {
     ob_end_clean();
@@ -366,6 +367,46 @@ try {
                 ],
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    // ------------------------------------------------------------------
+    // 5. WEBSOCKET TICKET (SINGLE-USE wst_* — browser tidak pernah menerima sk_sso_*)
+    // ------------------------------------------------------------------
+    if ($resource === 'ws_ticket') {
+        try {
+            $boot = margo_learn_issue_user_ws_bootstrap($pdo, $currentUser);
+            if (!empty($boot['ok']) && !empty($boot['ws_ticket'])) {
+                echo json_encode(['success' => true, 'data' => $boot['ws_ticket']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            } else {
+                echo json_encode(['success' => false, 'message' => $boot['error'] ?? 'WebSocket ticket tidak tersedia saat ini.']);
+            }
+        } catch (Throwable $eWs) {
+            echo json_encode(['success' => false, 'message' => 'WebSocket ticket gagal diterbitkan.']);
+        }
+        exit;
+    }
+
+    // ------------------------------------------------------------------
+    // 6. SINKRONISASI LEARN AGENDA (dipanggil oleh WS event / force refresh, BUKAN timer/polling!)
+    // ------------------------------------------------------------------
+    if ($resource === 'sync_learn_agenda') {
+        $force   = isset($_GET['force']) && $_GET['force'] === '1';
+        $showAll = isset($_GET['all']) && $_GET['all'] === '1';
+        try {
+            $syncResult = margo_learn_sync_class_agendas($pdo, $currentUser, $force);
+            $agendaOut  = margo_agenda_fetch_visible($pdo, $currentUser, [
+                'upcoming' => !$showAll,
+                'limit'    => $showAll ? 1500 : 12,
+            ]);
+            echo json_encode([
+                'success' => true,
+                'sync'    => $syncResult,
+                'data'    => $agendaOut,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $eSyncA) {
+            echo json_encode(['success' => false, 'message' => 'Gagal sinkronisasi agenda dari Ilmuna Learn.']);
+        }
         exit;
     }
 

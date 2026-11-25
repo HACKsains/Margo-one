@@ -449,5 +449,369 @@ try {
         renderRightNews(INIT_RIGHT_NEWS);
     })();
     </script>
+
+    <!-- ── ILMUNA LEARN REAL-TIME WEBSOCKET ENGINE (WhatsApp-Style Notifications) ── -->
+    <script>
+    (function () {
+        'use strict';
+
+        /* ── Bootstrap data dari PHP server (zero extra request saat halaman load) ── */
+        var WS_BOOT = <?= json_encode($margoLearnWsBootstrap ?? null, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        var INIT_EVENTS = <?= json_encode($margoLearnNotifEvents ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+        var BASE_URL = <?= json_encode(defined('BASE_URL') ? BASE_URL : '', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
+        /* ── State ── */
+        var ws           = null;
+        var reconnTimer  = null;
+        var reconnDelay  = 2000;
+        var maxDelay     = 60000;
+        var unreadCount  = 0;
+        var drawerOpen   = false;
+        var audioCtx     = null;
+        var allNotifs    = [];   // [{id, type, title, sub, kelas, color, icon, url, ts}]
+
+        /* ── DOM refs ── */
+        var bellBtn   = document.getElementById('margoLearnBellBtn');
+        var badge     = document.getElementById('margoLearnBadge');
+        var liveDot   = document.getElementById('margoLearnLiveDot');
+        var drawer    = document.getElementById('margoLearnDrawer');
+        var notifList = document.getElementById('margoLearnNotifList');
+        var emptyEl   = document.getElementById('margoLearnEmptyState');
+
+        /* ── Helpers ── */
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c];
+            });
+        }
+        function relTime(ts) {
+            var diff = Math.floor((Date.now() - ts) / 1000);
+            if (diff < 60) return 'Baru saja';
+            if (diff < 3600) return Math.floor(diff/60) + ' mnt lalu';
+            if (diff < 86400) return Math.floor(diff/3600) + ' jam lalu';
+            return Math.floor(diff/86400) + ' hari lalu';
+        }
+        function typeIcon(type) {
+            var m = {
+                'tugas_buat':      'solar:document-add-bold',
+                'tugas_deadline':  'solar:clock-circle-bold',
+                'proyek_buat':     'solar:rocket-bold',
+                'proyek_deadline': 'solar:hourglass-bold',
+                'asesmen':         'solar:test-tube-bold',
+                'kelompok':        'solar:users-group-rounded-bold',
+            };
+            return m[type] || 'solar:bell-bing-bold';
+        }
+        function typeColor(type) {
+            var m = {
+                'tugas_buat':      '#0D7A87',
+                'tugas_deadline':  '#EF4444',
+                'proyek_buat':     '#7C3AED',
+                'proyek_deadline': '#D97706',
+                'asesmen':         '#EA580C',
+                'kelompok':        '#52B2DC',
+            };
+            return m[type] || '#1D3B5E';
+        }
+
+        /* ── Badge update ── */
+        function updateBadge() {
+            if (!badge) return;
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        /* ── Render drawer list ── */
+        function renderDrawer() {
+            if (!notifList) return;
+            if (allNotifs.length === 0) {
+                notifList.innerHTML = '<div class="mld-empty" id="margoLearnEmptyState">'
+                    + '<iconify-icon icon="solar:bell-off-bold" width="28" style="opacity:.35;color:#0D7A87;"></iconify-icon>'
+                    + '<span>Belum ada notifikasi kelas</span></div>';
+                return;
+            }
+            var html = '';
+            allNotifs.slice().reverse().forEach(function (n) {
+                var col = typeColor(n.type);
+                var ico = typeIcon(n.type);
+                html += '<div class="mld-item' + (n.unread ? ' is-unread' : '') + '" onclick="MargoLearnWS.openNotif(' + JSON.stringify(n.url || '') + ',' + n.id + ')">'
+                    + '<div class="mld-item-icon" style="background:' + col + ';">'
+                    + '<iconify-icon icon="' + ico + '" width="18"></iconify-icon></div>'
+                    + '<div class="mld-item-body">'
+                    + '<div class="mld-item-title">' + esc(n.title) + '</div>'
+                    + '<div class="mld-item-sub">' + esc(n.sub || '') + '</div>'
+                    + '<div class="mld-item-time">' + relTime(n.ts) + (n.kelas ? ' · <strong>' + esc(n.kelas) + '</strong>' : '') + '</div>'
+                    + '</div></div>';
+            });
+            notifList.innerHTML = html;
+        }
+
+        /* ── Gentle WA-like chime (Web Audio API, graceful fallback) ── */
+        function playChime() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                var osc = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(660, audioCtx.currentTime + 0.12);
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.24);
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.4);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.4);
+            } catch (e) {}
+        }
+
+        /* ── WA-style floating toast ── */
+        function showToast(notif) {
+            var col = typeColor(notif.type);
+            var ico = typeIcon(notif.type);
+            var el = document.createElement('div');
+            el.className = 'margo-learn-toast';
+            el.style.borderLeftColor = col;
+            el.innerHTML = '<div class="mlt-icon" style="background:' + col + ';">'
+                + '<iconify-icon icon="' + ico + '"></iconify-icon></div>'
+                + '<div class="mlt-body">'
+                + '<div class="mlt-label">Ilmuna Learn' + (notif.kelas ? ' · ' + esc(notif.kelas) : '') + '</div>'
+                + '<div class="mlt-title">' + esc(notif.title) + '</div>'
+                + (notif.sub ? '<div class="mlt-sub">' + esc(notif.sub) + '</div>' : '')
+                + '</div>'
+                + '<button class="mlt-close" title="Tutup">&times;</button>';
+            el.querySelector('.mlt-close').addEventListener('click', function (e) {
+                e.stopPropagation();
+                dismissToast(el);
+            });
+            el.addEventListener('click', function () {
+                MargoLearnWS.openNotif(notif.url || '', notif.id);
+                dismissToast(el);
+            });
+            document.body.appendChild(el);
+            playChime();
+
+            /* Browser Web Notification (bila diizinkan) */
+            if (window.Notification && Notification.permission === 'granted') {
+                try {
+                    new Notification(notif.title, {
+                        body: notif.sub || '',
+                        icon: BASE_URL + '/assets/images/logo-margo-one.png',
+                        tag: 'margo-learn-' + notif.id,
+                    });
+                } catch (eN) {}
+            }
+
+            /* Auto-dismiss setelah 7 detik */
+            setTimeout(function () { dismissToast(el); }, 7000);
+        }
+
+        function dismissToast(el) {
+            if (!el || !el.parentNode) return;
+            el.classList.add('is-out');
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 300);
+        }
+
+        /* ── Proses incoming event dari WebSocket atau boot PHP ── */
+        function processEvent(evt) {
+            var payload = null;
+            if (typeof evt === 'object' && evt !== null && evt.payload) {
+                payload = evt.payload;
+            } else if (typeof evt === 'object' && evt !== null && evt.id) {
+                payload = evt;
+            }
+            if (!payload) return;
+
+            var cat   = (payload.kategori_item || payload.type || '').toLowerCase();
+            var jenis = (payload.type || '').toLowerCase().replace('tugas_', '').replace('proyek_', '');
+            var type  = cat === 'tugas' ? ('tugas_' + jenis)
+                      : cat === 'proyek' ? ('proyek_' + jenis)
+                      : cat === 'asesmen' ? 'asesmen'
+                      : cat === 'kelompok' ? 'kelompok'
+                      : (payload.type || 'tugas_buat');
+
+            var notif = {
+                id:    Date.now(),
+                type:  type,
+                title: payload.judul_tugas || payload.nama_proyek || payload.judul_asesmen || payload.judul || 'Notifikasi Baru',
+                sub:   payload.deskripsi_ringkas || payload.sub || '',
+                kelas: (payload.kelas && payload.kelas.nama) || payload.target_kelas || '',
+                color: typeColor(type),
+                icon:  typeIcon(type),
+                url:   payload.portal_url || (BASE_URL + '/agenda'),
+                ts:    Date.now(),
+                unread: true,
+            };
+
+            allNotifs.push(notif);
+            if (allNotifs.length > 50) allNotifs = allNotifs.slice(-50);
+
+            unreadCount++;
+            updateBadge();
+            renderDrawer();
+            showToast(notif);
+
+            /* Trigger refresh agenda sidebar + calendar langsung (zero reload!) */
+            if (window.MargoShell && MargoShell.refreshRightWidgets) {
+                MargoShell.refreshRightWidgets();
+            }
+            /* Jika sedang di /agenda, trigger MARGO_AGENDA.syncLearn() agar kalender di-update */
+            if (typeof window.MARGO_AGENDA !== 'undefined' && typeof MARGO_AGENDA.syncLearn === 'function') {
+                MARGO_AGENDA.syncLearn();
+            }
+
+            /* Simpan ke localStorage agar tetap ada setelah reload ringan */
+            try { localStorage.setItem('margo.learn.notifs', JSON.stringify(allNotifs)); } catch (e) {}
+        }
+
+        /* ── Koneksi WebSocket RFC 6455 ke learn.ilmuna.my.id ── */
+        function connect() {
+            if (!WS_BOOT || !WS_BOOT.ok || !WS_BOOT.ws_ticket) return;
+            var wsUrl = WS_BOOT.ws_ticket.ws_connect_url;
+            if (!wsUrl) return;
+
+            clearTimeout(reconnTimer);
+            try { if (ws) ws.close(); } catch (e) {}
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (eWs) {
+                scheduleReconnect();
+                return;
+            }
+
+            ws.onopen = function () {
+                reconnDelay = 2000;
+                if (liveDot) {
+                    liveDot.classList.add('is-live');
+                    liveDot.title = 'Koneksi real-time aktif';
+                }
+            };
+
+            ws.onmessage = function (msgEvt) {
+                var data = null;
+                try { data = JSON.parse(msgEvt.data); } catch (e) { return; }
+                if (!data || data.type === 'ilmuna.realtime.welcome' || data.type === 'ilmuna.realtime.ping') return;
+                if (data.type === 'ilmuna.realtime.event' && data.payload) {
+                    processEvent(data);
+                }
+            };
+
+            ws.onerror = function () {};
+            ws.onclose = function () {
+                if (liveDot) {
+                    liveDot.classList.remove('is-live');
+                    liveDot.title = 'Mencoba sambungkan ulang…';
+                }
+                scheduleReconnect();
+            };
+        }
+
+        function scheduleReconnect() {
+            clearTimeout(reconnTimer);
+            reconnTimer = setTimeout(function () {
+                /* Re-fetch tiket baru dulu via portal-data sebelum reconnect */
+                fetch(BASE_URL + '/portal-data.php?resource=ws_ticket', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                }).then(function (r) { return r.json(); })
+                  .then(function (res) {
+                    if (res && res.success && res.data && res.data.ws_connect_url) {
+                        WS_BOOT = { ok: true, ws_ticket: res.data };
+                        connect();
+                    }
+                  }).catch(function () {});
+                reconnDelay = Math.min(reconnDelay * 1.8, maxDelay);
+            }, reconnDelay);
+        }
+
+        /* ── Muat notifikasi awal dari INIT_EVENTS (PHP server bootstrap) ── */
+        function hydrateInitEvents() {
+            /* Juga dari localStorage sebagai fallback offline */
+            try {
+                var saved = JSON.parse(localStorage.getItem('margo.learn.notifs') || '[]');
+                if (Array.isArray(saved) && saved.length > 0) {
+                    allNotifs = saved.slice(-30);
+                }
+            } catch (e) {}
+
+            if (Array.isArray(INIT_EVENTS)) {
+                INIT_EVENTS.forEach(function (evt) { processEvent(evt); });
+            }
+            if (allNotifs.length > 0) {
+                renderDrawer();
+            }
+        }
+
+        /* ── Toggles ── */
+        function toggleDrawer() {
+            drawerOpen = !drawerOpen;
+            if (drawer) drawer.style.display = drawerOpen ? 'flex' : 'none';
+            if (drawerOpen) {
+                /* Mark all as read */
+                allNotifs.forEach(function (n) { n.unread = false; });
+                unreadCount = 0;
+                updateBadge();
+                renderDrawer();
+            }
+        }
+
+        /* ── Close drawer saat klik di luar ── */
+        document.addEventListener('click', function (e) {
+            if (!drawerOpen) return;
+            var mount = document.getElementById('margoLearnNotifMount');
+            if (mount && !mount.contains(e.target)) {
+                drawerOpen = false;
+                if (drawer) drawer.style.display = 'none';
+            }
+        });
+
+        /* ── Public API ── */
+        window.MargoLearnWS = {
+            toggleDrawer: toggleDrawer,
+            clearAll: function () {
+                allNotifs = [];
+                unreadCount = 0;
+                updateBadge();
+                renderDrawer();
+                try { localStorage.removeItem('margo.learn.notifs'); } catch (e) {}
+            },
+            openNotif: function (url, id) {
+                /* Mark notif as read */
+                allNotifs.forEach(function (n) { if (n.id === id) n.unread = false; });
+                renderDrawer();
+                drawerOpen = false;
+                if (drawer) drawer.style.display = 'none';
+                if (url && url !== '') {
+                    window.open(url, '_blank', 'noopener');
+                } else {
+                    window.location.href = BASE_URL + '/agenda';
+                }
+            },
+            requestNotifPermission: function () {
+                if (window.Notification && Notification.permission === 'default') {
+                    Notification.requestPermission().catch(function(){});
+                }
+            },
+        };
+
+        /* ── Init ── */
+        document.addEventListener('DOMContentLoaded', function () {
+            hydrateInitEvents();
+            connect();
+            /* Request browser notification permission dengan lembut setelah interaksi pertama pengguna */
+            document.addEventListener('click', function permReq() {
+                MargoLearnWS.requestNotifPermission();
+                document.removeEventListener('click', permReq);
+            }, { once: true });
+        });
+    })();
+    </script>
 </body>
 </html>

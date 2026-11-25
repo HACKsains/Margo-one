@@ -204,8 +204,8 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
     $apdo->exec("
         CREATE TABLE IF NOT EXISTS `agendas` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `source` ENUM('kaldik','admin','guru','siswa') NOT NULL DEFAULT 'admin',
-            `source_ref_id` INT NULL DEFAULT NULL,
+            `source` VARCHAR(32) NOT NULL DEFAULT 'admin',
+            `source_ref_id` BIGINT NULL DEFAULT NULL,
             `is_locked` TINYINT(1) NOT NULL DEFAULT 0,
             `title` VARCHAR(200) NOT NULL,
             `description` TEXT NULL,
@@ -228,20 +228,38 @@ function margo_agenda_ensure_schema(PDO $ssoPdo = null)
             `is_active` TINYINT(1) NOT NULL DEFAULT 1,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY `uq_agenda_source_ref` (`source`, `source_ref_id`),
+            UNIQUE KEY `uq_agenda_source_ref` (`source`(28), `source_ref_id`),
             INDEX `idx_agenda_dates` (`is_active`, `start_date`, `end_date`),
             INDEX `idx_agenda_scope` (`visibility_scope`, `target_kelas_id`),
-            INDEX `idx_agenda_creator` (`created_by`, `source`)
+            INDEX `idx_agenda_creator` (`created_by`, `source`(20))
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
-    // Pastikan kolom color_hex tersedia pada tabel agendas eksisting
+    // Migrasi skema tabel agendas eksisting: source ENUM -> VARCHAR(32) + source_ref_id INT -> BIGINT + kolom color_hex
     try {
-        $agCols = $apdo->query("SHOW COLUMNS FROM `agendas`")->fetchAll(PDO::FETCH_COLUMN);
-        if (!in_array('color_hex', $agCols, true)) {
+        $agCols = $apdo->query("SHOW COLUMNS FROM `agendas`")->fetchAll(PDO::FETCH_ASSOC);
+        $colMap = [];
+        foreach ($agCols as $col) {
+            $colMap[strtolower((string)$col['Field'])] = strtolower((string)($col['Type'] ?? ''));
+        }
+
+        // Migrasi source: ENUM -> VARCHAR(32) agar menerima nilai 'learn_tugas_buat', 'learn_tugas_deadline', dll
+        if (isset($colMap['source']) && strpos($colMap['source'], 'enum') === 0) {
+            $apdo->exec("ALTER TABLE `agendas` MODIFY COLUMN `source` VARCHAR(32) NOT NULL DEFAULT 'admin'");
+        }
+
+        // Migrasi source_ref_id: INT -> BIGINT agar menerima nilai encoded asesmen multi-kelas
+        if (isset($colMap['source_ref_id']) && strpos($colMap['source_ref_id'], 'bigint') === false) {
+            $apdo->exec("ALTER TABLE `agendas` MODIFY COLUMN `source_ref_id` BIGINT NULL DEFAULT NULL");
+        }
+
+        // Tambah color_hex jika belum ada
+        if (!isset($colMap['color_hex'])) {
             $apdo->exec("ALTER TABLE `agendas` ADD COLUMN `color_hex` VARCHAR(20) NULL DEFAULT NULL AFTER `category`");
         }
-    } catch (Throwable $eCol) {}
+    } catch (Throwable $eCol) {
+        error_log('[MargoOne] Agenda schema migration warning: ' . $eCol->getMessage());
+    }
 
     // Bersihkan sekali data dummy bawaan lama (yang created_by IS NULL) agar agenda 100% murni dari database nyata (Kaldik + input pengguna)
     try {
@@ -952,7 +970,9 @@ function margo_agenda_format_row(array $r, array $ctx)
         : (rtrim(BASE_URL, '/') . '/' . ltrim($rawLnk, '/'));
 
     $source    = (string)($r['source'] ?? 'admin');
-    $isLocked  = ($source === 'kaldik' || (int)($r['is_locked'] ?? 0) === 1);
+    // Semua agenda bersumber dari Ilmuna Learn (source mulai 'learn_') SELALU terkunci (is_locked = 1)
+    $isLearnSource = (strpos($source, 'learn_') === 0);
+    $isLocked  = ($source === 'kaldik' || $isLearnSource || (int)($r['is_locked'] ?? 0) === 1);
     $creatorId = isset($r['created_by']) ? (int)$r['created_by'] : 0;
     $userId    = (int)$ctx['user_id'];
 
@@ -973,9 +993,24 @@ function margo_agenda_format_row(array $r, array $ctx)
         'kelas'   => !empty($r['target_kelas_name']) ? ('Kelas ' . $r['target_kelas_name']) : 'Kelas Diampu',
         'private' => 'Pribadi (Saya Saja)',
     ];
-    $scopeLabel = ($source === 'kaldik')
-        ? 'Kaldik · Semua Orang'
-        : (isset($scopeLabelMap[$scope]) ? $scopeLabelMap[$scope] : 'Semua Orang');
+
+    // Label sumber yang lebih informatif untuk agenda dari Ilmuna Learn
+    $learnSourceLabels = [
+        'learn_tugas_buat'      => 'Ilmuna Learn · Tugas (Buat)',
+        'learn_tugas_deadline'  => 'Ilmuna Learn · Deadline Tugas',
+        'learn_proyek_buat'     => 'Ilmuna Learn · Proyek (Mulai)',
+        'learn_proyek_deadline' => 'Ilmuna Learn · Deadline Proyek',
+        'learn_asesmen'         => 'Ilmuna Learn · Jadwal Asesmen',
+    ];
+
+    if ($source === 'kaldik') {
+        $scopeLabel = 'Kaldik · Semua Orang';
+    } elseif (isset($learnSourceLabels[$source])) {
+        $kNm = !empty($r['target_kelas_name']) ? (' · Kelas ' . $r['target_kelas_name']) : '';
+        $scopeLabel = $learnSourceLabels[$source] . $kNm;
+    } else {
+        $scopeLabel = isset($scopeLabelMap[$scope]) ? $scopeLabelMap[$scope] : 'Semua Orang';
+    }
 
     $defaultColor = margo_agenda_default_color($source, (string)($r['status_hari'] ?? ''), (string)($r['category'] ?? 'akademik'), $scope, (string)($r['title'] ?? ''));
     $colorHex     = margo_agenda_normalize_color($r['color_hex'] ?? '', $defaultColor);
@@ -1025,7 +1060,25 @@ function margo_agenda_format_row(array $r, array $ctx)
  */
 function margo_agenda_fetch_visible(PDO $ssoPdo, array $userSession, array $options = [])
 {
+    static $syncingLearn = false;
     margo_agenda_bootstrap($ssoPdo, false);
+
+    if (!$syncingLearn && empty($options['skip_learn_sync'])) {
+        $bridgeFile = BASE_PATH . '/includes/learn-realtime-bridge.php';
+        if (file_exists($bridgeFile)) {
+            $syncingLearn = true;
+            try {
+                require_once $bridgeFile;
+                if (function_exists('margo_learn_sync_class_agendas')) {
+                    @margo_learn_sync_class_agendas($ssoPdo, $userSession, false);
+                }
+            } catch (Throwable $eLS) {
+                // Non-fatal
+            }
+            $syncingLearn = false;
+        }
+    }
+
     $agInfo = margo_get_agenda_db($ssoPdo);
     /** @var PDO $apdo */
     $apdo = $agInfo['pdo'];
@@ -1068,10 +1121,28 @@ function margo_agenda_fetch_visible(PDO $ssoPdo, array $userSession, array $opti
         }
     }
 
-    // Siswa / Ketua Kelas melihat agenda kelas yang dibuat Guru untuk kelasnya
+    // Siswa / Ketua Kelas melihat agenda kelas yang dibuat Guru atau tersinkron dari Learn untuk kelasnya
     if (!empty($ctx['siswa_kelas_id'])) {
         $visClauses[] = "(`visibility_scope` = 'kelas' AND `target_kelas_id` = ?)";
         $params[] = (int)$ctx['siswa_kelas_id'];
+    }
+
+    // Guru melihat agenda kelas untuk SEMUA kelas yang ia ampu (termasuk agenda Learn yang tersinkron)
+    if (!$ctx['is_admin'] && $ctx['is_guru'] && !empty($ctx['guru_classes'])) {
+        $guruKelasIds = [];
+        foreach ($ctx['guru_classes'] as $kc) {
+            if (!empty($kc['id'])) {
+                $guruKelasIds[] = (int)$kc['id'];
+            }
+        }
+        $guruKelasIds = array_values(array_unique($guruKelasIds));
+        if (!empty($guruKelasIds)) {
+            $gIn = implode(',', array_fill(0, count($guruKelasIds), '?'));
+            $visClauses[] = "(`visibility_scope` = 'kelas' AND `target_kelas_id` IN ({$gIn}))";
+            foreach ($guruKelasIds as $gkId) {
+                $params[] = $gkId;
+            }
+        }
     }
 
     $where[] = '(' . implode(' OR ', $visClauses) . ')';
@@ -1411,7 +1482,8 @@ function margo_agenda_fetch_by_id(PDO $ssoPdo, array $userSession, $id)
     $creatorId = (int)($r['created_by'] ?? 0);
 
     $allowed = false;
-    if ($source === 'kaldik' || $scope === 'all') {
+    $isLearnSrc = (strpos($source, 'learn_') === 0);
+    if ($source === 'kaldik' || $scope === 'all' || $isLearnSrc) {
         $allowed = true;
     } elseif ($ctx['user_id'] > 0 && $creatorId === $ctx['user_id']) {
         $allowed = true;
@@ -1423,6 +1495,14 @@ function margo_agenda_fetch_by_id(PDO $ssoPdo, array $userSession, $id)
         $allowed = true;
     } elseif ($scope === 'kelas' && !empty($ctx['siswa_kelas_id']) && (int)($r['target_kelas_id'] ?? 0) === (int)$ctx['siswa_kelas_id']) {
         $allowed = true;
+    } elseif ($scope === 'kelas' && $ctx['is_guru'] && !empty($ctx['guru_classes'])) {
+        $tid = (int)($r['target_kelas_id'] ?? 0);
+        foreach ($ctx['guru_classes'] as $kc) {
+            if ((int)$kc['id'] === $tid) {
+                $allowed = true;
+                break;
+            }
+        }
     }
 
     return $allowed ? margo_agenda_format_row($r, $ctx) : null;

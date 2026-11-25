@@ -929,6 +929,17 @@ require_once BASE_PATH . '/includes/header.php';
     function scopeBadgeHtml(ag) {
         var hex = getEventColor(ag);
         if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) {
+            var learnBadgeMap = {
+                'learn_tugas_buat':      'LEARN · Buat Tugas',
+                'learn_tugas_deadline':  'LEARN · Deadline Tugas',
+                'learn_proyek_buat':     'LEARN · Buat Proyek',
+                'learn_proyek_deadline': 'LEARN · Deadline Proyek',
+                'learn_asesmen':         'LEARN · Asesmen',
+            };
+            var lb = learnBadgeMap[ag.source];
+            if (lb) {
+                return colorBadgeHtml(lb + (ag.target_kelas_name ? ' · Kelas ' + ag.target_kelas_name : ''), hex, true);
+            }
             return colorBadgeHtml('KALDIK · ' + (ag.status_hari || 'Terkunci'), hex, true);
         }
         var catLbl = CAT_LABELS[ag.category] || ag.category || 'Agenda';
@@ -1459,9 +1470,19 @@ require_once BASE_PATH . '/includes/header.php';
             if (iconBox) {
                 iconBox.style.background = hex;
                 iconBox.style.color = '#fff';
-                iconBox.innerHTML = isKaldik
-                    ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon>'
-                    : '<iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>';
+                var isLearnSrc = ag.source && ag.source.indexOf('learn_') === 0;
+                var learnIconMap = {
+                    'learn_tugas_buat':      'solar:document-add-bold',
+                    'learn_tugas_deadline':  'solar:clock-circle-bold',
+                    'learn_proyek_buat':     'solar:rocket-bold',
+                    'learn_proyek_deadline': 'solar:hourglass-bold',
+                    'learn_asesmen':         'solar:test-tube-bold',
+                };
+                iconBox.innerHTML = isLearnSrc
+                    ? ('<iconify-icon icon="' + (learnIconMap[ag.source] || 'solar:book-bold') + '"></iconify-icon>')
+                    : (isKaldik
+                        ? '<iconify-icon icon="solar:lock-keyhole-bold"></iconify-icon>'
+                        : '<iconify-icon icon="solar:calendar-mark-bold"></iconify-icon>');
             }
             document.getElementById('detAgTitle').textContent = ag.title;
             document.getElementById('detAgDate').textContent = ag.start_date
@@ -1469,7 +1490,21 @@ require_once BASE_PATH . '/includes/header.php';
                 + (ag.start_time ? ' · ' + ag.start_time + ' WIB' : '');
 
             var bodyHtml = '';
-            if (isKaldik) {
+            var isLearnSource = ag.source && ag.source.indexOf('learn_') === 0;
+            if (isLearnSource) {
+                var learnBannerLabels = {
+                    'learn_tugas_buat':      '📌 Tanggal Buat Tugas — Ilmuna Learn',
+                    'learn_tugas_deadline':  '⏰ Deadline Pengumpulan Tugas — Ilmuna Learn',
+                    'learn_proyek_buat':     '🚀 Tanggal Mulai Proyek — Ilmuna Learn',
+                    'learn_proyek_deadline': '⏳ Deadline Proyek — Ilmuna Learn',
+                    'learn_asesmen':         '📝 Jadwal Asesmen — Ilmuna Learn',
+                };
+                bodyHtml += '<div class="mag-lock-banner" style="border-left-color:' + hex + ';">'
+                    + '<iconify-icon icon="solar:lock-keyhole-bold" width="22" style="color:' + hex + ';flex-shrink:0;"></iconify-icon>'
+                    + '<div><strong>' + esc(learnBannerLabels[ag.source] || 'Agenda dari Ilmuna Learn') + '</strong><br>'
+                    + 'Tersinkron otomatis sesuai kelas dari Ilmuna Learn dan <strong>tidak dapat diubah atau dihapus</strong> dari Margo One SSO.</div>'
+                    + '</div>';
+            } else if (isKaldik) {
                 bodyHtml += '<div class="mag-lock-banner">'
                     + '<iconify-icon icon="solar:lock-keyhole-bold" width="22" style="color:' + hex + ';flex-shrink:0;"></iconify-icon>'
                     + '<div><strong>Agenda Resmi Kalender Pendidikan (Kaldik) · Terkunci Permanen</strong><br>'
@@ -1504,7 +1539,10 @@ require_once BASE_PATH . '/includes/header.php';
                 var ag = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });
                 if (!ag) return;
                 if (ag.source === 'kaldik' || Number(ag.is_locked) === 1) {
-                    if (window.Ilmuna) Ilmuna.warning('Agenda Kaldik Terkunci', 'Agenda resmi Kaldik tidak dapat diubah.');
+                    var lockMsgEdit = (ag.source && ag.source.indexOf('learn_') === 0)
+                        ? 'Agenda dari Ilmuna Learn bersifat read-only dan tidak dapat diubah secara manual.'
+                        : 'Agenda resmi Kaldik tidak dapat diubah.';
+                    if (window.Ilmuna) Ilmuna.warning('Agenda Terkunci', lockMsgEdit);
                     return;
                 }
                 if (!ag.can_edit) {
@@ -1578,7 +1616,10 @@ require_once BASE_PATH . '/includes/header.php';
         deleteAgenda: async function (id) {
             var ag = (STATE.items || []).find(function (x) { return Number(x.id) === Number(id); });
             if (ag && (ag.source === 'kaldik' || Number(ag.is_locked) === 1)) {
-                if (window.Ilmuna) Ilmuna.warning('Agenda Kaldik Terkunci', 'Agenda resmi Kaldik tidak dapat dihapus.');
+                var lockMsgDel = (ag.source && ag.source.indexOf('learn_') === 0)
+                    ? 'Agenda dari Ilmuna Learn bersifat read-only dan tidak dapat dihapus secara manual.'
+                    : 'Agenda resmi Kaldik tidak dapat dihapus.';
+                if (window.Ilmuna) Ilmuna.warning('Agenda Terkunci', lockMsgDel);
                 return;
             }
             var ok = window.Ilmuna
@@ -1610,6 +1651,21 @@ require_once BASE_PATH . '/includes/header.php';
             } else {
                 if (window.Ilmuna) Ilmuna.error('Gagal Sinkron', (res && res.message) || 'Tidak dapat menyinkronkan Kaldik.');
             }
+        },
+        syncLearn: async function () {
+            /* Dipanggil oleh MargoLearnWS saat menerima event real-time WebSocket dari Ilmuna Learn */
+            try {
+                var r = await fetch(BASE_URL + '/portal-data.php?resource=sync_learn_agenda&force=1&all=1', {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                var res = await r.json();
+                if (res && res.success && Array.isArray(res.data)) {
+                    STATE.items = res.data;
+                    renderAll();
+                    if (window.MargoShell) window.MargoShell.refreshRightWidgets();
+                }
+            } catch (e) {}
         }
     };
 
