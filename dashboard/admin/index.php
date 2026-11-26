@@ -1207,7 +1207,21 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
             } else {
                 $pdo->prepare("INSERT INTO sso_announcements (title, excerpt, link_url, badge_label, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?)")
                     ->execute([$title, $excerpt !== '' ? $excerpt : null, $linkUrl !== '' ? $linkUrl : null, $badge, $isActive, (int)getCurrentUser()['id']]);
-                echo json_encode(['success' => true, 'message' => 'Pengumuman baru berhasil diterbitkan.', 'data' => ['id' => (int)$pdo->lastInsertId()]]);
+                $newAnnId = (int)$pdo->lastInsertId();
+                if ($isActive === 1) {
+                    try {
+                        require_once BASE_PATH . '/includes/webpush-engine.php';
+                        margo_push_broadcast_all($pdo, [
+                            'title'    => '📢 Info Ekosistem: ' . $title,
+                            'body'     => $excerpt !== '' ? $excerpt : 'Pengumuman baru dari ekosistem Ilmuna. Klik untuk membaca.',
+                            'category' => 'ecosystem_info',
+                            'tag'      => 'eco-info-' . $newAnnId,
+                            'url'      => $linkUrl !== '' ? $linkUrl : (BASE_URL . '/gateway'),
+                            'notif_id' => 'eco_info_' . $newAnnId,
+                        ], 'eco_news_' . $newAnnId);
+                    } catch (Throwable $ePushAnn) {}
+                }
+                echo json_encode(['success' => true, 'message' => 'Pengumuman baru berhasil diterbitkan.', 'data' => ['id' => $newAnnId]]);
                 exit;
             }
         }

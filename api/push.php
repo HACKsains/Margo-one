@@ -27,6 +27,56 @@ while (ob_get_level()) {
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: private, no-store, max-age=0');
 
+$action = strtolower(trim((string)($_GET['action'] ?? $_POST['action'] ?? 'vapid_key')));
+
+// Server-to-Server Instant Webhook dari Ilmuna Learn (tanpa session browser, verifikasi HMAC-SHA256)
+if ($action === 'learn_hook') {
+    try {
+        $pdoHook = getDBConnection();
+        $rawBody = (string)file_get_contents('php://input');
+        $hdrTs   = trim((string)($_SERVER['HTTP_X_ILMUNA_TIMESTAMP'] ?? ''));
+        $hdrNon  = trim((string)($_SERVER['HTTP_X_ILMUNA_NONCE'] ?? ''));
+        $hdrSig  = trim((string)($_SERVER['HTTP_X_ILMUNA_SIGNATURE'] ?? ''));
+
+        $secret = '';
+        if (defined('LEARN_API_PRIVATE_KEY') && trim((string)LEARN_API_PRIVATE_KEY) !== '') {
+            $secret = trim((string)LEARN_API_PRIVATE_KEY);
+        } elseif (function_exists('margo_sso_get_setting')) {
+            $secret = trim((string)margo_sso_get_setting($pdoHook, 'learn_api_private_key', ''));
+        }
+
+        if ($secret === '' || $hdrTs === '' || $hdrNon === '' || $hdrSig === '' || abs(time() - (int)$hdrTs) > 300) {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'message' => 'Signature webhook tidak valid.']);
+            exit;
+        }
+
+        $pathOnly = parse_url((string)($_SERVER['REQUEST_URI'] ?? '/api/push.php'), PHP_URL_PATH) ?: '/api/push.php';
+        $canon    = implode("\n", ['POST', $pathOnly, '', $hdrTs, $hdrNon, hash('sha256', $rawBody)]);
+        $expected = hash_hmac('sha256', $canon, $secret);
+        if (!hash_equals($expected, $hdrSig)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'HMAC mismatch.']);
+            exit;
+        }
+
+        $envelope = json_decode($rawBody, true);
+        if (!is_array($envelope)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'Payload JSON tidak valid.']);
+            exit;
+        }
+
+        $res = margo_push_broadcast_learn_event($pdoHook, $envelope);
+        echo json_encode(['success' => true, 'data' => $res]);
+        exit;
+    } catch (Throwable $eHk) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Webhook error.']);
+        exit;
+    }
+}
+
 if (!isLoggedIn()) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Sesi login diperlukan.']);
@@ -40,8 +90,6 @@ $isAdmin     = hasRole('admin');
 if (session_status() === PHP_SESSION_ACTIVE) {
     session_write_close();
 }
-
-$action = strtolower(trim((string)($_GET['action'] ?? $_POST['action'] ?? 'vapid_key')));
 
 try {
     margo_push_ensure_schema($pdo);

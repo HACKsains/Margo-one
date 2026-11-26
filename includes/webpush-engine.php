@@ -627,3 +627,113 @@ function margo_push_dispatch_daily_agendas(PDO $pdo)
 
     return ['users' => count($userIds), 'sent' => $totalSent, 'date' => $today];
 }
+
+/**
+ * Push INSTAN untuk event kelas baru dari Ilmuna Learn (dipanggil webhook < 1 detik, tanpa tunggu cron)
+ */
+function margo_push_broadcast_learn_event(PDO $pdo, array $envelope)
+{
+    margo_push_ensure_schema($pdo);
+    $eid   = (int)($envelope['event_id'] ?? 0);
+    $cat   = strtolower((string)($envelope['category'] ?? ($envelope['event_type'] ?? 'kelas')));
+    $title = trim((string)($envelope['title'] ?? 'Notifikasi Kelas Baru'));
+    $sub   = trim((string)($envelope['summary'] ?? 'Ada pembaruan baru di kelas Ilmuna Learn.'));
+    $klsId = (int)($envelope['kelas']['id'] ?? 0);
+    $klsNm = trim((string)($envelope['kelas']['nama'] ?? ''));
+    $url   = trim((string)($envelope['portal_url'] ?? (BASE_URL . '/agenda')));
+    $dedup = $eid > 0 ? ('learn_evt_' . $eid) : ('learn_evt_' . md5($title . $sub . date('YmdHi')));
+
+    $payload = [
+        'title'    => '🎓 ' . ($klsNm !== '' && $klsNm !== 'Seluruh Kelas' ? ('[' . $klsNm . '] ') : '') . $title,
+        'body'     => $sub,
+        'category' => $cat !== '' ? $cat : 'tugas_buat',
+        'tag'      => 'learn-evt-' . ($eid ?: time()),
+        'url'      => $url,
+        'notif_id' => 'kelas_' . $cat . '_' . ($eid ?: time()),
+    ];
+
+    $userIds = $pdo->query("SELECT DISTINCT user_id FROM sso_push_subscriptions WHERE is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
+    $sent = 0;
+    foreach ($userIds as $uidRaw) {
+        $uid = (int)$uidRaw;
+        if ($klsId > 0) {
+            // Cek apakah user admin atau punya akses ke kelas ini via cache / context
+            $allow = false;
+            try {
+                $stR = $pdo->prepare("SELECT r.code FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?");
+                $stR->execute([$uid]);
+                $roles = $stR->fetchAll(PDO::FETCH_COLUMN) ?: [];
+                if (in_array('admin', $roles, true) || in_array('guru', $roles, true)) {
+                    $allow = true;
+                } else {
+                    $cacheFile = sys_get_temp_dir() . '/margo_learn_user_kelas_' . $uid . '.json';
+                    if (file_exists($cacheFile)) {
+                        $cj = json_decode((string)@file_get_contents($cacheFile), true);
+                        if (!empty($cj['kelas_ids']) && in_array($klsId, array_map('intval', (array)$cj['kelas_ids']), true)) {
+                            $allow = true;
+                        }
+                    } else {
+                        // Jika belum ada cache kelas lokal, tetap kirim agar siswa tidak ketinggalan notif
+                        $allow = true;
+                    }
+                }
+            } catch (Throwable $eChk) {
+                $allow = true;
+            }
+            if (!$allow) {
+                continue;
+            }
+        }
+        $r = margo_push_send_to_user($pdo, $uid, $payload, $dedup);
+        $sent += (int)($r['sent'] ?? 0);
+    }
+    return ['users' => count($userIds), 'sent' => $sent, 'event_id' => $eid];
+}
+
+/**
+ * Push INSTAN saat Agenda baru dibuat di /agenda (tanpa tunggu cron)
+ */
+function margo_push_notify_agenda_instant(PDO $pdo, array $postData, $creatorUserId = 0)
+{
+    margo_push_ensure_schema($pdo);
+    $scope = strtolower(trim((string)($postData['visibility_scope'] ?? 'private')));
+    if ($scope === 'private') {
+        return ['sent' => 0, 'skipped' => true];
+    }
+    $title = trim((string)($postData['title'] ?? 'Agenda Baru'));
+    $sd    = trim((string)($postData['start_date'] ?? date('Y-m-d')));
+    $today = date('Y-m-d');
+    $tom   = date('Y-m-d', strtotime('+1 day'));
+    $prefix = ($sd === $today) ? '📅 Agenda Hari Ini: ' : (($sd === $tom) ? '⏰ Agenda Besok: ' : '📅 Agenda Baru: ');
+    $desc  = trim((string)($postData['description'] ?? ''));
+    $loc   = trim((string)($postData['location'] ?? ''));
+    $body  = $desc !== '' ? $desc : ('Tanggal ' . $sd . ($loc !== '' ? (' · ' . $loc) : '') . '. Klik untuk lihat detail.');
+
+    $payload = [
+        'title'    => $prefix . $title,
+        'body'     => $body,
+        'category' => ($sd === $today) ? 'agenda_today' : (($sd === $tom) ? 'agenda_tomorrow' : 'agenda_soon'),
+        'tag'      => 'agenda-new-' . md5($title . $sd),
+        'url'      => BASE_URL . '/agenda',
+    ];
+    $dedup = 'agenda_instant_' . md5($title . '|' . $sd . '|' . $scope);
+
+    $userIds = $pdo->query("SELECT DISTINCT user_id FROM sso_push_subscriptions WHERE is_active = 1")->fetchAll(PDO::FETCH_COLUMN);
+    $sent = 0;
+    foreach ($userIds as $uidRaw) {
+        $uid = (int)$uidRaw;
+        if ($scope === 'guru' || $scope === 'siswa') {
+            try {
+                $stR = $pdo->prepare("SELECT r.code FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?");
+                $stR->execute([$uid]);
+                $roles = $stR->fetchAll(PDO::FETCH_COLUMN) ?: [];
+                if (!in_array('admin', $roles, true) && !in_array($scope, $roles, true)) {
+                    continue;
+                }
+            } catch (Throwable $eR) {}
+        }
+        $r = margo_push_send_to_user($pdo, $uid, $payload, $dedup);
+        $sent += (int)($r['sent'] ?? 0);
+    }
+    return ['users' => count($userIds), 'sent' => $sent];
+}

@@ -75,6 +75,12 @@ if (isset($_GET['api']) && $_GET['api'] === '1') {
         if ($act === 'save') {
             $res = margo_agenda_save($pdo, $currentUser, $_POST);
             if (!empty($res['success'])) {
+                if ((int)($_POST['id'] ?? 0) === 0) {
+                    try {
+                        require_once BASE_PATH . '/includes/webpush-engine.php';
+                        margo_push_notify_agenda_instant($pdo, $_POST, (int)$currentUser['id']);
+                    } catch (Throwable $ePushAg) {}
+                }
                 $res['items'] = margo_agenda_fetch_visible($pdo, $currentUser, ['limit' => 1500]);
             }
             echo json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
