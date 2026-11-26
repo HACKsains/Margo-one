@@ -55,11 +55,9 @@ self.addEventListener('push', function (event) {
             body: body,
             icon: (data && data.icon) ? String(data.icon) : defaultIcon,
             badge: (data && data.badge) ? String(data.badge) : defaultBadge,
-            sound: MARGO_SOUND_URL,
             silent: false,
             tag: tag,
             renotify: true,
-            requireInteraction: true,
             timestamp: Date.now(),
             vibrate: [200, 100, 200, 100, 300],
             data: payloadData

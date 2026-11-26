@@ -31,6 +31,8 @@ $action = strtolower(trim((string)($_GET['action'] ?? $_POST['action'] ?? 'vapid
 
 // Server-to-Server Instant Webhook dari Ilmuna Learn (tanpa session browser, verifikasi HMAC-SHA256)
 if ($action === 'learn_hook') {
+    @ignore_user_abort(true);
+    @set_time_limit(20);
     try {
         $pdoHook = getDBConnection();
         $rawBody = (string)file_get_contents('php://input');
@@ -203,6 +205,29 @@ try {
             exit;
         }
         echo json_encode(['success' => true, 'data' => ['title' => 'Margo One — Ilmuna', 'body' => 'Ada pembaruan terbaru di ekosistem.', 'url' => BASE_URL . '/gateway']]);
+        exit;
+    }
+
+    if ($action === 'status') {
+        $stSubs = $pdo->prepare("SELECT id, LEFT(endpoint, 60) AS endpoint_prefix, user_agent, is_active, updated_at FROM sso_push_subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 10");
+        $stSubs->execute([$userId]);
+        $stLogs = $pdo->prepare("SELECT dedup_key, category, title, sent_at FROM sso_push_dispatch_log WHERE user_id = ? ORDER BY id DESC LIMIT 10");
+        $stLogs->execute([$userId]);
+        $vapid = margo_push_get_vapid_keys($pdo);
+        $learnSec = (defined('LEARN_API_PRIVATE_KEY') && trim((string)LEARN_API_PRIVATE_KEY) !== '')
+            ? 'defined'
+            : (function_exists('margo_sso_get_setting') && trim((string)margo_sso_get_setting($pdo, 'learn_api_private_key', '')) !== '' ? 'db_setting' : 'missing');
+        echo json_encode([
+            'success' => true,
+            'data'    => [
+                'user_id'                => $userId,
+                'vapid_ready'            => (bool)$vapid,
+                'openssl_derive_ok'      => function_exists('openssl_pkey_derive') && function_exists('hash_hkdf'),
+                'learn_hook_secret'      => $learnSec,
+                'subscriptions'          => $stSubs->fetchAll(PDO::FETCH_ASSOC),
+                'recent_push_dispatches' => $stLogs->fetchAll(PDO::FETCH_ASSOC),
+            ],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
 
