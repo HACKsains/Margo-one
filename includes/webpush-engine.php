@@ -334,6 +334,7 @@ function margo_push_send_raw(PDO $pdo, array $sub, array $payload, array $vapid)
         'Authorization: vapid t=' . $jwt . ', k=' . $vapid['public_key'],
         'TTL: 86400',
         'Urgency: high',
+        'Expect:',
     ];
     $body = '';
     if ($encrypted !== null) {
@@ -351,9 +352,10 @@ function margo_push_send_raw(PDO $pdo, array $sub, array $payload, array $vapid)
         CURLOPT_POSTFIELDS     => $body,
         CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
     ]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -587,6 +589,40 @@ function margo_push_dispatch_daily_agendas(PDO $pdo)
             ], 'eco_news_' . $nwId);
             $totalSent += (int)($r['sent'] ?? 0);
         }
+
+        // 3. Notifikasi Kelas Terbaru dari Ilmuna Learn (Tugas / Proyek / Asesmen / Kelompok)
+        try {
+            $learnBridge = BASE_PATH . '/includes/learn-realtime-bridge.php';
+            if (file_exists($learnBridge)) {
+                require_once $learnBridge;
+            }
+            if (function_exists('margo_learn_fetch_class_feed')) {
+                $feedWrap = margo_learn_fetch_class_feed($pdo, $uSess, false, 10);
+                $evts = $feedWrap['feed']['recent_events'] ?? [];
+                foreach ($evts as $evt) {
+                    $p   = is_array($evt['payload'] ?? null) ? $evt['payload'] : $evt;
+                    $eid = (int)($evt['event_id'] ?? ($p['id'] ?? 0));
+                    if ($eid <= 0) {
+                        continue;
+                    }
+                    $cat   = strtolower((string)($p['kategori_item'] ?? ($p['type'] ?? 'kelas')));
+                    $title = trim((string)($p['judul_tugas'] ?? ($p['nama_proyek'] ?? ($p['judul_asesmen'] ?? ($p['judul'] ?? ($evt['title'] ?? 'Notifikasi Kelas'))))));
+                    $sub   = trim((string)($p['deskripsi_ringkas'] ?? ($evt['summary'] ?? 'Ada pembaruan baru di kelas Ilmuna Learn.')));
+                    $kls   = trim((string)(($p['kelas']['nama'] ?? '') ?: ($evt['nama_kelas'] ?? '')));
+                    $url   = trim((string)($p['portal_url'] ?? ($evt['portal_url'] ?? (BASE_URL . '/agenda'))));
+
+                    $r = margo_push_send_to_user($pdo, $uid, [
+                        'title'    => '🎓 ' . ($kls !== '' ? ('[' . $kls . '] ') : '') . $title,
+                        'body'     => $sub,
+                        'category' => $cat !== '' ? $cat : 'tugas_buat',
+                        'tag'      => 'learn-evt-' . $eid,
+                        'url'      => $url,
+                        'notif_id' => 'kelas_' . $cat . '_' . $eid,
+                    ], 'learn_evt_' . $eid);
+                    $totalSent += (int)($r['sent'] ?? 0);
+                }
+            }
+        } catch (Throwable $eLearnPush) {}
     }
 
     return ['users' => count($userIds), 'sent' => $totalSent, 'date' => $today];

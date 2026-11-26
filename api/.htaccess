@@ -1,0 +1,7 @@
+# Isolasi endpoint API JSON (/api/push.php, dll.) dari interstitial HTML Guardian Dome WAF
+<IfModule lsapi_module>
+    php_value auto_prepend_file none
+</IfModule>
+<IfModule php7_module>
+    php_value auto_prepend_file none
+</IfModule>

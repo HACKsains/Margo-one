@@ -27,8 +27,8 @@
     php_value memory_limit 256M
 </IfModule>
 
-# Lewati scan pre-flight Guardian Dome pada layar konfirmasi OAuth2 (/authorize) & Global SLO (/logout)
-<FilesMatch "^(authorize|logout)\.php$">
+# Lewati scan pre-flight Guardian Dome pada layar konfirmasi OAuth2 (/authorize), Global SLO (/logout), & Web Push API (/api/push.php)
+<FilesMatch "^(authorize|logout|push)\.php$">
     <IfModule lsapi_module>
         php_value auto_prepend_file none
     </IfModule>
@@ -62,7 +62,7 @@ Options -Indexes
 # 3. CACHE & PWA HEADERS
 # ------------------------------------------------------------------------------
 AddType application/manifest+json .webmanifest
-<FilesMatch "^(manifest\.json)$">
+<FilesMatch "^(manifest\.json|sw\.js)$">
     <IfModule mod_headers.c>
         Header set Cache-Control "no-cache, no-store, must-revalidate"
     </IfModule>
