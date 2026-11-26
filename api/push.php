@@ -40,14 +40,18 @@ if ($action === 'learn_hook') {
         $hdrNon  = trim((string)($_SERVER['HTTP_X_ILMUNA_NONCE'] ?? ''));
         $hdrSig  = trim((string)($_SERVER['HTTP_X_ILMUNA_SIGNATURE'] ?? ''));
 
-        $secret = '';
+        $secrets = [];
         if (defined('LEARN_API_PRIVATE_KEY') && trim((string)LEARN_API_PRIVATE_KEY) !== '') {
-            $secret = trim((string)LEARN_API_PRIVATE_KEY);
-        } elseif (function_exists('margo_sso_get_setting')) {
-            $secret = trim((string)margo_sso_get_setting($pdoHook, 'learn_api_private_key', ''));
+            $secrets[] = trim((string)LEARN_API_PRIVATE_KEY);
+        }
+        if (function_exists('margo_sso_get_setting')) {
+            $dbSec = trim((string)margo_sso_get_setting($pdoHook, 'learn_api_private_key', ''));
+            if ($dbSec !== '' && !in_array($dbSec, $secrets, true)) {
+                $secrets[] = $dbSec;
+            }
         }
 
-        if ($secret === '' || $hdrTs === '' || $hdrNon === '' || $hdrSig === '' || abs(time() - (int)$hdrTs) > 300) {
+        if (empty($secrets) || $hdrTs === '' || $hdrNon === '' || $hdrSig === '' || abs(time() - (int)$hdrTs) > 300) {
             http_response_code(401);
             echo json_encode(['success' => false, 'message' => 'Signature webhook tidak valid.']);
             exit;
@@ -55,8 +59,14 @@ if ($action === 'learn_hook') {
 
         $pathOnly = parse_url((string)($_SERVER['REQUEST_URI'] ?? '/api/push.php'), PHP_URL_PATH) ?: '/api/push.php';
         $canon    = implode("\n", ['POST', $pathOnly, '', $hdrTs, $hdrNon, hash('sha256', $rawBody)]);
-        $expected = hash_hmac('sha256', $canon, $secret);
-        if (!hash_equals($expected, $hdrSig)) {
+        $sigMatched = false;
+        foreach ($secrets as $sec) {
+            if (hash_equals(hash_hmac('sha256', $canon, $sec), $hdrSig)) {
+                $sigMatched = true;
+                break;
+            }
+        }
+        if (!$sigMatched) {
             http_response_code(403);
             echo json_encode(['success' => false, 'message' => 'HMAC mismatch.']);
             exit;

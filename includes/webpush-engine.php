@@ -410,9 +410,19 @@ function margo_push_send_to_user(PDO $pdo, $userId, array $payload, $dedupKey = 
     $sent = 0;
     $lastCode = 0;
     $lastErr  = '';
+    $results  = [];
     foreach ($subs as $sub) {
         $res = margo_push_send_raw($pdo, $sub, $payload, $vapid);
         $lastCode = (int)($res['http_code'] ?? 0);
+        $uaStr = (string)($sub['user_agent'] ?? '');
+        $devLbl = (stripos($uaStr, 'Android') !== false) ? 'Android' : ((stripos($uaStr, 'iPhone') !== false || stripos($uaStr, 'iPad') !== false) ? 'iOS' : 'Desktop');
+        $results[] = [
+            'sub_id'    => (int)$sub['id'],
+            'device'    => $devLbl,
+            'ok'        => !empty($res['ok']),
+            'http_code' => $lastCode,
+            'error'     => (string)($res['error'] ?? ''),
+        ];
         if (!empty($res['ok'])) {
             $sent++;
         } elseif (!empty($res['error'])) {
@@ -437,6 +447,7 @@ function margo_push_send_to_user(PDO $pdo, $userId, array $payload, $dedupKey = 
         'total_subs'     => count($subs),
         'last_http_code' => $lastCode,
         'last_error'     => $lastErr,
+        'results'        => $results,
     ];
 }
 
