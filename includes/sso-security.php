@@ -366,7 +366,7 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             allowed_domains TEXT NOT NULL,
             allowed_ips TEXT NULL,
             allowed_scopes VARCHAR(255) NOT NULL DEFAULT 'openid,profile,email,roles',
-            allowed_roles VARCHAR(255) NOT NULL DEFAULT 'admin,guru,ketua_kelas,siswa',
+            allowed_roles VARCHAR(255) NOT NULL DEFAULT 'admin,guru,guru_bk,orang_tua,ketua_kelas,siswa',
             rate_limit_per_min INT NOT NULL DEFAULT 180,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             last_used_at DATETIME NULL,
@@ -451,6 +451,8 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
         foreach ([
             ['admin', 'Administrator', 'Pengelola penuh Identity Provider Margo One SSO', 'navy', 'solar:shield-user-bold'],
             ['guru', 'Guru', 'Pendidik / Pengajar ekosistem Ilmuna', 'teal', 'solar:user-speak-bold'],
+            ['guru_bk', 'Guru BK', 'Guru Bimbingan & Konseling — verifikasi pelanggaran & pembinaan siswa', 'gold', 'solar:shield-warning-bold'],
+            ['orang_tua', 'Orang Tua / Wali', 'Portal monitoring orang tua/wali untuk memantau perkembangan anak', 'teal', 'solar:users-group-two-rounded-bold'],
             ['ketua_kelas', 'Ketua Kelas', 'Perwakilan kelas & koordinator siswa', 'gold', 'solar:crown-bold'],
             ['siswa', 'Siswa', 'Peserta didik ekosistem Ilmuna', 'sky', 'solar:square-academic-cap-2-bold'],
         ] as $srSeed) {
@@ -657,7 +659,7 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             'logout_webhook_url' => 'https://learn.ilmuna.my.id/sso-logout-webhook.php',
             'allowed_domains'    => 'learn.ilmuna.my.id,margo-one.ilmuna.my.id,learn.test,localhost,127.0.0.1',
             'allowed_scopes'     => 'openid,profile,email,roles',
-            'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
+            'allowed_roles'      => 'admin,guru,guru_bk,orang_tua,ketua_kelas,siswa',
             'rate_limit_per_min' => 240,
         ],
         [
@@ -671,7 +673,7 @@ function margo_sso_ensure_schema(PDO $pdo, $force = false)
             'logout_webhook_url' => 'https://ilmuna.my.id/?margo_one_slo=1',
             'allowed_domains'    => 'ilmuna.my.id,www.ilmuna.my.id,margo-one.ilmuna.my.id,localhost,127.0.0.1',
             'allowed_scopes'     => 'openid,profile,email,roles',
-            'allowed_roles'      => 'admin,guru,ketua_kelas,siswa',
+            'allowed_roles'      => 'admin,guru,guru_bk,orang_tua,ketua_kelas,siswa',
             'rate_limit_per_min' => 180,
         ],
     ];

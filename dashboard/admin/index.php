@@ -1880,10 +1880,12 @@ require_once BASE_PATH . '/includes/header.php';
                     </div>
                     <div class="ssoadm-field">
                         <label>Permission Role yang Diizinkan Login ke Aplikasi Ini</label>
-                        <input type="hidden" id="edAllowedRoles" value="admin,guru,ketua_kelas,siswa">
+                        <input type="hidden" id="edAllowedRoles" value="admin,guru,guru_bk,orang_tua,ketua_kelas,siswa">
                         <div id="edRolePermsCheckboxes" style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;">
                             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="admin" checked onchange="SSOADM.syncEdAllowedRoles()"> Admin</label>
                             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="guru" checked onchange="SSOADM.syncEdAllowedRoles()"> Guru</label>
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="guru_bk" checked onchange="SSOADM.syncEdAllowedRoles()"> Guru BK</label>
+                            <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="orang_tua" checked onchange="SSOADM.syncEdAllowedRoles()"> Orang Tua</label>
                             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="ketua_kelas" checked onchange="SSOADM.syncEdAllowedRoles()"> Ketua Kelas</label>
                             <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="edClientRolePerm" value="siswa" checked onchange="SSOADM.syncEdAllowedRoles()"> Siswa</label>
                         </div>
@@ -1954,6 +1956,8 @@ require_once BASE_PATH . '/includes/header.php';
                     <div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 0;">
                         <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="admin" checked> Admin</label>
                         <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="guru" checked> Guru</label>
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="guru_bk" checked> Guru BK</label>
+                        <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="orang_tua" checked> Orang Tua</label>
                         <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="ketua_kelas" checked> Ketua Kelas</label>
                         <label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #CBD5E1;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;background:#F8FAFC;"><input type="checkbox" name="ncClientRolePerm" value="siswa" checked> Siswa</label>
                     </div>
@@ -2905,7 +2909,7 @@ require_once BASE_PATH . '/includes/header.php';
                 app_icon: document.getElementById('ncIcon').value.trim(),
                 allowed_domains: document.getElementById('ncDomains').value.trim(),
                 logout_webhook_url: document.getElementById('ncWebhook').value.trim(),
-                allowed_roles: ncRoles || 'admin,guru,ketua_kelas,siswa',
+                allowed_roles: ncRoles || 'admin,guru,guru_bk,orang_tua,ketua_kelas,siswa',
                 redirect_uris: document.getElementById('ncRedirects').value.trim(),
                 is_active: '1'
             };

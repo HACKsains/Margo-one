@@ -163,10 +163,12 @@ function margo_sso_ensure_identity_tables(PDO $pdo)
     $roleCount = (int)$pdo->query("SELECT COUNT(*) FROM `roles`")->fetchColumn();
     if ($roleCount === 0) {
         $seedRoles = [
-            ['admin',       'Administrator',  'Pengelola penuh ekosistem Ilmuna & Margo One SSO', 'navy',    'solar:shield-user-bold'],
-            ['ketua_kelas', 'Ketua Kelas',    'Koordinator kelas dan pemantau kedisiplinan',      'teal',    'solar:crown-bold'],
-            ['siswa',       'Siswa',          'Peserta didik aktif ekosistem Ilmuna',             'sky',     'solar:user-id-bold'],
-            ['guru',        'Guru Pengampu',  'Dewan guru dan penyusun materi pembelajaran',      'emerald', 'solar:user-speak-bold'],
+            ['admin',       'Administrator',    'Pengelola penuh ekosistem Ilmuna & Margo One SSO', 'navy',    'solar:shield-user-bold'],
+            ['ketua_kelas', 'Ketua Kelas',      'Koordinator kelas dan pemantau kedisiplinan',      'teal',    'solar:crown-bold'],
+            ['siswa',       'Siswa',            'Peserta didik aktif ekosistem Ilmuna',             'sky',     'solar:user-id-bold'],
+            ['guru',        'Guru Pengampu',    'Dewan guru dan penyusun materi pembelajaran',      'emerald', 'solar:user-speak-bold'],
+            ['guru_bk',     'Guru BK',          'Guru Bimbingan & Konseling dan pembinaan siswa',   'amber',   'solar:shield-warning-bold'],
+            ['orang_tua',   'Orang Tua / Wali', 'Portal monitoring orang tua/wali siswa',           'emerald', 'solar:users-group-two-rounded-bold'],
         ];
         $st = $pdo->prepare("INSERT INTO `roles` (`code`, `name`, `description`, `badge_color`, `icon`) VALUES (?, ?, ?, ?, ?)");
         foreach ($seedRoles as $r) {

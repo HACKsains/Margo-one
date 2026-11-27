@@ -152,6 +152,10 @@ function margo_learn_sync_normalize_roles(array $rawRoles, $hasGuruRow = false, 
         }
         if (in_array($c, ['admin', 'administrator', 'superadmin', 'operator'], true)) {
             $norm[] = 'admin';
+        } elseif (in_array($c, ['guru_bk', 'guru-bk', 'bk'], true)) {
+            $norm[] = 'guru_bk';
+        } elseif (in_array($c, ['orang_tua', 'orang-tua', 'ortu', 'wali'], true)) {
+            $norm[] = 'orang_tua';
         } elseif (in_array($c, ['guru', 'teacher', 'pendidik'], true)) {
             $norm[] = 'guru';
         } elseif (in_array($c, ['ketua_kelas', 'ketua-kelas'], true)) {
@@ -165,8 +169,14 @@ function margo_learn_sync_normalize_roles(array $rawRoles, $hasGuruRow = false, 
     // Role utama mengikuti role pertama (is_primary DESC) dari Learn
     if (!empty($norm)) {
         $primary = $norm[0];
+        if ($primary === 'guru_bk') {
+            return in_array('guru', $norm, true) ? ['guru_bk', 'guru'] : ['guru_bk'];
+        }
+        if ($primary === 'orang_tua') {
+            return ['orang_tua'];
+        }
         if ($primary === 'guru') {
-            return ['guru'];
+            return in_array('guru_bk', $norm, true) ? ['guru', 'guru_bk'] : ['guru'];
         }
         if ($primary === 'admin') {
             return ['admin'];

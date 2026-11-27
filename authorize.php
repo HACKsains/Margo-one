@@ -89,6 +89,8 @@ function margo_authorize_render_confirm(array $client, array $user, array $pendi
     $roleLabels = [
         'admin'       => 'Administrator',
         'guru'        => 'Guru Pengampu',
+        'guru_bk'     => 'Guru BK',
+        'orang_tua'   => 'Orang Tua / Wali',
         'ketua_kelas' => 'Ketua Kelas',
         'siswa'       => 'Siswa',
     ];

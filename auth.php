@@ -76,6 +76,10 @@ function margo_role_icon($roleCode)
             return 'solar:shield-user-bold';
         case 'guru':
             return 'solar:user-speak-bold';
+        case 'guru_bk':
+            return 'solar:shield-warning-bold';
+        case 'orang_tua':
+            return 'solar:users-group-two-rounded-bold';
         case 'ketua_kelas':
             return 'solar:crown-bold';
         case 'siswa':

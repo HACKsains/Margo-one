@@ -28,6 +28,8 @@ $rInisial = margo_mb_strtoupper($rInisial ?: margo_mb_substr($rFullName, 0, 2));
 $rRoleMap = [
     'admin'       => 'Administrator SSO',
     'guru'        => 'Guru Pengampu',
+    'guru_bk'     => 'Guru BK',
+    'orang_tua'   => 'Orang Tua / Wali',
     'ketua_kelas' => 'Ketua Kelas',
     'siswa'       => 'Siswa',
 ];
