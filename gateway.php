@@ -52,6 +52,35 @@ $hostNowHero = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
 $isLocalHero = (strpos($hostNowHero, 'localhost') === 0 || strpos($hostNowHero, '127.0.0.1') === 0);
 $learnLaunchUrl = $isLocalHero ? 'http://localhost/learn/login.php?sso_login=1' : 'https://learn.ilmuna.my.id/login.php?sso_login=1';
 
+// Cek notifikasi Panggilan Orang Tua dari Guru BK Ilmuna Learn (khusus akun role orang_tua)
+$ssoOrtuSummons = [];
+if (hasRole('orang_tua') && function_exists('curl_init')) {
+    try {
+        $summonApiBase = $isLocalHero ? 'http://127.0.0.1/learn/api/sso-panggilan-ortu.php' : 'https://learn.ilmuna.my.id/api/sso-panggilan-ortu.php';
+        $summonUrl = $summonApiBase . '?' . http_build_query([
+            'email'    => (string)($currentUser['email'] ?? ''),
+            'username' => (string)($currentUser['username'] ?? ''),
+        ]);
+        $chSum = @curl_init($summonUrl);
+        if ($chSum) {
+            @curl_setopt_array($chSum, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT_MS => 1000,
+                CURLOPT_TIMEOUT_MS => 2000,
+                CURLOPT_SSL_VERIFYPEER => !$isLocalHero,
+            ]);
+            $rawSum = @curl_exec($chSum);
+            @curl_close($chSum);
+            if (is_string($rawSum) && $rawSum !== '') {
+                $jSum = json_decode($rawSum, true);
+                if (is_array($jSum) && !empty($jSum['items'])) {
+                    $ssoOrtuSummons = $jSum['items'];
+                }
+            }
+        }
+    } catch (Throwable $eSumSso) {}
+}
+
 try {
     $stCnt = $pdo->prepare("SELECT COUNT(*) FROM sso_sessions WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW()");
     $stCnt->execute([(int)$currentUser['id']]);
@@ -162,6 +191,38 @@ require_once BASE_PATH . '/includes/header.php';
         <img src="<?= htmlspecialchars(APP_LOGO_LANDSCAPE_URL, ENT_QUOTES, 'UTF-8') ?>" alt="Margo One — Ilmuna SSO" class="margo-hero-brand-img" draggable="false" oncontextmenu="return false;">
     </div>
 </section>
+
+<?php if (!empty($ssoOrtuSummons)): ?>
+<!-- NOTIFIKASI PANGGILAN ORANG TUA DARI GURU BK (ILMUNA LEARN) -->
+<section style="margin-bottom:20px;background:linear-gradient(135deg,#FEF2F2 0%,#FFF7ED 100%);border:1.5px solid #FCA5A5;border-left:5px solid #DC2626;border-radius:18px;padding:16px 18px;box-shadow:0 8px 24px -8px rgba(220,38,38,0.18);" role="alert">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="display:inline-flex;align-items:center;gap:8px;font-size:14.5px;font-weight:800;color:#991B1B;">
+            <iconify-icon icon="solar:bell-bing-bold" width="21" style="color:#DC2626;"></iconify-icon>
+            <span>Panggilan Orang Tua / Wali dari Guru BK (<?= count($ssoOrtuSummons) ?> Pemberitahuan)</span>
+        </div>
+        <a href="<?= htmlspecialchars($learnLaunchUrl, ENT_QUOTES, 'UTF-8') ?>" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:10px;background:linear-gradient(135deg,#DC2626,#B91C1C);color:#FFFFFF;font-size:12px;font-weight:700;text-decoration:none;">
+            <iconify-icon icon="solar:square-top-down-bold" width="14"></iconify-icon>
+            <span>Buka Portal Orang Tua</span>
+        </a>
+    </div>
+    <?php foreach ($ssoOrtuSummons as $sm): ?>
+        <div style="background:rgba(255,255,255,0.88);border:1px solid #FECACA;border-radius:12px;padding:10px 13px;margin-top:8px;font-size:12.5px;color:#334155;line-height:1.5;">
+            <strong style="color:#0F172A;"><?= htmlspecialchars((string)$sm['nama_siswa'], ENT_QUOTES, 'UTF-8') ?></strong>
+            <span style="color:#64748B;">(<?= htmlspecialchars((string)$sm['nama_kelas'], ENT_QUOTES, 'UTF-8') ?>)</span>
+            — <strong><?= htmlspecialchars((string)$sm['kategori_pelanggaran'], ENT_QUOTES, 'UTF-8') ?></strong>
+            <?php if (!empty($sm['poin'])): ?>
+                <span style="display:inline-block;margin-left:5px;padding:2px 8px;border-radius:999px;background:#FEE2E2;color:#DC2626;font-size:11px;font-weight:800;"><?= (int)$sm['poin'] ?> Poin BK</span>
+            <?php endif; ?>
+            <div style="font-size:12px;color:#991B1B;margin-top:3px;">
+                <?php if (!empty($sm['jadwal_panggilan_ortu'])): ?>
+                    <strong>Jadwal:</strong> <?= htmlspecialchars(substr((string)$sm['jadwal_panggilan_ortu'], 0, 16) . ' WIB', ENT_QUOTES, 'UTF-8') ?> ·
+                <?php endif; ?>
+                <?= htmlspecialchars((string)($sm['catatan_panggilan_ortu'] ?: 'Dimohon kehadiran Ayah/Ibu/Wali untuk koordinasi pembinaan bersama Guru BK di sekolah.'), ENT_QUOTES, 'UTF-8') ?>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</section>
+<?php endif; ?>
 
 <!-- ========================================================================= -->
 <!-- 2. APLIKASI EKOSISTEM (LIVE SEARCH + 3D HOVER CARDS — SERVER PRE-RENDERED)-->
